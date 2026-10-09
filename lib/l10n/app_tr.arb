@@ -227,5 +227,40 @@
     "placeholders": {
       "count": { "type": "int" }
     }
-  }
+  },
+  "providerSetupTitle": "Usenet sağlayıcısını kur",
+  "providerSetupHint": "NZB oynatmak için bir Usenet sağlayıcısı gereklidir. İsteğe bağlı indexer sürüm aramanızı sağlar. Devam etmek için sağlayıcı bilgilerinizi kaydedin.",
+  "providerTestButton": "Sağlayıcı bağlantısını sına",
+  "providerTestSuccess": "Bağlantı ve kimlik doğrulama başarılı. Değişikliklerinizi saklamak için kaydedin.",
+  "providerTestFailed": "Bağlanılamadı. Sunucu, port, kullanıcı adı, parola ve internet bağlantınızı kontrol edin.",
+  "unsavedTitle": "Kaydedilmemiş değişiklikler",
+  "unsavedHint": "Çıkmadan önce sağlayıcı ve indexer değişiklikleri kaydedilsin mi?",
+  "saveChanges": "Değişiklikleri kaydet",
+  "discardChanges": "Değişiklikleri sil",
+  "keepEditing": "Düzenlemeye devam et",
+  "appearanceSavedHint": "Dil ve görünüm değişiklikleri otomatik kaydedilir.",
+  "loadMore": "Daha fazla sonuç yükle",
+  "loadingMore": "Daha fazla sonuç yükleniyor…",
+  "searchPageFailed": "Diğer sonuçlar yüklenemedi. Yeniden deneyin.",
+  "searchFailedHint": "Arama başarısız. İnternet bağlantınızı ve indexer ayarlarını kontrol edip yeniden deneyin.",
+  "searchDownloadHint": "NZB indirilemedi. Bağlantınızı ve indexer ayarlarını kontrol edip yeniden deneyin.",
+  "showingResults": "{total} sonuçtan {shown} gösteriliyor",
+  "@showingResults": {
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "releaseDetails": "Sürüm ayrıntıları",
+  "moreControls": "Diğer oynatma kontrolleri",
+  "historyLoadFailed": "İzleme geçmişi yüklenemedi.",
+  "historyRemoveFailed": "Bu öğe kaldırılamadı. Yeniden deneyin.",
+  "historyRemoved": "İzleme geçmişinden kaldırıldı",
+  "technicalDetailsLabel": "Teknik ayrıntılar",
+  "settingsLoadHint": "Ayarlar yüklenemedi. Kayıtlı bilgilere erişmek için yeniden deneyin.",
+  "settingsWriteHint": "Değişiklikler kaydedilemedi. Bu ekranı açık tutup yeniden deneyin."
 }

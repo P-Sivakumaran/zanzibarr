@@ -138,7 +138,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('NZB indirilemedi: Exception: disk dolu'),
+      find.text('NZB indirilemedi. Bağlantınızı ve indexer ayarlarını kontrol edip yeniden deneyin.'),
       findsOneWidget,
     );
   });
@@ -154,7 +154,7 @@ void main() {
     await tester.pumpAndSettle();
     await _enterQueryAndSearch(tester, 'film');
 
-    expect(find.textContaining('Indexer yanıt vermiyor'), findsOneWidget);
+    expect(find.text('Arama başarısız. İnternet bağlantınızı ve indexer ayarlarını kontrol edip yeniden deneyin.'), findsOneWidget);
     expect(find.text('Yeniden dene'), findsOneWidget);
   });
 

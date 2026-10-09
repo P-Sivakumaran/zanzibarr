@@ -740,4 +740,90 @@ class AppLocalizationsTr extends AppLocalizations {
   String entryParts(int count) {
     return '$count parça';
   }
+
+  @override
+  String get providerSetupTitle => 'Usenet sağlayıcısını kur';
+
+  @override
+  String get providerSetupHint =>
+      'NZB oynatmak için bir Usenet sağlayıcısı gereklidir. İsteğe bağlı indexer sürüm aramanızı sağlar. Devam etmek için sağlayıcı bilgilerinizi kaydedin.';
+
+  @override
+  String get providerTestButton => 'Sağlayıcı bağlantısını sına';
+
+  @override
+  String get providerTestSuccess =>
+      'Bağlantı ve kimlik doğrulama başarılı. Değişikliklerinizi saklamak için kaydedin.';
+
+  @override
+  String get providerTestFailed =>
+      'Bağlanılamadı. Sunucu, port, kullanıcı adı, parola ve internet bağlantınızı kontrol edin.';
+
+  @override
+  String get unsavedTitle => 'Kaydedilmemiş değişiklikler';
+
+  @override
+  String get unsavedHint =>
+      'Çıkmadan önce sağlayıcı ve indexer değişiklikleri kaydedilsin mi?';
+
+  @override
+  String get saveChanges => 'Değişiklikleri kaydet';
+
+  @override
+  String get discardChanges => 'Değişiklikleri sil';
+
+  @override
+  String get keepEditing => 'Düzenlemeye devam et';
+
+  @override
+  String get appearanceSavedHint =>
+      'Dil ve görünüm değişiklikleri otomatik kaydedilir.';
+
+  @override
+  String get loadMore => 'Daha fazla sonuç yükle';
+
+  @override
+  String get loadingMore => 'Daha fazla sonuç yükleniyor…';
+
+  @override
+  String get searchPageFailed => 'Diğer sonuçlar yüklenemedi. Yeniden deneyin.';
+
+  @override
+  String get searchFailedHint =>
+      'Arama başarısız. İnternet bağlantınızı ve indexer ayarlarını kontrol edip yeniden deneyin.';
+
+  @override
+  String get searchDownloadHint =>
+      'NZB indirilemedi. Bağlantınızı ve indexer ayarlarını kontrol edip yeniden deneyin.';
+
+  @override
+  String showingResults(int shown, int total) {
+    return '$total sonuçtan $shown gösteriliyor';
+  }
+
+  @override
+  String get releaseDetails => 'Sürüm ayrıntıları';
+
+  @override
+  String get moreControls => 'Diğer oynatma kontrolleri';
+
+  @override
+  String get historyLoadFailed => 'İzleme geçmişi yüklenemedi.';
+
+  @override
+  String get historyRemoveFailed => 'Bu öğe kaldırılamadı. Yeniden deneyin.';
+
+  @override
+  String get historyRemoved => 'İzleme geçmişinden kaldırıldı';
+
+  @override
+  String get technicalDetailsLabel => 'Teknik ayrıntılar';
+
+  @override
+  String get settingsLoadHint =>
+      'Ayarlar yüklenemedi. Kayıtlı bilgilere erişmek için yeniden deneyin.';
+
+  @override
+  String get settingsWriteHint =>
+      'Değişiklikler kaydedilemedi. Bu ekranı açık tutup yeniden deneyin.';
 }

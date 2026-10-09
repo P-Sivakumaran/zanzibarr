@@ -14,6 +14,7 @@ import '../cast/cast_device_picker.dart';
 import '../cast/cast_service.dart';
 import '../l10n/app_localizations.dart';
 import '../settings/provider_settings.dart';
+import '../settings/settings_screen.dart';
 import '../src/rust/api/repair.dart';
 import '../src/rust/api/streaming.dart';
 import 'advanced_playback_controller.dart';
@@ -334,6 +335,28 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  Future<void> _editProvider() async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => SettingsScreen(
+          store: widget.store,
+          initialSection: SettingsSection.provider,
+          finishOnSave: true,
+        ),
+      ),
+    );
+    if (!mounted || saved != true) return;
+    await _releaseNativeStream();
+    _startupGuard.cancel();
+    _startupActive = false;
+    _startupFailed = false;
+    _playbackReady = false;
+    setState(() {
+      _error = null;
+    });
+    await _start();
+  }
+
   Future<void> _start() async {
     try {
       await _configureNativeEngine();
@@ -354,7 +377,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       // Çok parçalı (sezon paketi gibi) NZB'lerde oynatılacak dosyayı
       // kullanıcı seçer (issue #5). Geçmişten belirli bir bölümle
       // gelindiyse (initialEntryKey) diyalog atlanır.
-      var entryKey = widget.initialEntryKey;
+      var entryKey = _resolvedEntryKey ?? widget.initialEntryKey;
       if (entryKey == null) {
         try {
           final entries = await listPlayableEntries(nzbPath: widget.nzbPath);
@@ -648,6 +671,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       final entry = await _historyStore.entryFor(
         widget.nzbPath,
         entryKey: _resolvedEntryKey,
+        mediaTitle: _info?.filename,
       );
       if (entry == null || _disposing) return;
       // Son %3'e ulaşılmış içerik izlenmiş sayılır; kayıt düşülüp baştan
@@ -2296,6 +2320,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         maxConnections: settings.maxConnections,
       ),
       nzbPath: widget.nzbPath,
+      entryKey: _resolvedEntryKey,
     );
     _repairSessionId = sessionId;
     _repairPollTimer?.cancel();
@@ -3123,6 +3148,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           ? _ErrorView(
               message: _error.toString(),
               onClose: () => unawaited(_closePlayer()),
+              onSettings: () => unawaited(_editProvider()),
               repairActive: _repairActive,
               repairProgress: _repairProgress,
               repairError: _repairError,
@@ -3355,6 +3381,7 @@ class _ErrorView extends StatelessWidget {
   const _ErrorView({
     required this.message,
     required this.onClose,
+    required this.onSettings,
     this.repairActive = false,
     this.repairProgress,
     this.repairError,
@@ -3364,6 +3391,7 @@ class _ErrorView extends StatelessWidget {
 
   final String message;
   final VoidCallback onClose;
+  final VoidCallback onSettings;
 
   /// PAR2 onarımı bu ekrandan başlatılabiliyorsa true düğmesi görünür.
   final bool repairActive;
@@ -3375,63 +3403,109 @@ class _ErrorView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final marker = l10n.technicalDetail('');
+    final detailAt = message.indexOf(marker);
+    final explanation = detailAt < 0
+        ? message
+        : message.substring(0, detailAt).trim();
+    final details = detailAt < 0
+        ? null
+        : sanitizeErrorDetails(message.substring(detailAt + marker.length));
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline, size: 48, color: Color(0xFFFF6961)),
-            const SizedBox(height: 12),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 640),
-              child: Text(
-                message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white70),
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.error_outline,
+                size: 48,
+                color: Color(0xFFFF6961),
               ),
-            ),
-            const SizedBox(height: 18),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FilledButton.tonalIcon(
-                  onPressed: onClose,
-                  icon: const Icon(Icons.close_rounded),
-                  label: Text(l10n.closePlayer),
-                ),
-                if (onRepair != null && !repairActive) ...[
-                  const SizedBox(width: 10),
-                  FilledButton.icon(
-                    onPressed: onRepair,
-                    icon: const Icon(Icons.healing_rounded, size: 18),
-                    label: Text(l10n.repairButton),
-                  ),
-                ],
-              ],
-            ),
-            if (repairActive) ...[
-              const SizedBox(height: 20),
+              const SizedBox(height: 12),
               ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: _RepairProgressPanel(
-                  progress: repairProgress,
-                  onCancel: onCancelRepair,
-                ),
-              ),
-            ],
-            if (repairError != null) ...[
-              const SizedBox(height: 14),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
+                constraints: const BoxConstraints(maxWidth: 640),
                 child: Text(
-                  l10n.repairFailed(repairError!),
+                  explanation,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: Color(0xFFFF9F0A), fontSize: 12),
+                  style: const TextStyle(color: Colors.white70),
                 ),
               ),
+              if (details != null)
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 640),
+                  child: ExpansionTile(
+                    title: Text(
+                      l10n.technicalDetailsLabel,
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: SelectableText(
+                          details,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 18),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: repairActive ? null : onSettings,
+                    icon: const Icon(Icons.settings_rounded),
+                    label: Text(l10n.providerTitle),
+                  ),
+                  FilledButton.tonalIcon(
+                    onPressed: onClose,
+                    icon: const Icon(Icons.close_rounded),
+                    label: Text(l10n.closePlayer),
+                  ),
+                  if (onRepair != null && !repairActive) ...[
+                    const SizedBox(width: 10),
+                    FilledButton.icon(
+                      onPressed: onRepair,
+                      icon: const Icon(Icons.healing_rounded, size: 18),
+                      label: Text(l10n.repairButton),
+                    ),
+                  ],
+                ],
+              ),
+              if (repairActive) ...[
+                const SizedBox(height: 20),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: _RepairProgressPanel(
+                    progress: repairProgress,
+                    onCancel: onCancelRepair,
+                  ),
+                ),
+              ],
+              if (repairError != null) ...[
+                const SizedBox(height: 14),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  child: Text(
+                    l10n.repairFailed(repairError!),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFFFF9F0A),
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

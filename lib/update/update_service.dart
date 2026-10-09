@@ -131,14 +131,14 @@ class UpdateService {
   /// Bu platform için indirilecek asset'i seçer; yoksa null.
   String? assetUrlForCurrentPlatform(ReleaseInfo release) {
     const byPlatform = {
-      'android-arm64': 'zanzibarr-android-arm64-v8a.apk',
+      'android': 'zanzibarr-android-universal.apk',
       'windows': 'zanzibarr-windows-x64.zip',
       'macos': 'zanzibarr-macos-arm64.zip',
       'linux': 'zanzibarr-linux-x64.tar.gz',
       'ios': 'zanzibarr-ios-unsigned.ipa',
     };
     final key = switch (defaultTargetPlatform) {
-      TargetPlatform.android => 'android-arm64',
+      TargetPlatform.android => 'android',
       TargetPlatform.windows => 'windows',
       TargetPlatform.macOS => 'macos',
       TargetPlatform.linux => 'linux',

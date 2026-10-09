@@ -355,5 +355,40 @@
     "placeholders": {
       "count": { "type": "int" }
     }
-  }
+  },
+  "providerSetupTitle": "Set up Usenet provider",
+  "providerSetupHint": "A Usenet provider is required to play NZBs. An indexer is optional and lets you search for releases. Save your provider details to continue.",
+  "providerTestButton": "Test provider connection",
+  "providerTestSuccess": "Connection and authentication succeeded. Save any changes to keep them.",
+  "providerTestFailed": "Could not connect. Check the server, port, username, password, and your internet connection.",
+  "unsavedTitle": "Unsaved changes",
+  "unsavedHint": "Save your provider and indexer changes before leaving?",
+  "saveChanges": "Save changes",
+  "discardChanges": "Discard changes",
+  "keepEditing": "Keep editing",
+  "appearanceSavedHint": "Language and appearance changes are saved automatically.",
+  "loadMore": "Load more results",
+  "loadingMore": "Loading more results…",
+  "searchPageFailed": "More results could not be loaded. Try again.",
+  "searchFailedHint": "Search failed. Check your internet connection and indexer settings, then try again.",
+  "searchDownloadHint": "The NZB could not be downloaded. Check your connection and indexer settings, then try again.",
+  "showingResults": "Showing {shown} of {total}",
+  "@showingResults": {
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "releaseDetails": "Release details",
+  "moreControls": "More playback controls",
+  "historyLoadFailed": "Continue watching could not be loaded.",
+  "historyRemoveFailed": "This item could not be removed. Try again.",
+  "historyRemoved": "Removed from continue watching",
+  "technicalDetailsLabel": "Technical details",
+  "settingsLoadHint": "Settings could not be loaded. Try again to access your saved details.",
+  "settingsWriteHint": "Changes could not be saved. Keep this screen open and try again."
 }

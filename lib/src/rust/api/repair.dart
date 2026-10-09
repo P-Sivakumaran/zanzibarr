@@ -16,9 +16,11 @@ import 'streaming.dart';
 Future<BigInt> beginRepair({
   required ProviderConfigDto config,
   required String nzbPath,
+  String? entryKey,
 }) => RustLib.instance.api.crateApiRepairBeginRepair(
   config: config,
   nzbPath: nzbPath,
+  entryKey: entryKey,
 );
 
 /// Oturumun son ilerleme anlığını döndürür; oturum yoksa None.

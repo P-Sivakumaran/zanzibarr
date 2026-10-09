@@ -109,7 +109,19 @@ class PlaybackHistoryStore {
   static const storageKey = 'zanzibarr.playback_history.v1';
   static const _maxEntries = 25;
 
-  Future<List<PlaybackHistoryEntry>> load() async {
+  // Home and Player create separate stores backed by the same secure key.
+  // Serialize reads and mutations across those instances, including failed writes.
+  static Future<void> _pending = Future<void>.value();
+
+  Future<T> _serialized<T>(Future<T> Function() operation) {
+    final result = _pending.then((_) => operation());
+    _pending = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return result;
+  }
+
+  Future<List<PlaybackHistoryEntry>> load() => _serialized(_load);
+
+  Future<List<PlaybackHistoryEntry>> _load() async {
     final encoded = await _storage.read(storageKey);
     if (encoded == null || encoded.isEmpty) return const [];
     try {
@@ -126,51 +138,81 @@ class PlaybackHistoryStore {
   Future<PlaybackHistoryEntry?> entryFor(
     String nzbPath, {
     String? entryKey,
-  }) async {
-    final entries = await load();
+    String? mediaTitle,
+  }) => _serialized(() async {
+    final entries = List.of(await _load());
     for (final entry in entries) {
       if (entry.nzbPath == nzbPath && entry.entryKey == entryKey) return entry;
     }
+    // A legacy pack record belongs only to the video that was actually watched.
+    // Migrate by the resolved filename, never by the pack path alone.
+    if (entryKey != null && mediaTitle != null && mediaTitle.isNotEmpty) {
+      final index = entries.indexWhere(
+        (entry) =>
+            entry.nzbPath == nzbPath &&
+            entry.entryKey == null &&
+            entry.title == mediaTitle,
+      );
+      if (index >= 0) {
+        final legacy = entries[index];
+        final migrated = PlaybackHistoryEntry(
+          nzbPath: legacy.nzbPath,
+          entryKey: entryKey,
+          title: legacy.title,
+          positionSeconds: legacy.positionSeconds,
+          durationSeconds: legacy.durationSeconds,
+          updatedAtMs: legacy.updatedAtMs,
+        );
+        entries[index] = migrated;
+        await _write(entries);
+        return migrated;
+      }
+    }
     return null;
-  }
+  });
 
   /// Kaydı ekler veya günceller; tamamlanmış içerik listeden düşer.
   ///
-  /// Bölüm anahtarlı ilk kayıt, aynı NZB'nin anahtarsız (eski sürümden
-  /// kalan, tüm paket için tek) kaydını da süpürür — yoksa ana ekranda
-  /// hedefi artık bulunamayan hayalet bir kart kalırdı.
-  Future<void> save(PlaybackHistoryEntry entry) async {
-    final entries = List.of(await load());
+  /// Legacy records are replaced only when they describe the same video.
+  Future<void> save(PlaybackHistoryEntry entry) => _serialized(() async {
+    final entries = List.of(await _load());
+    if (entries.any(
+      (e) =>
+          e.nzbPath == entry.nzbPath &&
+          e.entryKey == entry.entryKey &&
+          e.updatedAtMs > entry.updatedAtMs,
+    )) {
+      return;
+    }
     entries.removeWhere(
       (e) =>
           e.nzbPath == entry.nzbPath &&
           (e.entryKey == entry.entryKey ||
-              (entry.entryKey != null && e.entryKey == null)),
+              (entry.entryKey != null &&
+                  e.entryKey == null &&
+                  e.title == entry.title)),
     );
     if (!entry.isCompleted) entries.insert(0, entry);
     if (entries.length > _maxEntries) {
       entries.removeRange(_maxEntries, entries.length);
     }
-    await _storage.write(
-      storageKey,
-      jsonEncode(<String, Object>{
-        'version': 1,
-        'entries': [for (final e in entries) e.toJson()],
-      }),
-    );
-  }
+    await _write(entries);
+  });
 
-  Future<void> remove(String nzbPath, {String? entryKey}) async {
-    final entries = List.of(await load());
-    entries.removeWhere(
-      (e) => e.nzbPath == nzbPath && e.entryKey == entryKey,
-    );
-    await _storage.write(
-      storageKey,
-      jsonEncode(<String, Object>{
-        'version': 1,
-        'entries': [for (final e in entries) e.toJson()],
-      }),
-    );
-  }
+  Future<void> remove(String nzbPath, {String? entryKey}) =>
+      _serialized(() async {
+        final entries = List.of(await _load());
+        entries.removeWhere(
+          (e) => e.nzbPath == nzbPath && e.entryKey == entryKey,
+        );
+        await _write(entries);
+      });
+
+  Future<void> _write(List<PlaybackHistoryEntry> entries) => _storage.write(
+    storageKey,
+    jsonEncode(<String, Object>{
+      'version': 1,
+      'entries': [for (final e in entries) e.toJson()],
+    }),
+  );
 }

@@ -91,7 +91,21 @@ Release pipeline (v1.4+):
 
 Debug hooks (developer-only, env vars): `ZANZIBARR_DEBUG_NZB=/path/to.nzb` (open NZB directly at startup), `ZANZIBARR_DEBUG_PROBE=1` (dump video params + audio tracks to stdout).
 
-## 6. Current state (updated 2026-10-08)
+## 6. Current state (updated 2026-10-10)
+
+The owner requested committing and pushing the completed review fixes, UX implementation, and Claude handover to the fork's `origin/main`. See `docs/CLAUDE_HANDOVER_2026-10-10.md` for continuation details. No release/tag is being created; device/signing checks in sections 7–8 remain outstanding.
+
+All eight UI/UX review findings have local implementations: mobile audio access and 48px player targets; provider/indexer setup that returns to the pending task; a single-connection TLS provider test; unsaved credential protection; paginated search with retry/dedup/focus handling; full filename inspection; more readable metadata and a directional-navigation text profile; actionable errors with sanitized diagnostic disclosures and history failure feedback. Review and implementation notes: `docs/UI_UX_REVIEW_2026-10-10.md`. Live device and screen-reader testing remains outstanding.
+
+Final UX gate: **257 Rust tests and 190 Flutter tests passed**, with the same 8 opt-in screenshot tests skipped. Clippy (`--locked --all-targets -- -D warnings`), Flutter analysis (`--no-pub lib test`), native host build, and `git diff --check` passed. Previous actionlint validation remains applicable; workflows were not changed during the UX implementation.
+
+Fork review fixes are implemented locally: bounded request-owned prefetch; persistent Android signing configuration; universal Android updates; release-tag SHA propagation; serialized history operations; filename-checked legacy resume migration; selected-episode PAR2 repair with regenerated FRB bindings. See `docs/CODE_REVIEW_2026-10-09.md` and `docs/ANDROID_SIGNING.md`. Full gate passes: 256 Rust tests, Clippy with warnings denied, Flutter analysis, 175 Flutter tests (8 existing opt-in screenshot tests skipped), and actionlint. Upstream main matched fork HEAD `a366747` at review time.
+
+Local toolchain: Flutter 3.44.6 / Dart 3.12.2 at `C:\Users\prash\Documents\src\.tools\flutter\bin`; FRB generator 2.12.0 at `C:\Users\prash\Documents\src\.tools\frb\bin`. SDK paths are session-local, not added to the system PATH. Dependency versions were preserved.
+
+Before running Flutter bridge tests on a fresh checkout, build the host library with `cargo build --locked --manifest-path rust/Cargo.toml`. `cargo test` alone does not produce the top-level DLL those tests load. Screenshot test setup now respects the existing opt-in flag before loading macOS fonts.
+
+**Fork onboarding (2026-10-09):** P-Sivakumaran fork cloned to `C:\Users\prash\Documents\src\zanzibarr` on Windows, tracking `origin/main`. Rust/Cargo are on PATH; Flutter/Dart are not. No application changes or verification gate run during clone-only onboarding. This fork uses English conversation; upstream Turkish-owner and macOS-local environment notes below describe the upstream maintainer.
 
 **v1.8 shipped** (tag `v1.8`, release notes `docs/releases/v1.8.md`): the multi-file NZB picker (below), byte-level RAR4 parse diagnostics, and the local macOS build fix (`[profile.release.build-override]`, §7). CI built Windows/Android/Linux/iOS; macOS built locally (lipo shim + build-override both needed) and uploaded manually. Site synced ("What's new" v1.8, version var, roadmap picker item flipped to done).
 
@@ -126,6 +140,8 @@ Gate after the change: 223 Rust tests, clippy clean, flutter analyze clean, 152 
 
 ## 7. Known issues / watch list
 
+- UI/UX follow-up: local fixes cover all eight findings. Verify real phone/TV playback, physical remote navigation, TalkBack/NVDA, and final rendered contrast on target devices. New copy is English/Turkish with English fallbacks in the other locales, preserving all existing translations. Existing desktop screenshots predate the UX changes.
+
 - *Pillarbox report* on `The.Runner.2026.1080p...` (16:9 content, bars on sides) — fit/fill button added in `3713b31`; if bars persist on a 16:9 TV, that's a render bug → get on-device logcat.
 - Owner's Mac keychain still holds a stale `usenews` entry (old password) — CLI gets 502; the release app reads its own `zanzibarr` entries and is unaffected. Confirmed 2026-09-24: `zanzibarr` service has no keyring-visible entries at all, `usenews` holds the old password; this now also blocks live `stream-check` verification of the obfuscated-set fix. Fix: owner runs `zanzibarr-cli setup` once with the current Easynews password.
 - Easynews 60-connection limit unverified (§3).
@@ -136,7 +152,14 @@ Gate after the change: 223 Rust tests, clippy clean, flutter analyze clean, 152 
 - *Gran.Torino.2008.720p.BDRip RAR4 parse failure (Pixel 8a, 2026-10-08):* "could not read RAR header: RAR4 FILE header is short" on a 49-volume old-style `.r00…rar` set. The Flutter guard maps any "rar4"-containing engine error to the misleading `errRar4` ("legacy format") explanation — the real failure is a CRC-valid FILE block with head_size < 36, which no legitimate RAR4 header can have; the archive carries a structure the parser doesn't model. Root cause still unknown. Byte-level trace shipped in **v1.8** (`[rar4 vol_off=… flags=… hsz=… add=… body=…]` in the error dialog + `eprintln`) — waiting for the owner's trace screenshot, then fix + fixture test. Local macOS repro is impossible: the Mac app has **no stored provider credentials** (owner tests on Android; the login keychain holds only the stale `usenews` entry, no `zanzibarr` items) — the app opens but never dials NNTP.
 - *Xcode 27 / macOS 26 toolchain — proc-macro LINKEDIT:* `cargo build --release` fails with `can't find crate for tokio_macros`/`futures_macro` — dyld on macOS 26+ rejects stripped proc-macro dylibs ("mis-aligned LINKEDIT string pool", [rust-lang/rust#157750](https://github.com/rust-lang/rust/issues/157750)); surfaced 2026-10-08 after a rustup/Xcode update (the 2026-10-01 build was still fine). Fixed via `[profile.release.build-override] debug = 2, codegen-units = 256` in `rust/Cargo.toml` (committed) — host-side macro builds keep debuginfo, shipped binaries unchanged. Remove when rustup ships the llvm-objcopy alignment fix.
 
+- **Fork signing setup (2026-10-09):** Android release builds require the four repository secrets documented in `docs/ANDROID_SIGNING.md`. Keys from earlier CI debug-signed APKs cannot be reconstructed; upgrades require their original certificate. No release was built or published during the fixes.
+- **Fork code review (2026-10-09):** seven findings have local fixes and regression coverage; episode picker still cannot select inner files of a single archive. Updater still points at upstream releases; configure the endpoint before independently distributing fork releases.
+
 ## 8. Roadmap (priority order, status)
+
+- Fork UI/UX: implementation complete locally; device validation and refreshed release screenshots remain before distribution.
+
+Fork next steps: configure the persistent Android signing key, review the local fixes, and verify release builds/casting/playback on target hardware. All seven review fixes are implemented locally; SDK and regression checks are available.
 
 | # | Item | Status |
 |---|------|--------|
@@ -181,7 +204,20 @@ Done since v1.0: Newznab indexer search (v1.1-era), RAR4/RAR5 STORE, split 7z ST
 - **2026-10-08 (ikinci oturum) — RAR4 parse diagnostics + local macOS build rescue.** Owner's Gran.Torino.2008 NZB failed on Pixel 8a with "RAR4 FILE header is short" (masked by the `errRar4` "legacy format" explanation — the Flutter guard matches any "rar4"-containing error). Static analysis proved a genuine RAR4 FILE header can never be < 25 body bytes, so the archive carries an unmodeled structure; byte-level trace embedded in the error (`[rar4 vol_off=… flags=… hsz=… add=… body=…]`, PTer method, shipped in v1.8) — owner sends the next screenshot, then the real fix lands. Local repro failed: macOS app has no stored NNTP credentials (zero port-563 connections observed; keychain holds only the stale `usenews` item). Meanwhile the local release build broke with `can't find crate for tokio_macros` — macOS 26 dyld rejects stripped proc-macro dylibs ("mis-aligned LINKEDIT string pool", rust-lang/rust#157750); fixed with `[profile.release.build-override] debug = 2` in `rust/Cargo.toml`. Both commits pushed; trace APK built for the owner (`dist/android/ci-9ff200f/`).
 - **2026-10-08 — v1.8 shipped.** Owner green-lit release with the picker + diagnostics. Cut: `docs/releases/v1.8.md`, `pubspec.yaml` → `1.8.0+9`, tag `v1.8` → `release.yml`; macOS built locally (lipo shim + the new build-override — both required) with smoke test, uploaded manually. Site synced: "What's new" v1.8, version var, roadmap picker item done. Reddit update post (covers v1.7 D-pad + v1.8 picker, v1.6-post style) at `dist/reddit-v1.8-update.md` — owner posts manually. Issue #5 got the release comment; left open pending reporter confirmation. **Still open: Gran.Torino RAR4 root cause** (§7 — trace screenshot pending).
 
+- **2026-10-09 — Fork onboarding.** Cloned `P-Sivakumaran/zanzibarr` locally on Windows at `a366747`. Origin tracks the fork; Rust/Cargo available, Flutter/Dart absent from PATH. No application code changed; tests not run.
+
+- **2026-10-09 — Fork code review.** Reviewed current HEAD, v1.7→v1.8, and upstream parity. Seven findings documented in `docs/CODE_REVIEW_2026-10-09.md`; no application changes. Rust tests: 250 passed. Flutter SDK unavailable.
+
+- **2026-10-09 — Implemented all seven review fixes.** Request-owned bounded prefetch with cancellation cleanup; persistent Android signing configuration and universal OTA APK; release-tag SHA propagation; serialized history mutations and filename-checked legacy migration; selected-entry PAR2 repair and regenerated FRB bindings. Added regression tests, fixed two current-toolchain Clippy lints, and made skipped screenshot setup honor its opt-in flag. Installed pinned local Flutter/FRB tools and built the host Rust DLL. Gate: **256 Rust + 175 Flutter**, 8 opt-in screenshot cases skipped; Clippy/analyze/actionlint clean. Signing secrets and actual platform release builds remain deployment setup, documented in `docs/ANDROID_SIGNING.md`. Local working changes, no release published.
+
+- **2026-10-10 — UI/UX review.** Reviewed Flutter source plus existing home/settings/search/player desktop screenshots. Documented eight prioritized issues and proposed validation in `docs/UI_UX_REVIEW_2026-10-10.md`; no app code changes, device testing, or accessibility certification. Previous implementation work preserved.
+
+- **2026-10-10 — Implemented UI/UX review.** Fixed mobile track access/touch targets, pending-task provider/indexer setup, draft protection, pagination/late-response/dedup/focus behavior, filename inspection, readability/large-text reflow, and recoverable errors/history feedback. Added a bounded single-connection native provider test and regenerated FRB/localization bindings. `intl` is now a direct dependency at its existing locked version. Added offline flow, narrow-screen/200%-text/RTL, redaction, native-bridge, and history failure regressions. Gate: **257 Rust + 190 Flutter**, 8 opt-in screenshots skipped; Clippy/analyze/native build/diff check passed. Prior code-review fixes remain intact; nothing committed, pushed, or released.
+
+- **2026-10-10 — Claude handover.** Added `docs/CLAUDE_HANDOVER_2026-10-10.md` with the uncommitted implementation scope, latest verification evidence, local Windows toolchain, remaining device/release checks, and continuation prompt. No application changes or additional test run; prior final gate remains 257 Rust + 190 Flutter (8 opt-in screenshots skipped).
+
 ### Key technical decisions (the *why* — don't relitigate without cause)
+
 
 - **Rust + FRB, on-device, no server:** mature crate ecosystem (NNTP/yEnc/RAR/7z/PAR2), clean FFI, no runtime. NZBDav (C#, MIT) is reference blueprint only — algorithms ported, code never copied.
 - **STORE first, archives later:** end-to-end playback was proven on STORE releases before any archive work; RAR/7z/AES/PAR2 came in phased afterwards. Keep this discipline for new media features.

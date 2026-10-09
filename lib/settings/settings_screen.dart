@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import '../l10n/app_localizations.dart';
 import '../src/rust/api/search.dart';
+import '../src/rust/api/streaming.dart';
 import '../tv_focus.dart';
 import 'indexer_settings.dart';
 import 'provider_settings.dart';
@@ -14,6 +18,10 @@ typedef NewznabCapsFn =
 /// Sağlayıcı (NNTP) kimlik bilgileri için ayar ekranı.
 ///
 /// Değerler OS secure storage'a yazılır; ekran açılışında oradan okunur.
+enum SettingsSection { provider, indexer }
+
+typedef ProviderCheckFn = Future<void> Function(ProviderSettings settings);
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
     super.key,
@@ -21,6 +29,9 @@ class SettingsScreen extends StatefulWidget {
     this.uiPreferences,
     this.indexerStore,
     this.capsFn,
+    this.providerCheckFn,
+    this.initialSection,
+    this.finishOnSave = false,
   });
 
   /// Testlerde sahte depo enjekte edebilmek için; null ise gerçek depo kullanılır.
@@ -35,6 +46,9 @@ class SettingsScreen extends StatefulWidget {
   /// "Bağlantıyı sına" düğmesinin çağırdığı caps sorgusu; null ise FRB
   /// `newznabCheckCaps` kullanılır.
   final NewznabCapsFn? capsFn;
+  final ProviderCheckFn? providerCheckFn;
+  final SettingsSection? initialSection;
+  final bool finishOnSave;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -93,6 +107,200 @@ class _SettingsScreenState extends State<SettingsScreen>
     fieldNode: _indexerApiKeyFocusNode,
   );
 
+  List<String>? _providerBaseline;
+  List<String>? _indexerBaseline;
+  bool _allowPop = false;
+  bool _confirmingLeave = false;
+  bool _testingProvider = false;
+  bool _indexerLoading = true;
+  bool _indexerLoadFailed = false;
+  final _loadTimers = <Timer>{};
+
+  Future<T> _loadWithTimeout<T>(Future<T> future) async {
+    final expired = Completer<T>();
+    final timer = Timer(
+      const Duration(seconds: 10),
+      () => expired.completeError(TimeoutException('Settings load timed out')),
+    );
+    _loadTimers.add(timer);
+    try {
+      return await Future.any([future, expired.future]);
+    } finally {
+      timer.cancel();
+      _loadTimers.remove(timer);
+    }
+  }
+
+  String? _providerTestMessage;
+  bool _providerTestPassed = false;
+
+  List<TextEditingController> get _providerControllers => [
+    _hostController,
+    _portController,
+    _usernameController,
+    _passwordController,
+    _maxConnectionsController,
+  ];
+  List<TextEditingController> get _indexerControllers => [
+    _indexerUrlController,
+    _indexerApiKeyController,
+  ];
+  List<String> _values(List<TextEditingController> controllers) => [
+    for (final controller in controllers) controller.text,
+  ];
+  bool _different(
+    List<String>? baseline,
+    List<TextEditingController> controllers,
+  ) => baseline != null && !listEquals(baseline, _values(controllers));
+  bool get _providerDirty =>
+      widget.initialSection != SettingsSection.indexer &&
+      _different(_providerBaseline, _providerControllers);
+  bool get _indexerDirty =>
+      widget.initialSection != SettingsSection.provider &&
+      _different(_indexerBaseline, _indexerControllers);
+  bool get _dirty => _providerDirty || _indexerDirty;
+
+  List<String>? _lastValues;
+
+  void _changed() {
+    final values = _values([..._providerControllers, ..._indexerControllers]);
+    if (listEquals(values, _lastValues)) return;
+    _lastValues = values;
+    if (mounted) {
+      setState(() {
+        _providerTestMessage = null;
+      });
+    }
+  }
+
+  Future<void> _leave() async {
+    if (_confirmingLeave || _saving || _savingIndexer) return;
+    var savedOnLeave = false;
+    if (_dirty) {
+      _confirmingLeave = true;
+      final l10n = AppLocalizations.of(context);
+      final action = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(l10n.unsavedTitle),
+          content: Text(l10n.unsavedHint),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'keep'),
+              child: Text(l10n.keepEditing),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'discard'),
+              child: Text(l10n.discardChanges),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, 'save'),
+              child: Text(l10n.saveChanges),
+            ),
+          ],
+        ),
+      );
+      _confirmingLeave = false;
+      if (!mounted || action == null || action == 'keep') return;
+      if (action == 'save') {
+        if (_providerDirty) await _save(finish: false);
+        if (mounted && _indexerDirty) await _saveIndexer(finish: false);
+        if (!mounted || _dirty) return;
+        savedOnLeave = true;
+      }
+    }
+    if (!mounted) return;
+    final completedSetup = widget.finishOnSave && savedOnLeave;
+    setState(() => _allowPop = true);
+    // Wait for PopScope to register the updated permission before popping.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).pop(completedSetup ? true : null);
+    });
+  }
+
+  Future<void> _finishSetup() async {
+    if (!widget.finishOnSave || _confirmingLeave || !mounted || _dirty) return;
+    setState(() => _allowPop = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).pop(true);
+    });
+  }
+
+  ProviderSettings _providerValues() => ProviderSettings(
+    host: _hostController.text.trim(),
+    port: int.parse(_portController.text.trim()),
+    username: _usernameController.text.trim(),
+    password: _passwordController.text,
+    maxConnections: int.parse(_maxConnectionsController.text.trim()),
+  );
+
+  bool _validate(FormState form) {
+    final invalid = form.validateGranularly();
+    if (invalid.isEmpty) return true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && invalid.first.mounted) {
+        Scrollable.ensureVisible(
+          invalid.first.context,
+          duration: const Duration(milliseconds: 200),
+          alignment: 0.2,
+        );
+      }
+    });
+    return false;
+  }
+
+  Future<void> _testProvider() async {
+    if (_testingProvider || !_validate(_formKey.currentState!)) return;
+    final settings = _providerValues();
+    final testedValues = _values(_providerControllers);
+    setState(() {
+      _testingProvider = true;
+      _obscurePassword = true;
+      _providerTestMessage = null;
+    });
+    try {
+      final check = widget.providerCheckFn;
+      if (check != null) {
+        await check(settings);
+      } else {
+        await checkProvider(
+          config: ProviderConfigDto(
+            host: settings.host,
+            port: settings.port,
+            username: settings.username,
+            password: settings.password,
+            maxConnections: 1,
+          ),
+        );
+      }
+      if (!mounted ||
+          !listEquals(testedValues, _values(_providerControllers))) {
+        return;
+      }
+      setState(() {
+        _providerTestPassed = true;
+        _providerTestMessage = AppLocalizations.of(context).providerTestSuccess;
+      });
+    } catch (error) {
+      if (!mounted ||
+          !listEquals(testedValues, _values(_providerControllers))) {
+        return;
+      }
+      final l10n = AppLocalizations.of(context);
+      final text = error.toString();
+      setState(() {
+        _providerTestPassed = false;
+        _providerTestMessage = text.contains('authentication failed')
+            ? l10n.errAuthFailed
+            : text.contains('connection limit')
+            ? l10n.errProviderConnectionLimit
+            : l10n.providerTestFailed;
+      });
+    } finally {
+      if (mounted) setState(() => _testingProvider = false);
+    }
+  }
+
   bool _loading = true;
   bool _saving = false;
   bool _obscurePassword = true;
@@ -105,8 +313,22 @@ class _SettingsScreenState extends State<SettingsScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _load();
-    _loadIndexer();
+    for (final controller in [
+      ..._providerControllers,
+      ..._indexerControllers,
+    ]) {
+      controller.addListener(_changed);
+    }
+    if (widget.initialSection != SettingsSection.indexer) {
+      _load();
+    } else {
+      _loading = false;
+    }
+    if (widget.initialSection != SettingsSection.provider) {
+      _loadIndexer();
+    } else {
+      _indexerLoading = false;
+    }
   }
 
   @override
@@ -129,7 +351,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       });
     }
     try {
-      final settings = await _store.load();
+      final settings = await _loadWithTimeout(_store.load());
       if (!mounted) return;
       setState(() {
         _hostController.text = settings.host;
@@ -137,6 +359,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         _usernameController.text = settings.username;
         _passwordController.text = settings.password;
         _maxConnectionsController.text = settings.maxConnections.toString();
+        _providerBaseline = _values(_providerControllers);
         _loading = false;
       });
     } catch (error) {
@@ -151,19 +374,35 @@ class _SettingsScreenState extends State<SettingsScreen>
   /// Indexer okuması NNTP'den bağımsızdır: depo okunamazsa (veya hiç
   /// tamamlanamazsa) NNTP formu kilitlenmesin, indexer alanları boş kalsın.
   Future<void> _loadIndexer() async {
+    if (mounted) {
+      setState(() {
+        _indexerLoading = true;
+        _indexerLoadFailed = false;
+      });
+    }
     try {
-      final indexer = await _indexerStore.load();
+      final indexer = await _loadWithTimeout(_indexerStore.load());
       if (!mounted) return;
       setState(() {
         _indexerUrlController.text = indexer.baseUrl;
         _indexerApiKeyController.text = indexer.apiKey;
+        _indexerBaseline = _values(_indexerControllers);
+        _indexerLoading = false;
       });
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _indexerLoading = false;
+          _indexerLoadFailed = true;
+        });
+      }
+    }
   }
 
-  Future<void> _save() async {
+  Future<void> _save({bool finish = true}) async {
     if (_saving) return;
-    if (!_formKey.currentState!.validate()) return;
+    if (!_validate(_formKey.currentState!)) return;
+    final savedValues = _values(_providerControllers);
     setState(() {
       _saving = true;
       _obscurePassword = true;
@@ -179,15 +418,14 @@ class _SettingsScreenState extends State<SettingsScreen>
           maxConnections: int.parse(_maxConnectionsController.text.trim()),
         ),
       );
+      _providerBaseline = savedValues;
       saved = true;
     } catch (e) {
       // Keychain yazımı başarısızsa (ör. entitlement eksik) uygulamayı
       // düşürmeden kullanıcıya bildir.
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(AppLocalizations.of(context).settingsSaveFailed('$e')),
-        ),
+        SnackBar(content: Text(AppLocalizations.of(context).settingsWriteHint)),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -196,11 +434,17 @@ class _SettingsScreenState extends State<SettingsScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(AppLocalizations.of(context).settingsSaved)),
     );
+    if (finish) await _finishSetup();
   }
 
-  Future<void> _saveIndexer() async {
+  Future<void> _saveIndexer({bool finish = true}) async {
     if (_savingIndexer) return;
-    if (!_indexerFormKey.currentState!.validate()) return;
+    if (_indexerLoading ||
+        _indexerLoadFailed ||
+        !_validate(_indexerFormKey.currentState!)) {
+      return;
+    }
+    final savedValues = _values(_indexerControllers);
     setState(() {
       _savingIndexer = true;
       _obscureApiKey = true;
@@ -213,13 +457,12 @@ class _SettingsScreenState extends State<SettingsScreen>
           apiKey: _indexerApiKeyController.text.trim(),
         ),
       );
+      _indexerBaseline = savedValues;
       saved = true;
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(AppLocalizations.of(context).settingsSaveFailed('$e')),
-        ),
+        SnackBar(content: Text(AppLocalizations.of(context).settingsWriteHint)),
       );
     } finally {
       if (mounted) setState(() => _savingIndexer = false);
@@ -228,21 +471,24 @@ class _SettingsScreenState extends State<SettingsScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(AppLocalizations.of(context).settingsSaved)),
     );
+    if (finish && _indexerUrlController.text.trim().isNotEmpty) {
+      await _finishSetup();
+    }
   }
 
   /// Formdaki güncel değerlerle `?t=caps` sorgusu atar; sonucu SnackBar'da
   /// gösterir. API anahtarı hiçbir yere yazılmaz/loglanmaz.
   Future<void> _testIndexer() async {
     if (_testingIndexer) return;
-    if (!_indexerFormKey.currentState!.validate()) return;
+    if (!_validate(_indexerFormKey.currentState!)) return;
     final l10n = AppLocalizations.of(context);
     final baseUrl = _indexerUrlController.text.trim();
     final apiKey = _indexerApiKeyController.text.trim();
     if (baseUrl.isEmpty || apiKey.isEmpty) {
       // Boş URL indexer kapalı demektir; sınanacak bir bağlantı yok.
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.indexerMissingHint)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.indexerMissingHint)));
       return;
     }
     setState(() => _testingIndexer = true);
@@ -258,9 +504,9 @@ class _SettingsScreenState extends State<SettingsScreen>
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.indexerTestFailed('$error'))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.searchFailedHint)));
     } finally {
       if (mounted) setState(() => _testingIndexer = false);
     }
@@ -307,8 +553,8 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   String? _required(String? value, String fieldName) =>
       value == null || value.trim().isEmpty
-          ? AppLocalizations.of(context).validationRequired(fieldName)
-          : null;
+      ? AppLocalizations.of(context).validationRequired(fieldName)
+      : null;
 
   String? _validateHost(String? value) {
     final l10n = AppLocalizations.of(context);
@@ -364,6 +610,15 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   @override
   void dispose() {
+    for (final timer in _loadTimers) {
+      timer.cancel();
+    }
+    for (final controller in [
+      ..._providerControllers,
+      ..._indexerControllers,
+    ]) {
+      controller.removeListener(_changed);
+    }
     WidgetsBinding.instance.removeObserver(this);
     _hostController.dispose();
     _portController.dispose();
@@ -391,425 +646,558 @@ class _SettingsScreenState extends State<SettingsScreen>
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 17),
-          tooltip: l10n.backTooltip,
-          onPressed: () => Navigator.maybePop(context),
+    return PopScope(
+      canPop: _allowPop || (!_dirty && !_saving && !_savingIndexer),
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _leave();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 17),
+            tooltip: l10n.backTooltip,
+            onPressed: _leave,
+          ),
+          title: Text(
+            widget.initialSection == SettingsSection.provider
+                ? l10n.providerSetupTitle
+                : l10n.settingsTitle,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+          ),
         ),
-        title: Text(
-          l10n.providerTitle,
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-        ),
-      ),
-      body: _loading
-          ? const Center(
-              child: SizedBox.square(
-                dimension: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            )
-          : _loadError != null
-          ? _SettingsLoadError(error: _loadError!, onRetry: _load)
-          : Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 620),
-                child: Form(
-                  key: _formKey,
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(24, 18, 24, 32),
-                    children: [
-                      if (widget.uiPreferences case final prefs?) ...[
-                        Text(
-                          l10n.appSectionTitle,
-                          style: Theme.of(context).textTheme.titleLarge
-                              ?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: -0.35,
-                              ),
-                        ),
-                        const SizedBox(height: 7),
-                        Text(
-                          l10n.appSectionSubtitle,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withValues(alpha: 0.45),
-                                height: 1.4,
-                              ),
-                        ),
-                        const SizedBox(height: 24),
-                        _SettingsCard(
-                          children: [
-                            DropdownButtonFormField<Locale>(
-                              initialValue: prefs.locale,
-                              // TV kumandasında D-pad gezintisi bu ilk
-                              // kontrolden başlar (metin alanı olmadığı için
-                              // girişte ekran klavyesi açılmaz).
-                              autofocus: true,
-                              decoration: InputDecoration(
-                                labelText: l10n.languageLabel,
-                                prefixIcon: const Icon(
-                                  Icons.language_rounded,
-                                  size: 19,
-                                ),
-                              ),
-                              items: [
-                                for (final (locale, name)
-                                    in supportedAppLocales)
-                                  DropdownMenuItem(
-                                    value: locale,
-                                    child: Text(name),
+        body: _loading && widget.initialSection != SettingsSection.indexer
+            ? const Center(
+                child: SizedBox.square(
+                  dimension: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            : _loadError != null &&
+                  widget.initialSection != SettingsSection.indexer
+            ? _SettingsLoadError(error: _loadError!, onRetry: _load)
+            : Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 620),
+                  child: Form(
+                    key: _formKey,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(24, 18, 24, 32),
+                      children: [
+                        if (widget.initialSection == null)
+                          if (widget.uiPreferences case final prefs?) ...[
+                            Text(
+                              l10n.appSectionTitle,
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -0.35,
                                   ),
-                              ],
-                              onChanged: (locale) {
-                                if (locale != null) {
-                                  prefs.setLocale(locale);
-                                }
-                              },
                             ),
-                            const SizedBox(height: 16),
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                l10n.themeLabel,
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurface
-                                          .withValues(alpha: 0.55),
-                                    ),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            SizedBox(
-                              width: double.infinity,
-                              child: SegmentedButton<ThemeMode>(
-                                showSelectedIcon: false,
-                                segments: [
-                                  ButtonSegment(
-                                    value: ThemeMode.dark,
-                                    icon: const Icon(
-                                      Icons.dark_mode_rounded,
-                                      size: 17,
-                                    ),
-                                    label: Text(l10n.themeDark),
+                            const SizedBox(height: 7),
+                            Text(
+                              l10n.appearanceSavedHint,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.72),
+                                    height: 1.4,
                                   ),
-                                  ButtonSegment(
-                                    value: ThemeMode.light,
-                                    icon: const Icon(
-                                      Icons.light_mode_rounded,
-                                      size: 17,
-                                    ),
-                                    label: Text(l10n.themeLight),
-                                  ),
-                                ],
-                                selected: {prefs.themeMode},
-                                onSelectionChanged: (selection) =>
-                                    prefs.setThemeMode(selection.first),
-                              ),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                      ],
-                      Text(
-                        l10n.nntpSectionTitle,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.35,
-                        ),
-                      ),
-                      const SizedBox(height: 7),
-                      Text(
-                        l10n.nntpSectionSubtitle,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withValues(alpha: 0.45),
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      _SettingsCard(
-                        children: [
-                          TextFormField(
-                            controller: _hostController,
-                            focusNode: _hostFocusNode,
-                            // Uygulama bölümü yoksa (arama ekranından eski
-                            // yol) ilk kontrol bu alan; TV'de D-pad gezintisi
-                            // buradan başlar.
-                            autofocus: widget.uiPreferences == null,
-                            decoration: InputDecoration(
-                              labelText: l10n.serverAddressLabel,
-                              hintText: 'news.example.com',
-                              prefixIcon: const Icon(Icons.dns_rounded, size: 19),
-                            ),
-                            textInputAction: TextInputAction.next,
-                            keyboardType: TextInputType.url,
-                            autocorrect: false,
-                            validator: _validateHost,
-                          ),
-                          const SizedBox(height: 12),
-                          LayoutBuilder(
-                            builder: (context, constraints) {
-                              if (constraints.maxWidth < 440) {
-                                return Column(
-                                  children: [
-                                    _portField(),
-                                    const SizedBox(height: 12),
-                                    _connectionField(),
-                                  ],
-                                );
-                              }
-                              return Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(child: _portField()),
-                                  const SizedBox(width: 12),
-                                  Expanded(child: _connectionField()),
-                                ],
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      _SettingsCard(
-                        children: [
-                          TextFormField(
-                            controller: _usernameController,
-                            focusNode: _usernameFocusNode,
-                            decoration: InputDecoration(
-                              labelText: l10n.usernameLabel,
-                              prefixIcon: const Icon(
-                                Icons.person_outline_rounded,
-                                size: 19,
-                              ),
-                            ),
-                            autofillHints: const [AutofillHints.username],
-                            textInputAction: TextInputAction.next,
-                            autocorrect: false,
-                            validator: (value) =>
-                                _required(value, l10n.usernameLabel),
-                          ),
-                          const SizedBox(height: 12),
-                          // Göz düğmesi alanın İÇİNDE değil yanında durur ve
-                          // skipTraversal ile yön gezintisi adaylığından
-                          // çıkarılmıştır: aşağı ok bu satıra inerken her
-                          // zaman alanı seçer; simgeye yalnızca alanın metin
-                          // sonundan sağ okla geçilir (issue #4).
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Expanded(
-                                child: TextFormField(
-                                  controller: _passwordController,
-                                  focusNode: _passwordFocusNode,
-                                  obscureText: _obscurePassword,
-                                  enableSuggestions: false,
-                                  autocorrect: false,
-                                  autofillHints: const [AutofillHints.password],
-                                  onFieldSubmitted: (_) => _save(),
-                                  validator: (value) =>
-                                      _required(value, l10n.passwordLabel),
+                            const SizedBox(height: 24),
+                            _SettingsCard(
+                              children: [
+                                DropdownButtonFormField<Locale>(
+                                  isExpanded: true,
+                                  initialValue: prefs.locale,
+                                  // TV kumandasında D-pad gezintisi bu ilk
+                                  // kontrolden başlar (metin alanı olmadığı için
+                                  // girişte ekran klavyesi açılmaz).
+                                  autofocus: true,
                                   decoration: InputDecoration(
-                                    labelText: l10n.passwordLabel,
+                                    labelText: l10n.languageLabel,
                                     prefixIcon: const Icon(
-                                      Icons.lock_outline_rounded,
+                                      Icons.language_rounded,
                                       size: 19,
                                     ),
                                   ),
+                                  items: [
+                                    for (final (locale, name)
+                                        in supportedAppLocales)
+                                      DropdownMenuItem(
+                                        value: locale,
+                                        child: Text(name),
+                                      ),
+                                  ],
+                                  onChanged: (locale) {
+                                    if (locale != null) {
+                                      prefs.setLocale(locale);
+                                    }
+                                  },
                                 ),
+                                const SizedBox(height: 16),
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    l10n.themeLabel,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withValues(alpha: 0.72),
+                                        ),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child:
+                                      MediaQuery.textScalerOf(
+                                            context,
+                                          ).scale(14) >
+                                          20
+                                      ? DropdownButtonFormField<ThemeMode>(
+                                          isExpanded: true,
+                                          initialValue: prefs.themeMode,
+                                          decoration: InputDecoration(
+                                            labelText: l10n.themeLabel,
+                                          ),
+                                          items: [
+                                            DropdownMenuItem(
+                                              value: ThemeMode.dark,
+                                              child: Text(l10n.themeDark),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: ThemeMode.light,
+                                              child: Text(l10n.themeLight),
+                                            ),
+                                          ],
+                                          onChanged: (mode) {
+                                            if (mode != null) {
+                                              prefs.setThemeMode(mode);
+                                            }
+                                          },
+                                        )
+                                      : SegmentedButton<ThemeMode>(
+                                          showSelectedIcon: false,
+                                          segments: [
+                                            ButtonSegment(
+                                              value: ThemeMode.dark,
+                                              icon: const Icon(
+                                                Icons.dark_mode_rounded,
+                                                size: 17,
+                                              ),
+                                              label: Text(l10n.themeDark),
+                                            ),
+                                            ButtonSegment(
+                                              value: ThemeMode.light,
+                                              icon: const Icon(
+                                                Icons.light_mode_rounded,
+                                                size: 17,
+                                              ),
+                                              label: Text(l10n.themeLight),
+                                            ),
+                                          ],
+                                          selected: {prefs.themeMode},
+                                          onSelectionChanged: (selection) =>
+                                              prefs.setThemeMode(
+                                                selection.first,
+                                              ),
+                                        ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                          ],
+                        if (widget.initialSection !=
+                            SettingsSection.indexer) ...[
+                          if (widget.initialSection ==
+                              SettingsSection.provider) ...[
+                            Text(
+                              l10n.providerSetupHint,
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                            const SizedBox(height: 20),
+                          ],
+                          Text(
+                            l10n.nntpSectionTitle,
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.35,
+                                ),
+                          ),
+                          const SizedBox(height: 7),
+                          Text(
+                            l10n.nntpSectionSubtitle,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.72),
+                                  height: 1.4,
+                                ),
+                          ),
+                          const SizedBox(height: 24),
+                          _SettingsCard(
+                            children: [
+                              TextFormField(
+                                controller: _hostController,
+                                focusNode: _hostFocusNode,
+                                // Uygulama bölümü yoksa (arama ekranından eski
+                                // yol) ilk kontrol bu alan; TV'de D-pad gezintisi
+                                // buradan başlar.
+                                autofocus:
+                                    widget.initialSection ==
+                                        SettingsSection.provider ||
+                                    widget.uiPreferences == null,
+                                decoration: InputDecoration(
+                                  labelText: l10n.serverAddressLabel,
+                                  hintText: 'news.example.com',
+                                  prefixIcon: const Icon(
+                                    Icons.dns_rounded,
+                                    size: 19,
+                                  ),
+                                ),
+                                textInputAction: TextInputAction.next,
+                                keyboardType: TextInputType.url,
+                                autocorrect: false,
+                                validator: _validateHost,
                               ),
-                              const SizedBox(width: 8),
-                              IconButton(
-                                focusNode: _passwordEyeFocusNode,
-                                tooltip: _obscurePassword
-                                    ? l10n.passwordShowTooltip
-                                    : l10n.passwordHideTooltip,
-                                icon: Icon(
-                                  _obscurePassword
-                                      ? Icons.visibility_rounded
-                                      : Icons.visibility_off_rounded,
-                                  size: 18,
-                                ),
-                                onPressed: () => setState(
-                                  () => _obscurePassword = !_obscurePassword,
-                                ),
+                              const SizedBox(height: 12),
+                              LayoutBuilder(
+                                builder: (context, constraints) {
+                                  if (constraints.maxWidth < 440) {
+                                    return Column(
+                                      children: [
+                                        _portField(),
+                                        const SizedBox(height: 12),
+                                        _connectionField(),
+                                      ],
+                                    );
+                                  }
+                                  return Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(child: _portField()),
+                                      const SizedBox(width: 12),
+                                      Expanded(child: _connectionField()),
+                                    ],
+                                  );
+                                },
                               ),
                             ],
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      const _ConnectionHint(),
-                      const SizedBox(height: 22),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: FilledButton.icon(
-                          onPressed: _saving ? null : _save,
-                          icon: _saving
-                              ? const SizedBox.square(
-                                  dimension: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 1.8,
+                          const SizedBox(height: 14),
+                          _SettingsCard(
+                            children: [
+                              TextFormField(
+                                controller: _usernameController,
+                                focusNode: _usernameFocusNode,
+                                decoration: InputDecoration(
+                                  labelText: l10n.usernameLabel,
+                                  prefixIcon: const Icon(
+                                    Icons.person_outline_rounded,
+                                    size: 19,
                                   ),
-                                )
-                              : const Icon(Icons.check_rounded, size: 18),
-                          label: Text(
-                            _saving ? l10n.savingLabel : l10n.saveSecurelyLabel,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 30),
-                      Text(
-                        l10n.indexerSectionTitle,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.35,
-                        ),
-                      ),
-                      const SizedBox(height: 7),
-                      Text(
-                        l10n.indexerSectionSubtitle,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withValues(alpha: 0.45),
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      // Indexer ayarları NNTP formundan bağımsız kaydedilir;
-                      // iç içe Form'lar alanları ayrı ayrı doğrular.
-                      Form(
-                        key: _indexerFormKey,
-                        child: Column(
-                          children: [
-                            _SettingsCard(
-                              children: [
-                                TextFormField(
-                                  controller: _indexerUrlController,
-                                  focusNode: _indexerUrlFocusNode,
-                                  decoration: InputDecoration(
-                                    labelText: l10n.indexerUrlLabel,
-                                    hintText: 'https://indexer.example',
-                                    prefixIcon: const Icon(
-                                      Icons.travel_explore_rounded,
-                                      size: 19,
-                                    ),
-                                  ),
-                                  textInputAction: TextInputAction.next,
-                                  keyboardType: TextInputType.url,
-                                  autocorrect: false,
-                                  validator: _validateIndexerUrl,
                                 ),
-                                const SizedBox(height: 12),
-                                // Parola alanıyla aynı düzen: göz düğmesi
-                                // yanda ve skipTraversal'lı; sağ okla alandan
-                                // geçilir (issue #4).
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    Expanded(
-                                      child: TextFormField(
-                                        controller: _indexerApiKeyController,
-                                        focusNode: _indexerApiKeyFocusNode,
-                                        obscureText: _obscureApiKey,
-                                        enableSuggestions: false,
-                                        autocorrect: false,
-                                        onFieldSubmitted: (_) =>
-                                            _saveIndexer(),
-                                        validator: _validateIndexerApiKey,
-                                        decoration: InputDecoration(
-                                          labelText: l10n.indexerApiKeyLabel,
-                                          prefixIcon: const Icon(
-                                            Icons.key_rounded,
-                                            size: 19,
-                                          ),
+                                autofillHints: const [AutofillHints.username],
+                                textInputAction: TextInputAction.next,
+                                autocorrect: false,
+                                validator: (value) =>
+                                    _required(value, l10n.usernameLabel),
+                              ),
+                              const SizedBox(height: 12),
+                              // Göz düğmesi alanın İÇİNDE değil yanında durur ve
+                              // skipTraversal ile yön gezintisi adaylığından
+                              // çıkarılmıştır: aşağı ok bu satıra inerken her
+                              // zaman alanı seçer; simgeye yalnızca alanın metin
+                              // sonundan sağ okla geçilir (issue #4).
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: _passwordController,
+                                      focusNode: _passwordFocusNode,
+                                      obscureText: _obscurePassword,
+                                      enableSuggestions: false,
+                                      autocorrect: false,
+                                      autofillHints: const [
+                                        AutofillHints.password,
+                                      ],
+                                      onFieldSubmitted: (_) => _save(),
+                                      validator: (value) =>
+                                          _required(value, l10n.passwordLabel),
+                                      decoration: InputDecoration(
+                                        labelText: l10n.passwordLabel,
+                                        prefixIcon: const Icon(
+                                          Icons.lock_outline_rounded,
+                                          size: 19,
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
-                                    IconButton(
-                                      focusNode: _indexerApiKeyEyeFocusNode,
-                                      tooltip: _obscureApiKey
-                                          ? l10n.passwordShowTooltip
-                                          : l10n.passwordHideTooltip,
-                                      icon: Icon(
-                                        _obscureApiKey
-                                            ? Icons.visibility_rounded
-                                            : Icons.visibility_off_rounded,
-                                        size: 18,
-                                      ),
-                                      onPressed: () => setState(
-                                        () =>
-                                            _obscureApiKey = !_obscureApiKey,
-                                      ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  IconButton(
+                                    focusNode: _passwordEyeFocusNode,
+                                    tooltip: _obscurePassword
+                                        ? l10n.passwordShowTooltip
+                                        : l10n.passwordHideTooltip,
+                                    icon: Icon(
+                                      _obscurePassword
+                                          ? Icons.visibility_rounded
+                                          : Icons.visibility_off_rounded,
+                                      size: 18,
                                     ),
-                                  ],
+                                    onPressed: () => setState(
+                                      () =>
+                                          _obscurePassword = !_obscurePassword,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          const _ConnectionHint(),
+                          const SizedBox(height: 12),
+                          Align(
+                            alignment: AlignmentDirectional.centerEnd,
+                            child: OutlinedButton.icon(
+                              onPressed: _testingProvider
+                                  ? null
+                                  : _testProvider,
+                              icon: _testingProvider
+                                  ? const SizedBox.square(
+                                      dimension: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.cable_rounded),
+                              label: Text(l10n.providerTestButton),
+                            ),
+                          ),
+                          if (_providerTestMessage != null)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: Semantics(
+                                liveRegion: true,
+                                child: Text(
+                                  _providerTestMessage!,
+                                  style: TextStyle(
+                                    color: _providerTestPassed
+                                        ? Theme.of(
+                                            context,
+                                          ).colorScheme.onSurface
+                                        : Theme.of(context).colorScheme.error,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          const SizedBox(height: 12),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: FilledButton.icon(
+                              onPressed: _saving ? null : _save,
+                              icon: _saving
+                                  ? const SizedBox.square(
+                                      dimension: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 1.8,
+                                      ),
+                                    )
+                                  : const Icon(Icons.check_rounded, size: 18),
+                              label: Text(
+                                _saving
+                                    ? l10n.savingLabel
+                                    : l10n.saveSecurelyLabel,
+                              ),
+                            ),
+                          ),
+                        ],
+                        if (widget.initialSection !=
+                            SettingsSection.provider) ...[
+                          const SizedBox(height: 30),
+                          Text(
+                            l10n.indexerSectionTitle,
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.35,
+                                ),
+                          ),
+                          const SizedBox(height: 7),
+                          Text(
+                            l10n.indexerSectionSubtitle,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.72),
+                                  height: 1.4,
+                                ),
+                          ),
+                          const SizedBox(height: 24),
+                          // Indexer ayarları NNTP formundan bağımsız kaydedilir;
+                          // iç içe Form'lar alanları ayrı ayrı doğrular.
+                          if (_indexerLoading)
+                            const Center(child: CircularProgressIndicator())
+                          else if (_indexerLoadFailed)
+                            Column(
+                              children: [
+                                Text(l10n.settingsLoadHint),
+                                TextButton(
+                                  onPressed: _loadIndexer,
+                                  child: Text(l10n.retry),
                                 ),
                               ],
-                            ),
-                            const SizedBox(height: 22),
-                            // Düğmeler dikey dizilir: yan yana olsalardı aşağı
-                            // ok yalnızca birine inebilirdi; kumandayla ikisi
-                            // de dikey zincirde olmalı (issue #4).
-                            Align(
-                              alignment: Alignment.centerRight,
+                            )
+                          else
+                            Form(
+                              key: _indexerFormKey,
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
-                                  OutlinedButton.icon(
-                                    onPressed:
-                                        _testingIndexer ? null : _testIndexer,
-                                    icon: _testingIndexer
-                                        ? const SizedBox.square(
-                                            dimension: 16,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 1.8,
-                                            ),
-                                          )
-                                        : const Icon(
-                                            Icons.cable_rounded,
-                                            size: 18,
+                                  _SettingsCard(
+                                    children: [
+                                      TextFormField(
+                                        controller: _indexerUrlController,
+                                        autofocus:
+                                            widget.initialSection ==
+                                            SettingsSection.indexer,
+                                        focusNode: _indexerUrlFocusNode,
+                                        decoration: InputDecoration(
+                                          labelText: l10n.indexerUrlLabel,
+                                          hintText: 'https://indexer.example',
+                                          prefixIcon: const Icon(
+                                            Icons.travel_explore_rounded,
+                                            size: 19,
                                           ),
-                                    label: Text(l10n.indexerTestButton),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  FilledButton.icon(
-                                    onPressed:
-                                        _savingIndexer ? null : _saveIndexer,
-                                    icon: _savingIndexer
-                                        ? const SizedBox.square(
-                                            dimension: 16,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 1.8,
+                                        ),
+                                        textInputAction: TextInputAction.next,
+                                        keyboardType: TextInputType.url,
+                                        autocorrect: false,
+                                        validator: _validateIndexerUrl,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      // Parola alanıyla aynı düzen: göz düğmesi
+                                      // yanda ve skipTraversal'lı; sağ okla alandan
+                                      // geçilir (issue #4).
+                                      Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.center,
+                                        children: [
+                                          Expanded(
+                                            child: TextFormField(
+                                              controller:
+                                                  _indexerApiKeyController,
+                                              focusNode:
+                                                  _indexerApiKeyFocusNode,
+                                              obscureText: _obscureApiKey,
+                                              enableSuggestions: false,
+                                              autocorrect: false,
+                                              onFieldSubmitted: (_) =>
+                                                  _saveIndexer(),
+                                              validator: _validateIndexerApiKey,
+                                              decoration: InputDecoration(
+                                                labelText:
+                                                    l10n.indexerApiKeyLabel,
+                                                prefixIcon: const Icon(
+                                                  Icons.key_rounded,
+                                                  size: 19,
+                                                ),
+                                              ),
                                             ),
-                                          )
-                                        : const Icon(Icons.check_rounded, size: 18),
-                                    label: Text(
-                                      _savingIndexer
-                                          ? l10n.savingLabel
-                                          : l10n.indexerSaveLabel,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          IconButton(
+                                            focusNode:
+                                                _indexerApiKeyEyeFocusNode,
+                                            tooltip: _obscureApiKey
+                                                ? l10n.passwordShowTooltip
+                                                : l10n.passwordHideTooltip,
+                                            icon: Icon(
+                                              _obscureApiKey
+                                                  ? Icons.visibility_rounded
+                                                  : Icons
+                                                        .visibility_off_rounded,
+                                              size: 18,
+                                            ),
+                                            onPressed: () => setState(
+                                              () => _obscureApiKey =
+                                                  !_obscureApiKey,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 22),
+                                  // Düğmeler dikey dizilir: yan yana olsalardı aşağı
+                                  // ok yalnızca birine inebilirdi; kumandayla ikisi
+                                  // de dikey zincirde olmalı (issue #4).
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.end,
+                                      children: [
+                                        OutlinedButton.icon(
+                                          onPressed: _testingIndexer
+                                              ? null
+                                              : _testIndexer,
+                                          icon: _testingIndexer
+                                              ? const SizedBox.square(
+                                                  dimension: 16,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 1.8,
+                                                      ),
+                                                )
+                                              : const Icon(
+                                                  Icons.cable_rounded,
+                                                  size: 18,
+                                                ),
+                                          label: Text(l10n.indexerTestButton),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        FilledButton.icon(
+                                          onPressed: _savingIndexer
+                                              ? null
+                                              : _saveIndexer,
+                                          icon: _savingIndexer
+                                              ? const SizedBox.square(
+                                                  dimension: 16,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 1.8,
+                                                      ),
+                                                )
+                                              : const Icon(
+                                                  Icons.check_rounded,
+                                                  size: 18,
+                                                ),
+                                          label: Text(
+                                            _savingIndexer
+                                                ? l10n.savingLabel
+                                                : l10n.indexerSaveLabel,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                    ],
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
+      ),
     );
   }
 }
@@ -870,12 +1258,10 @@ class _SettingsLoadError extends StatelessWidget {
               ),
               const SizedBox(height: 7),
               Text(
-                '$error',
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
+                l10n.settingsLoadHint,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: foreground.withValues(alpha: 0.38),
+                  color: foreground.withValues(alpha: 0.72),
                   fontSize: 12,
                 ),
               ),

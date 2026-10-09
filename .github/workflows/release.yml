@@ -18,20 +18,46 @@ permissions:
   contents: write
 
 jobs:
+  revision:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.revision.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.sha }}
+      - id: revision
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   android:
+    needs: revision
     uses: ./.github/workflows/android-build.yml
+    with:
+      ref: ${{ needs.revision.outputs.sha }}
+    secrets: inherit
   windows:
+    needs: revision
     uses: ./.github/workflows/windows-build.yml
+    with:
+      ref: ${{ needs.revision.outputs.sha }}
   linux:
+    needs: revision
     uses: ./.github/workflows/linux-build.yml
+    with:
+      ref: ${{ needs.revision.outputs.sha }}
   ios:
+    needs: revision
     uses: ./.github/workflows/ios-build.yml
+    with:
+      ref: ${{ needs.revision.outputs.sha }}
 
   publish:
-    needs: [android, windows, linux, ios]
+    needs: [revision, android, windows, linux, ios]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.revision.outputs.sha }}
 
       - uses: actions/download-artifact@v4
         with:

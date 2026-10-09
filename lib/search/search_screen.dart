@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../l10n/app_localizations.dart';
+import '../ui/error_feedback.dart';
 import '../player/player_screen.dart';
 import '../settings/indexer_settings.dart';
 import '../settings/settings_screen.dart';
@@ -84,6 +85,13 @@ class _SearchScreenState extends State<SearchScreen> {
   List<SearchItemDto>? _items;
   int? _total;
   bool _searching = false;
+  bool _loadingMore = false;
+  bool _hasMore = false;
+  int _nextOffset = 0;
+  int _generation = 0;
+  String _activeQuery = '';
+  IndexerConfigDto? _activeConfig;
+  String? _pageError;
   Object? _error;
 
   /// Şu an NZB'si indirilen öğenin listedeki sırası; spinner burada gösterilir.
@@ -92,13 +100,16 @@ class _SearchScreenState extends State<SearchScreen> {
   /// Sonuçlar gelince odak ilk karta taşınır; TV kumandası kullanıcısı
   /// IME'den çıkınca doğrudan listeyi dolaşmaya başlar (issue #4).
   final _firstResultFocusNode = FocusNode();
+  final _nextPageFocusNode = FocusNode();
+  int? _focusAfterLoadIndex;
 
   static Future<SearchPageDto> _defaultSearch(
     IndexerConfigDto config,
     String query,
     int limit,
     int offset,
-  ) => newznabSearch(config: config, query: query, limit: limit, offset: offset);
+  ) =>
+      newznabSearch(config: config, query: query, limit: limit, offset: offset);
 
   static Future<String> _defaultDownload(
     IndexerConfigDto config,
@@ -130,6 +141,7 @@ class _SearchScreenState extends State<SearchScreen> {
     _queryController.dispose();
     _queryFocusNode.dispose();
     _firstResultFocusNode.dispose();
+    _nextPageFocusNode.dispose();
     super.dispose();
   }
 
@@ -138,6 +150,16 @@ class _SearchScreenState extends State<SearchScreen> {
       final settings = await _store.load();
       if (!mounted) return;
       setState(() {
+        if (_settings.baseUrl != settings.baseUrl ||
+            _settings.apiKey != settings.apiKey) {
+          ++_generation;
+          _items = null;
+          _total = null;
+          _hasMore = false;
+          _loadingMore = false;
+          _searching = false;
+          _error = null;
+        }
         _settings = settings;
         _loadingSettings = false;
       });
@@ -149,23 +171,40 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  IndexerConfigDto get _config => IndexerConfigDto(
-    baseUrl: _settings.baseUrl,
-    apiKey: _settings.apiKey,
-  );
+  IndexerConfigDto get _config =>
+      IndexerConfigDto(baseUrl: _settings.baseUrl, apiKey: _settings.apiKey);
 
   Future<void> _search() async {
     final query = _queryController.text.trim();
-    if (query.isEmpty || _searching) return;
+    if (query.isEmpty ||
+        _searching ||
+        _busyIndex != null ||
+        _loadingSettings ||
+        !_settings.isComplete) {
+      return;
+    }
+    final generation = ++_generation;
+    final config = _config;
     setState(() {
       _searching = true;
+      _loadingMore = false;
       _error = null;
+      _pageError = null;
+      _activeQuery = query;
+      _activeConfig = config;
+      _focusAfterLoadIndex = null;
     });
     try {
-      final page = await _searchFn(_config, query, _pageSize, 0);
-      if (!mounted) return;
+      final page = await _searchFn(config, query, _pageSize, 0);
+      if (!mounted || generation != _generation) return;
       setState(() {
-        _items = page.items;
+        _items = _uniqueItems(page.items);
+        _nextOffset = page.items.length;
+        _hasMore =
+            page.items.isNotEmpty &&
+            (page.total != null
+                ? _nextOffset < page.total!.toInt()
+                : page.items.length >= _pageSize);
         _total = page.total?.toInt();
         _searching = false;
       });
@@ -177,11 +216,69 @@ class _SearchScreenState extends State<SearchScreen> {
         });
       }
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() {
         _error = error;
         _searching = false;
       });
+    }
+  }
+
+  List<SearchItemDto> _uniqueItems(Iterable<SearchItemDto> items) {
+    final seen = <String>{};
+    return [
+      for (final item in items)
+        if (seen.add(item.nzbUrl)) item,
+    ];
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || _searching || !_hasMore || _busyIndex != null) return;
+    final generation = _generation;
+    final offset = _nextOffset;
+    setState(() {
+      _loadingMore = true;
+      _pageError = null;
+    });
+    try {
+      final page = await _searchFn(
+        _activeConfig!,
+        _activeQuery,
+        _pageSize,
+        offset,
+      );
+      if (!mounted || generation != _generation) return;
+      final previousCount = _items?.length ?? 0;
+      setState(() {
+        _items = _uniqueItems([...?_items, ...page.items]);
+        _focusAfterLoadIndex = _items!.length > previousCount
+            ? previousCount
+            : null;
+        _nextOffset += page.items.length;
+        _total = page.total?.toInt() ?? _total;
+        _hasMore =
+            page.items.isNotEmpty &&
+            (_total != null
+                ? _nextOffset < _total!
+                : page.items.length >= _pageSize);
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted &&
+            generation == _generation &&
+            _nextPageFocusNode.context != null) {
+          _nextPageFocusNode.requestFocus();
+        }
+      });
+    } catch (_) {
+      if (mounted && generation == _generation) {
+        setState(
+          () => _pageError = AppLocalizations.of(context).searchPageFailed,
+        );
+      }
+    } finally {
+      if (mounted && generation == _generation) {
+        setState(() => _loadingMore = false);
+      }
     }
   }
 
@@ -204,9 +301,7 @@ class _SearchScreenState extends State<SearchScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            AppLocalizations.of(context).searchDownloadFailed('$error'),
-          ),
+          content: Text(AppLocalizations.of(context).searchDownloadHint),
         ),
       );
     } finally {
@@ -217,11 +312,20 @@ class _SearchScreenState extends State<SearchScreen> {
   Future<void> _openSettings() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => SettingsScreen(uiPreferences: widget.uiPreferences),
+        builder: (_) => SettingsScreen(
+          uiPreferences: widget.uiPreferences,
+          indexerStore: _store,
+          initialSection: SettingsSection.indexer,
+        ),
       ),
     );
     // Ayarlardan dönüldüğünde indexer yeni girilmiş olabilir.
     await _loadSettings();
+    if (mounted &&
+        _settings.isComplete &&
+        _queryController.text.trim().isNotEmpty) {
+      await _search();
+    }
   }
 
   @override
@@ -264,7 +368,12 @@ class _SearchScreenState extends State<SearchScreen> {
                               icon: const Icon(Icons.close_rounded, size: 18),
                               onPressed: () {
                                 _queryController.clear();
+                                ++_generation;
                                 setState(() {
+                                  _searching = false;
+                                  _loadingMore = false;
+                                  _pageError = null;
+                                  _hasMore = false;
                                   _items = null;
                                   _total = null;
                                   _error = null;
@@ -277,7 +386,13 @@ class _SearchScreenState extends State<SearchScreen> {
                 const SizedBox(width: 10),
                 IconButton.filled(
                   tooltip: l10n.searchTooltip,
-                  onPressed: _searching ? null : _search,
+                  onPressed:
+                      _searching ||
+                          _busyIndex != null ||
+                          _loadingSettings ||
+                          !_settings.isComplete
+                      ? null
+                      : _search,
                   icon: const Icon(Icons.search_rounded, size: 20),
                 ),
               ],
@@ -289,11 +404,13 @@ class _SearchScreenState extends State<SearchScreen> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
                 child: Text(
-                  l10n.searchResultsTotal(_total!),
+                  (_items!.length < _total!
+                      ? l10n.showingResults(_items!.length, _total!)
+                      : l10n.searchResultsTotal(_total!)),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(
                       context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.45),
+                    ).colorScheme.onSurface.withValues(alpha: 0.72),
                   ),
                 ),
               ),
@@ -325,7 +442,12 @@ class _SearchScreenState extends State<SearchScreen> {
       );
     }
     if (_error case final error?) {
-      return _SearchError(error: error, onRetry: _search);
+      return _SearchError(
+        error: error,
+        details: safeErrorDetails(error, secrets: [_settings.apiKey]),
+        onRetry: _search,
+        onSettings: _openSettings,
+      );
     }
     final items = _items;
     if (items == null) {
@@ -342,15 +464,37 @@ class _SearchScreenState extends State<SearchScreen> {
     }
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
-      itemCount: items.length,
+      itemCount: items.length + (_hasMore ? 1 : 0),
       separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (context, index) => _SearchResultCard(
-        item: items[index],
-        busy: _busyIndex == index,
-        enabled: _busyIndex == null,
-        focusNode: index == 0 ? _firstResultFocusNode : null,
-        onTap: () => _downloadAndPlay(index),
-      ),
+      itemBuilder: (context, index) => index == items.length
+          ? Column(
+              children: [
+                if (_pageError != null)
+                  Text(
+                    _pageError!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                OutlinedButton(
+                  onPressed: _loadingMore || _busyIndex != null
+                      ? null
+                      : _loadMore,
+                  child: Text(_loadingMore ? l10n.loadingMore : l10n.loadMore),
+                ),
+              ],
+            )
+          : _SearchResultCard(
+              item: items[index],
+              busy: _busyIndex == index,
+              enabled: _busyIndex == null,
+              focusNode: index == 0
+                  ? _firstResultFocusNode
+                  : index == _focusAfterLoadIndex
+                  ? _nextPageFocusNode
+                  : null,
+              onTap: () => _downloadAndPlay(index),
+            ),
     );
   }
 }
@@ -414,10 +558,13 @@ class _SearchResultCardState extends State<_SearchResultCard> {
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
+    final compact = MediaQuery.sizeOf(context).width < 600;
     final foreground = Theme.of(context).colorScheme.onSurface;
     final accent = Theme.of(context).colorScheme.primary;
     final isTurkish = Localizations.localeOf(context).languageCode == 'tr';
-    final sizeText = item.sizeBytes == null ? null : _formatSize(item.sizeBytes!);
+    final sizeText = item.sizeBytes == null
+        ? null
+        : _formatSize(item.sizeBytes!);
     final ageText = item.publishedEpochSecs == null
         ? null
         : _formatAge(item.publishedEpochSecs!.toInt(), isTurkish);
@@ -440,28 +587,29 @@ class _SearchResultCardState extends State<_SearchResultCard> {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
             children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: foreground.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: widget.busy
-                    ? Padding(
-                        padding: const EdgeInsets.all(11),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 1.8,
+              if (!compact)
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: foreground.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: widget.busy
+                      ? Padding(
+                          padding: const EdgeInsets.all(11),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.8,
+                            color: foreground.withValues(alpha: 0.7),
+                          ),
+                        )
+                      : Icon(
+                          _mediaIcon(item.mediaKind),
+                          size: 19,
                           color: foreground.withValues(alpha: 0.7),
                         ),
-                      )
-                    : Icon(
-                        _mediaIcon(item.mediaKind),
-                        size: 19,
-                        color: foreground.withValues(alpha: 0.7),
-                      ),
-              ),
-              const SizedBox(width: 12),
+                ),
+              if (!compact) const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -472,11 +620,28 @@ class _SearchResultCardState extends State<_SearchResultCard> {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: foreground,
-                        fontSize: 13,
+                        fontSize: 15,
                         fontWeight: FontWeight.w600,
                         height: 1.25,
                       ),
                     ),
+                    if (compact)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          [
+                            ?sizeText,
+                            ?ageText,
+                            if (item.year != null) '${item.year}',
+                          ].join(' · '),
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
                     if (item.badges.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Wrap(
@@ -497,7 +662,7 @@ class _SearchResultCardState extends State<_SearchResultCard> {
                                 badge,
                                 style: TextStyle(
                                   color: foreground.withValues(alpha: 0.75),
-                                  fontSize: 10,
+                                  fontSize: 13,
                                   fontWeight: FontWeight.w600,
                                   letterSpacing: 0.2,
                                 ),
@@ -509,43 +674,65 @@ class _SearchResultCardState extends State<_SearchResultCard> {
                   ],
                 ),
               ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  if (sizeText != null)
-                    Text(
-                      sizeText,
-                      style: TextStyle(
-                        color: foreground.withValues(alpha: 0.6),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
+              IconButton(
+                tooltip: AppLocalizations.of(context).releaseDetails,
+                icon: const Icon(Icons.info_outline_rounded),
+                onPressed: () => showDialog<void>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: Text(AppLocalizations.of(context).releaseDetails),
+                    content: SingleChildScrollView(
+                      child: SelectableText(item.title),
                     ),
-                  if (ageText != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        ageText,
-                        style: TextStyle(
-                          color: foreground.withValues(alpha: 0.38),
-                          fontSize: 11,
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: Text(
+                          MaterialLocalizations.of(context).closeButtonLabel,
                         ),
                       ),
-                    ),
-                  if (item.year != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        '${item.year}',
-                        style: TextStyle(
-                          color: foreground.withValues(alpha: 0.38),
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
-                ],
+                    ],
+                  ),
+                ),
               ),
+              const SizedBox(width: 10),
+              if (!compact)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (sizeText != null)
+                      Text(
+                        sizeText,
+                        style: TextStyle(
+                          color: foreground.withValues(alpha: 0.6),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    if (ageText != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          ageText,
+                          style: TextStyle(
+                            color: foreground.withValues(alpha: 0.72),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    if (item.year != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          '${item.year}',
+                          style: TextStyle(
+                            color: foreground.withValues(alpha: 0.72),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
             ],
           ),
         ),
@@ -603,10 +790,17 @@ class _IndexerMissing extends StatelessWidget {
 
 /// Arama hatası; oynatıcıdaki _ErrorView tarzının sade hâli.
 class _SearchError extends StatelessWidget {
-  const _SearchError({required this.error, required this.onRetry});
+  const _SearchError({
+    required this.error,
+    required this.details,
+    required this.onRetry,
+    required this.onSettings,
+  });
 
   final Object error;
+  final String details;
   final VoidCallback onRetry;
+  final VoidCallback onSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -615,35 +809,52 @@ class _SearchError extends StatelessWidget {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.error_outline,
-                size: 40,
-                color: Theme.of(context).colorScheme.error,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                '$error',
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: foreground.withValues(alpha: 0.7),
-                  fontSize: 13,
-                  height: 1.4,
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.error_outline,
+                  size: 40,
+                  color: Theme.of(context).colorScheme.error,
                 ),
-              ),
-              const SizedBox(height: 18),
-              FilledButton.tonalIcon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh_rounded, size: 18),
-                label: Text(l10n.retry),
-              ),
-            ],
+                const SizedBox(height: 12),
+                Text(
+                  friendlyError(
+                    context,
+                    error,
+                    fallback: l10n.searchFailedHint,
+                  ),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: foreground.withValues(alpha: 0.7),
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                ExpansionTile(
+                  title: Text(l10n.technicalDetailsLabel),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: SelectableText(details),
+                    ),
+                  ],
+                ),
+                TextButton(
+                  onPressed: onSettings,
+                  child: Text(l10n.goToIndexerSettings),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: Text(l10n.retry),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -673,7 +884,7 @@ class _HintView extends StatelessWidget {
               message,
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: foreground.withValues(alpha: 0.38),
+                color: foreground.withValues(alpha: 0.72),
                 fontSize: 12.5,
                 height: 1.4,
               ),

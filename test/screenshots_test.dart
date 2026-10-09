@@ -638,6 +638,8 @@ class _TuningDialogOpenerState extends State<_TuningDialogOpener> {
 
 void main() {
   setUpAll(() async {
+    // Screenshot cases are opt-in; their macOS fonts are not needed otherwise.
+    if (_skipScreenshots) return;
     TestWidgetsFlutterBinding.ensureInitialized();
     // Golden testlerde varsayılan test fontu kutu (tofu) çizer; sistemdeki
     // gerçek Arial TTF'lerini tek aile altında yükle.

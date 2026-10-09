@@ -14,12 +14,12 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
 use std::io;
 use std::ops::Range;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio::sync::{watch, Notify};
+use tokio::task::JoinSet;
 
 use super::archive::wait_for_cancellation;
 use super::locator::{LocatorError, SegmentLocator};
@@ -102,29 +102,60 @@ struct FetchContext {
     /// eşzamanlı iki kez indirilmesini engeller.
     inflight: Mutex<HashSet<usize>>,
     inflight_notify: Notify,
-    /// Seek/kaçak sonrası yeni dalga kurulurken artar; eski dalganın görevleri
-    /// jenerasyon uyuşmazlığından kendini durdurur.
-    prefetch_gen: AtomicU64,
     prefetch_depth: usize,
     cancellation: Option<watch::Receiver<bool>>,
+}
+
+/// Request-owned tasks. Completed fetches never advance the window: only
+/// consumption does. Dropping a read future also aborts its pending prefetches.
+struct PrefetchWindow {
+    tasks: JoinSet<()>,
+    next: Option<usize>,
+    depth: usize,
+}
+
+impl PrefetchWindow {
+    fn new(depth: usize) -> Self {
+        Self {
+            tasks: JoinSet::new(),
+            next: None,
+            depth,
+        }
+    }
+
+    fn advance<F, Fut>(&mut self, index: usize, count: usize, mut fetch: F)
+    where
+        F: FnMut(usize) -> Fut,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        while self.tasks.try_join_next().is_some() {}
+        let start = index.saturating_add(1);
+        let end = start.saturating_add(self.depth).min(count);
+        for next in self.next.unwrap_or(start).max(start)..end {
+            self.tasks.spawn(fetch(next));
+        }
+        self.next = Some(end);
+    }
+}
+
+/// Release the claim on success, error, or cancellation of a fetch future.
+struct InflightFetch {
+    ctx: Arc<FetchContext>,
+    index: usize,
+}
+
+impl Drop for InflightFetch {
+    fn drop(&mut self) {
+        self.ctx.inflight.lock().expect("kilit").remove(&self.index);
+        self.ctx.inflight_notify.notify_waiters();
+    }
 }
 
 impl FetchContext {
     /// Segmenti önbellekten döndürür; yoksa çeker. Aynı segmenti başka görev
     /// çekiyorsa onun bitmesini bekler ve önbelleğe düşen veriyi paylaşır.
-    /// Ağdan çeken taraf bizsek, çekilen konumdan önden çekim dalgası kurulur.
+    /// Prefetch is scheduled separately by the consuming request.
     async fn fetch_and_cache(self: &Arc<Self>, index: usize) -> io::Result<Arc<Vec<u8>>> {
-        self.fetch_and_cache_with_kick(index, true).await
-    }
-
-    /// `kick`: ağdan çekme durumunda önden çekim dalgası kurulsun mu.
-    /// Bootstrap (yalnız yerleşim öğrenimi) çekimlerinde dalga kurmak,
-    /// okunmayacak segmentleri boşuna indirir.
-    async fn fetch_and_cache_with_kick(
-        self: &Arc<Self>,
-        index: usize,
-        kick: bool,
-    ) -> io::Result<Arc<Vec<u8>>> {
         loop {
             if let Some(data) = self.cache.lock().expect("kilit").get(index) {
                 return Ok(data);
@@ -139,17 +170,11 @@ impl FetchContext {
             let _ = tokio::time::timeout(INFLIGHT_WAIT_POLL, self.inflight_notify.notified()).await;
         }
 
-        // Kaçak (miss): önceki dalgayı geçersiz kıl; okunan konum değişti.
-        let gen = self.prefetch_gen.fetch_add(1, Ordering::SeqCst) + 1;
-        let result = self.fetch(index).await;
-        self.inflight.lock().expect("kilit").remove(&index);
-        self.inflight_notify.notify_waiters();
-
-        let data = result?;
-        if kick && self.prefetch_depth > 0 {
-            self.spawn_prefetch(index + 1, gen, self.prefetch_depth);
-        }
-        Ok(data)
+        let _claim = InflightFetch {
+            ctx: Arc::clone(self),
+            index,
+        };
+        self.fetch(index).await
     }
 
     /// Segmenti havuzdan çeker, yEnc çözer, konumunu eşleyiciye kaydeder ve
@@ -217,52 +242,6 @@ impl FetchContext {
             .insert(index, Arc::clone(&data));
         Ok(data)
     }
-
-    /// `start..start+depth` aralığındaki segmentleri arka plan görevleriyle
-    /// çekmeye başlar. Her tamamlanan görev, pencere kayacak biçimde
-    /// `index+depth`'i zincirler; jenerasyon değiştiyse (seek/yeni dalga)
-    /// zincir kırılır.
-    fn spawn_prefetch(self: &Arc<Self>, start: usize, gen: u64, depth: usize) {
-        for index in start..start.saturating_add(depth) {
-            Self::spawn_prefetch_one(&Arc::clone(self), index, gen, depth);
-        }
-    }
-
-    fn spawn_prefetch_one(self: &Arc<Self>, index: usize, gen: u64, depth: usize) {
-        if self.prefetch_gen.load(Ordering::SeqCst) != gen {
-            return;
-        }
-        {
-            let count = self.locator.lock().expect("kilit").segment_count();
-            if index >= count {
-                return;
-            }
-            if self.cache.lock().expect("kilit").get(index).is_some() {
-                return;
-            }
-            if !self.inflight.lock().expect("kilit").insert(index) {
-                return; // zaten çekiliyor
-            }
-        }
-        let ctx = Arc::clone(self);
-        tokio::spawn(async move {
-            let stale = ctx.prefetch_gen.load(Ordering::SeqCst) != gen;
-            let result = if stale {
-                Err(io::Error::new(
-                    io::ErrorKind::Interrupted,
-                    "invalid prefetch wave",
-                ))
-            } else {
-                ctx.fetch(index).await
-            };
-            ctx.inflight.lock().expect("kilit").remove(&index);
-            ctx.inflight_notify.notify_waiters();
-            if result.is_ok() && ctx.prefetch_gen.load(Ordering::SeqCst) == gen {
-                let next = index.saturating_add(depth);
-                Self::spawn_prefetch_one(&ctx, next, gen, depth);
-            }
-        });
-    }
 }
 
 pub struct NntpByteSource {
@@ -319,8 +298,7 @@ impl NntpByteSource {
                 cache: Mutex::new(SegmentCache::new(cache_segments)),
                 inflight: Mutex::new(HashSet::new()),
                 inflight_notify: Notify::new(),
-                prefetch_gen: AtomicU64::new(0),
-                prefetch_depth,
+                prefetch_depth: prefetch_depth.min(cache_segments.saturating_sub(1)),
                 cancellation,
             }),
             content_type,
@@ -332,7 +310,7 @@ impl NntpByteSource {
         // segmentler boşuna inmez).
         {
             let ctx = Arc::clone(&source.ctx);
-            ctx.fetch_and_cache_with_kick(0, false).await?;
+            ctx.fetch_and_cache(0).await?;
         }
         if source.file_size().is_none() {
             return Err(io::Error::other("could not learn file size from the first segment"));
@@ -467,6 +445,7 @@ impl NntpByteSource {
 
     /// Katman dışı aralığı segmentlerden okur (katman öncesi tek yoldu).
     async fn read_range_original(&self, range: Range<u64>) -> io::Result<Vec<u8>> {
+        let mut prefetch = PrefetchWindow::new(self.ctx.prefetch_depth);
         let mut output = Vec::with_capacity((range.end - range.start) as usize);
         let mut cursor = range.start;
         while cursor < range.end {
@@ -475,6 +454,9 @@ impl NntpByteSource {
             let data = self.segment_data(index).await?;
             let from = (cursor - span.start) as usize;
             let to = (seg_end - span.start) as usize;
+            if span.end < range.end {
+                self.advance_prefetch(&mut prefetch, index);
+            }
             output.extend_from_slice(&data[from..to]);
             cursor = seg_end;
         }
@@ -520,6 +502,15 @@ enum RangePiece {
 }
 
 impl NntpByteSource {
+    fn advance_prefetch(&self, window: &mut PrefetchWindow, index: usize) {
+        window.advance(index, self.segment_count(), |next| {
+            let ctx = Arc::clone(&self.ctx);
+            async move {
+                let _ = ctx.fetch_and_cache(next).await;
+            }
+        });
+    }
+
     /// Katman dışı aralığı segment segment, tembel akışla yazar: her adımda
     /// cursor'ı içeren segmenti bulup yazarız. Player (mpv/media_kit)
     /// yeterince okuyup bağlantıyı kapatınca ilk `write_all` `BrokenPipe`
@@ -528,11 +519,15 @@ impl NntpByteSource {
     where
         W: AsyncWrite + Unpin + Send,
     {
+        let mut prefetch = PrefetchWindow::new(self.ctx.prefetch_depth);
         let mut cursor = range.start;
         while cursor < range.end {
             let (index, span) = self.locate(cursor).await?;
             let seg_end = span.end.min(range.end);
             let data = self.segment_data(index).await?;
+            if span.end < range.end {
+                self.advance_prefetch(&mut prefetch, index);
+            }
             let from = (cursor - span.start) as usize;
             let to = (seg_end - span.start) as usize;
             out.write_all(&data[from..to]).await?;
@@ -545,6 +540,94 @@ impl NntpByteSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn prefetch_stops_at_window_until_consumer_advances() {
+        let fetched = Arc::new(Mutex::new(Vec::new()));
+        let mut window = PrefetchWindow::new(4);
+        let fetch = |index| {
+            let fetched = Arc::clone(&fetched);
+            async move {
+                fetched.lock().unwrap().push(index);
+            }
+        };
+        window.advance(0, 1000, fetch);
+        while window.tasks.join_next().await.is_some() {}
+        let mut actual = fetched.lock().unwrap().clone();
+        actual.sort();
+        assert_eq!(actual, vec![1, 2, 3, 4]);
+
+        window.advance(1, 1000, fetch);
+        while window.tasks.join_next().await.is_some() {}
+        let mut actual = fetched.lock().unwrap().clone();
+        actual.sort();
+        assert_eq!(actual, vec![1, 2, 3, 4, 5]);
+        window.advance(999, 1000, fetch);
+        assert!(window.tasks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn dropping_request_aborts_pending_prefetch() {
+        let (dropped, mut drops) = tokio::sync::mpsc::unbounded_channel();
+        struct OnDrop(tokio::sync::mpsc::UnboundedSender<()>);
+        impl Drop for OnDrop {
+            fn drop(&mut self) {
+                let _ = self.0.send(());
+            }
+        }
+        let mut window = PrefetchWindow::new(4);
+        window.advance(0, 100, |_| {
+            let guard = OnDrop(dropped.clone());
+            async move {
+                let _guard = guard;
+                std::future::pending::<()>().await;
+            }
+        });
+        drop(window);
+        for _ in 0..4 {
+            tokio::time::timeout(Duration::from_secs(1), drops.recv())
+                .await
+                .unwrap()
+                .unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_fetch_releases_inflight_claim() {
+        let ctx = Arc::new(FetchContext {
+            pool: TlsNntpConnector::new(super::super::nntp::ProviderConfig {
+                host: "unused.invalid".into(),
+                port: 563,
+                username: "test".into(),
+                password: "TESTPASS123".into(),
+                max_connections: 1,
+            })
+            .into_pool(),
+            locator: Mutex::new(SegmentLocator::from_nzb_file(
+                &super::super::nzb::parse_nzb(include_str!(
+                    "../../tests/fixtures/obfuscated-numbered-set.nzb"
+                ))
+                .unwrap()
+                .files[0],
+            )),
+            cache: Mutex::new(SegmentCache::new(8)),
+            inflight: Mutex::new(HashSet::from([0])),
+            inflight_notify: Notify::new(),
+            prefetch_depth: 4,
+            cancellation: None,
+        });
+        let guard = InflightFetch {
+            ctx: Arc::clone(&ctx),
+            index: 0,
+        };
+        let task = tokio::spawn(async move {
+            let _guard = guard;
+            std::future::pending::<()>().await;
+        });
+        task.abort();
+        let _ = task.await;
+        assert!(ctx.inflight.lock().unwrap().is_empty());
+    }
 
     #[test]
     fn cache_kapasiteyi_asinca_en_eskiyi_atar() {

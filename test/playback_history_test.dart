@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zanzibarr/player/media_preferences.dart';
 import 'package:zanzibarr/player/playback_history.dart';
@@ -16,6 +18,26 @@ class _MemoryPreferenceStorage implements PlayerPreferenceStorage {
   @override
   Future<void> delete(String key) async {
     values.remove(key);
+  }
+}
+
+class _DelayedPreferenceStorage extends _MemoryPreferenceStorage {
+  Completer<void>? nextWrite;
+  Completer<void>? writeStarted;
+  bool failNextWrite = false;
+
+  @override
+  Future<void> write(String key, String value) async {
+    final gate = nextWrite;
+    nextWrite = null;
+    writeStarted?.complete();
+    writeStarted = null;
+    if (gate != null) await gate.future;
+    if (failNextWrite) {
+      failNextWrite = false;
+      throw StateError('test storage write failed');
+    }
+    await super.write(key, value);
   }
 }
 
@@ -124,21 +146,35 @@ void main() {
     final store = PlaybackHistoryStore(storage: storage);
 
     await store.save(
-      entry('/media/paket.nzb', position: 100, entryKey: 'rar:e01', updatedAt: 1),
+      entry(
+        '/media/paket.nzb',
+        position: 100,
+        entryKey: 'rar:e01',
+        updatedAt: 1,
+      ),
     );
     await store.save(
-      entry('/media/paket.nzb', position: 250, entryKey: 'rar:e02', updatedAt: 2),
+      entry(
+        '/media/paket.nzb',
+        position: 250,
+        entryKey: 'rar:e02',
+        updatedAt: 2,
+      ),
     );
 
     expect(await store.load(), hasLength(2));
     expect(
-      (await store.entryFor('/media/paket.nzb', entryKey: 'rar:e01'))
-          ?.positionSeconds,
+      (await store.entryFor(
+        '/media/paket.nzb',
+        entryKey: 'rar:e01',
+      ))?.positionSeconds,
       100,
     );
     expect(
-      (await store.entryFor('/media/paket.nzb', entryKey: 'rar:e02'))
-          ?.positionSeconds,
+      (await store.entryFor(
+        '/media/paket.nzb',
+        entryKey: 'rar:e02',
+      ))?.positionSeconds,
       250,
     );
     // Anahtarsız arama bölüm kayıtlarını bulmaz.
@@ -153,7 +189,12 @@ void main() {
     // yoksa ana ekranda hedefi bulunamayan hayalet bir kart kalırdı.
     await store.save(entry('/media/paket.nzb', position: 300, updatedAt: 1));
     await store.save(
-      entry('/media/paket.nzb', position: 40, entryKey: 'rar:e01', updatedAt: 2),
+      entry(
+        '/media/paket.nzb',
+        position: 40,
+        entryKey: 'rar:e01',
+        updatedAt: 2,
+      ),
     );
 
     final entries = await store.load();
@@ -166,10 +207,20 @@ void main() {
     final store = PlaybackHistoryStore(storage: storage);
 
     await store.save(
-      entry('/media/paket.nzb', position: 100, entryKey: 'rar:e01', updatedAt: 1),
+      entry(
+        '/media/paket.nzb',
+        position: 100,
+        entryKey: 'rar:e01',
+        updatedAt: 1,
+      ),
     );
     await store.save(
-      entry('/media/paket.nzb', position: 250, entryKey: 'rar:e02', updatedAt: 2),
+      entry(
+        '/media/paket.nzb',
+        position: 250,
+        entryKey: 'rar:e02',
+        updatedAt: 2,
+      ),
     );
     await store.remove('/media/paket.nzb', entryKey: 'rar:e01');
 
@@ -177,4 +228,115 @@ void main() {
     expect(entries, hasLength(1));
     expect(entries.single.entryKey, 'rar:e02');
   });
+
+  test(
+    'overlapping saves from separate stores preserve both episodes',
+    () async {
+      final storage = _MemoryPreferenceStorage();
+      final player = PlaybackHistoryStore(storage: storage);
+      final home = PlaybackHistoryStore(storage: storage);
+      await Future.wait([
+        player.save(entry('/pack.nzb', entryKey: 'rar:e01', updatedAt: 1)),
+        home.save(entry('/pack.nzb', entryKey: 'rar:e02', updatedAt: 2)),
+      ]);
+      expect(await home.load(), hasLength(2));
+    },
+  );
+
+  test(
+    'final player save cannot restore a subsequently removed card',
+    () async {
+      final storage = _DelayedPreferenceStorage();
+      final player = PlaybackHistoryStore(storage: storage);
+      final home = PlaybackHistoryStore(storage: storage);
+      await player.save(entry('/film.nzb'));
+      final gate = Completer<void>();
+      final started = Completer<void>();
+      storage.nextWrite = gate;
+      storage.writeStarted = started;
+      final saving = player.save(
+        entry('/film.nzb', position: 500, updatedAt: 2000),
+      );
+      await started.future;
+      final removing = home.remove('/film.nzb');
+      await Future<void>.delayed(Duration.zero);
+      gate.complete();
+      await Future.wait([saving, removing]);
+      expect(await home.load(), isEmpty);
+    },
+  );
+
+  test('failed writes do not poison subsequent history operations', () async {
+    final storage = _DelayedPreferenceStorage()..failNextWrite = true;
+    final store = PlaybackHistoryStore(storage: storage);
+    await expectLater(store.save(entry('/failed.nzb')), throwsStateError);
+    await store.save(entry('/ok.nzb'));
+    expect((await store.load()).single.nzbPath, '/ok.nzb');
+  });
+
+  test('older snapshots cannot overwrite newer progress', () async {
+    final store = PlaybackHistoryStore(storage: _MemoryPreferenceStorage());
+    await store.save(entry('/film.nzb', position: 500, updatedAt: 2000));
+    await store.save(entry('/film.nzb', position: 300, updatedAt: 1000));
+    expect((await store.load()).single.positionSeconds, 500);
+  });
+
+  test(
+    'legacy resume migrates only to the resolved video with matching title',
+    () async {
+      final store = PlaybackHistoryStore(storage: _MemoryPreferenceStorage());
+      const legacy = PlaybackHistoryEntry(
+        nzbPath: '/pack.nzb',
+        title: 'episode01.mkv',
+        positionSeconds: 1234,
+        durationSeconds: 6000,
+        updatedAtMs: 1000,
+      );
+      await store.save(legacy);
+      expect(
+        await store.entryFor(
+          '/pack.nzb',
+          entryKey: 'rar:e02',
+          mediaTitle: 'episode02.mkv',
+        ),
+        isNull,
+      );
+      final migrated = await store.entryFor(
+        '/pack.nzb',
+        entryKey: 'rar:e01',
+        mediaTitle: 'episode01.mkv',
+      );
+      expect(migrated?.positionSeconds, 1234);
+      expect((await store.load()).single.entryKey, 'rar:e01');
+      expect(await store.entryFor('/pack.nzb'), isNull);
+    },
+  );
+
+  test(
+    'watching another episode preserves the unmatched legacy resume',
+    () async {
+      final store = PlaybackHistoryStore(storage: _MemoryPreferenceStorage());
+      await store.save(
+        const PlaybackHistoryEntry(
+          nzbPath: '/pack.nzb',
+          title: 'episode01.mkv',
+          positionSeconds: 1234,
+          durationSeconds: 6000,
+          updatedAtMs: 1000,
+        ),
+      );
+      await store.save(
+        const PlaybackHistoryEntry(
+          nzbPath: '/pack.nzb',
+          entryKey: 'rar:e02',
+          title: 'episode02.mkv',
+          positionSeconds: 120,
+          durationSeconds: 6000,
+          updatedAtMs: 2000,
+        ),
+      );
+      expect(await store.load(), hasLength(2));
+      expect((await store.entryFor('/pack.nzb'))?.positionSeconds, 1234);
+    },
+  );
 }

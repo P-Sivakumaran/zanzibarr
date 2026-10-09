@@ -4,12 +4,19 @@ name: Linux build
 on:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: false
+        default: ''
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
 
       # Yerel geliştirme sürümüyle aynı Flutter (pubspec.lock üretimiyle uyum).
       - uses: subosito/flutter-action@v2

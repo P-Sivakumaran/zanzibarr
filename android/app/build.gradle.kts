@@ -4,6 +4,15 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Passwords stay in the environment, never in Gradle properties or arguments.
+val releaseSigning = listOf(
+    "ANDROID_KEYSTORE_PATH",
+    "ANDROID_KEYSTORE_PASSWORD",
+    "ANDROID_KEY_ALIAS",
+    "ANDROID_KEY_PASSWORD",
+).associateWith { System.getenv(it) }
+val hasReleaseSigning = releaseSigning.values.all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.zanzibarr.zanzibarr"
     compileSdk = flutter.compileSdkVersion
@@ -25,13 +34,34 @@ android {
         versionName = flutter.versionName
     }
 
-    buildTypes {
-        release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseSigning.getValue("ANDROID_KEYSTORE_PATH")!!)
+                storePassword = releaseSigning.getValue("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = releaseSigning.getValue("ANDROID_KEY_ALIAS")
+                keyPassword = releaseSigning.getValue("ANDROID_KEY_PASSWORD")
+            }
         }
     }
+
+    buildTypes {
+        release {
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
+        }
+    }
+}
+
+val validateReleaseSigning = tasks.register("validateReleaseSigning") {
+    doLast {
+        check(hasReleaseSigning) {
+            "Release builds require ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, " +
+                "ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD. See docs/ANDROID_SIGNING.md."
+        }
+    }
+}
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    dependsOn(validateReleaseSigning)
 }
 
 kotlin {

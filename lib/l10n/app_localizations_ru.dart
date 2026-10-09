@@ -744,4 +744,91 @@ class AppLocalizationsRu extends AppLocalizations {
   String entryParts(int count) {
     return '$count parts';
   }
+
+  @override
+  String get providerSetupTitle => 'Set up Usenet provider';
+
+  @override
+  String get providerSetupHint =>
+      'A Usenet provider is required to play NZBs. An indexer is optional and lets you search for releases. Save your provider details to continue.';
+
+  @override
+  String get providerTestButton => 'Test provider connection';
+
+  @override
+  String get providerTestSuccess =>
+      'Connection and authentication succeeded. Save any changes to keep them.';
+
+  @override
+  String get providerTestFailed =>
+      'Could not connect. Check the server, port, username, password, and your internet connection.';
+
+  @override
+  String get unsavedTitle => 'Unsaved changes';
+
+  @override
+  String get unsavedHint =>
+      'Save your provider and indexer changes before leaving?';
+
+  @override
+  String get saveChanges => 'Save changes';
+
+  @override
+  String get discardChanges => 'Discard changes';
+
+  @override
+  String get keepEditing => 'Keep editing';
+
+  @override
+  String get appearanceSavedHint =>
+      'Language and appearance changes are saved automatically.';
+
+  @override
+  String get loadMore => 'Load more results';
+
+  @override
+  String get loadingMore => 'Loading more results…';
+
+  @override
+  String get searchPageFailed => 'More results could not be loaded. Try again.';
+
+  @override
+  String get searchFailedHint =>
+      'Search failed. Check your internet connection and indexer settings, then try again.';
+
+  @override
+  String get searchDownloadHint =>
+      'The NZB could not be downloaded. Check your connection and indexer settings, then try again.';
+
+  @override
+  String showingResults(int shown, int total) {
+    return 'Showing $shown of $total';
+  }
+
+  @override
+  String get releaseDetails => 'Release details';
+
+  @override
+  String get moreControls => 'More playback controls';
+
+  @override
+  String get historyLoadFailed => 'Continue watching could not be loaded.';
+
+  @override
+  String get historyRemoveFailed =>
+      'This item could not be removed. Try again.';
+
+  @override
+  String get historyRemoved => 'Removed from continue watching';
+
+  @override
+  String get technicalDetailsLabel => 'Technical details';
+
+  @override
+  String get settingsLoadHint =>
+      'Settings could not be loaded. Try again to access your saved details.';
+
+  @override
+  String get settingsWriteHint =>
+      'Changes could not be saved. Keep this screen open and try again.';
 }

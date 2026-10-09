@@ -71,6 +71,38 @@ impl From<ProviderConfigDto> for ProviderConfig {
     }
 }
 
+/// Test a single TLS connection and authentication without opening an NZB,
+/// creating a pool, or retaining credentials. Errors contain stable categories
+/// only: provider response text can echo account details.
+pub fn check_provider(config: ProviderConfigDto) -> Result<(), String> {
+    RUNTIME.block_on(async move {
+        tokio::time::timeout(std::time::Duration::from_secs(15), async move {
+            let mut connection = crate::engine::nntp::connect_tls(&config.host, config.port)
+                .await
+                .map_err(provider_check_error)?;
+            connection
+                .authenticate(&config.username, &config.password)
+                .await
+                .map_err(provider_check_error)?;
+            connection.mode_reader().await.map_err(provider_check_error)?;
+            // Dropping the socket closes it immediately, including on timeout.
+            Ok(())
+        })
+        .await
+        .map_err(|_| "provider connection timed out".to_string())?
+    })
+}
+
+fn provider_check_error(error: crate::engine::nntp::NntpError) -> String {
+    use crate::engine::nntp::NntpError;
+    match error {
+        NntpError::AuthFailed { .. } => "provider authentication failed",
+        NntpError::ConnectionLimit { .. } => "provider connection limit reached",
+        _ => "provider connection failed",
+    }
+    .to_string()
+}
+
 /// Başlatılan stream'in oynatıcıya verilecek bilgileri.
 pub struct StreamInfo {
     /// Yalnız bu localhost server oturumunu durdurmak için kullanılan kimlik.
@@ -1094,6 +1126,28 @@ fn select_stream_by_key(parsed: &nzb::Nzb, key: &str) -> Result<StreamSelection,
     Err(format!("unknown entry selector: {key}"))
 }
 
+/// Resolve the same selection for repair, without exposing engine internals.
+#[flutter_rust_bridge::frb(ignore)]
+pub(crate) fn repair_target_files(
+    parsed: &nzb::Nzb,
+    key: Option<&str>,
+) -> Result<Vec<String>, String> {
+    let selection = match key {
+        Some(key) => select_stream_by_key(parsed, key)?,
+        None => select_stream(parsed)?,
+    };
+    let files = match selection {
+        StreamSelection::Direct(file) => vec![file],
+        StreamSelection::SevenZip { volumes, .. }
+        | StreamSelection::Rar { volumes, .. }
+        | StreamSelection::Probe { volumes, .. } => volumes,
+    };
+    Ok(files
+        .iter()
+        .filter_map(|file| file.filename().map(str::to_owned))
+        .collect())
+}
+
 fn select_stream(parsed: &nzb::Nzb) -> Result<StreamSelection, String> {
     match parsed.select_playable_media() {
         Ok(file) => Ok(StreamSelection::Direct(file.clone())),
@@ -1271,6 +1325,18 @@ fn url_encode_path(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn provider_check_errors_never_echo_server_text() {
+        use crate::engine::nntp::NntpError;
+        assert_eq!(super::provider_check_error(NntpError::AuthFailed {
+            code: 481, text: "echoed TESTPASS123".into(),
+        }), "provider authentication failed");
+        assert_eq!(super::provider_check_error(NntpError::ConnectionLimit {
+            code: 502, text: "echoed TESTPASS123".into(),
+        }), "provider connection limit reached");
+        assert_eq!(super::provider_check_error(NntpError::Malformed("echoed TESTPASS123".into())), "provider connection failed");
+    }
+
     use super::*;
 
     fn file(subject: &str, segments: u32, bytes: u64) -> NzbFile {

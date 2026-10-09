@@ -45,6 +45,8 @@ pub enum RepairError {
     Par2(#[from] Par2Error),
     #[error("no main PAR2 index file in the NZB")]
     NoPar2Index,
+    #[error("no readable PAR2 recovery set covers the selected entry")]
+    NoMatchingPar2Set,
     #[error("repair cancelled")]
     Cancelled,
 }
@@ -255,15 +257,67 @@ pub async fn repair_release<F: RepairFetcher + 'static>(
     progress: &RepairProgressFn,
     cancellation: Option<watch::Receiver<bool>>,
 ) -> Result<RepairReport, RepairError> {
+    repair_selected_release(
+        fetcher,
+        par2_names,
+        &[],
+        overlay_dir,
+        progress,
+        cancellation,
+    )
+    .await
+}
+
+/// Repair only the recovery set whose file descriptors cover the selected
+/// video's source files. Unrelated episodes' recovery volumes are excluded.
+pub async fn repair_selected_release<F: RepairFetcher + 'static>(
+    fetcher: &Arc<F>,
+    par2_names: &[String],
+    target_files: &[String],
+    overlay_dir: &Path,
+    progress: &RepairProgressFn,
+    cancellation: Option<watch::Receiver<bool>>,
+) -> Result<RepairReport, RepairError> {
     ensure_active(&cancellation)?;
     // 1. Ana dizini ve (gerektikçe) vol dosyalarını yükle.
-    emit(progress, RepairPhase::LoadingPar2, 0, 0, "PAR2 dizini okunuyor");
-    let index_name = par2_names
+    emit(
+        progress,
+        RepairPhase::LoadingPar2,
+        0,
+        0,
+        "PAR2 dizini okunuyor",
+    );
+    let indices: Vec<_> = par2_names
         .iter()
-        .find(|name| !name.to_ascii_lowercase().contains(".vol"))
-        .ok_or(RepairError::NoPar2Index)?;
-    let index_bytes = fetcher.read_par2(index_name).await?;
-    let mut set = Par2Set::from_parts(&[index_bytes.as_slice()])?;
+        .filter(|name| !is_recovery_volume(name))
+        .collect();
+    if indices.is_empty() {
+        return Err(RepairError::NoPar2Index);
+    }
+    let mut selected = None;
+    for index_name in indices {
+        ensure_active(&cancellation)?;
+        let candidate = async {
+            let bytes = fetcher.read_par2(index_name).await?;
+            let set = Par2Set::from_parts(&[bytes.as_slice()])?;
+            Ok::<_, RepairError>((bytes, set))
+        }
+        .await;
+        let (bytes, set) = match candidate {
+            Ok(candidate) => candidate,
+            Err(error) if target_files.is_empty() => return Err(error),
+            Err(_) => continue,
+        };
+        if target_files.iter().all(|target| {
+            set.files.iter().any(|file| {
+                repair_filename(&file.name).eq_ignore_ascii_case(repair_filename(target))
+            })
+        }) {
+            selected = Some((index_name, bytes, set));
+            break;
+        }
+    }
+    let (index_name, index_bytes, mut set) = selected.ok_or(RepairError::NoMatchingPar2Set)?;
     let total_bytes: u64 = set.files.iter().map(|f| f.length).sum();
     let done_bytes = AtomicU64::new(0);
 
@@ -310,7 +364,7 @@ pub async fn repair_release<F: RepairFetcher + 'static>(
     // 3. Vol dosyalarını yeterli kurtarma dilimi birikene dek oku.
     let vol_names: Vec<&String> = par2_names
         .iter()
-        .filter(|name| name.to_ascii_lowercase().contains(".vol"))
+        .filter(|name| is_recovery_volume(name) && recovery_base(name) == recovery_base(index_name))
         .collect();
     let mut parts: Vec<Vec<u8>> = vec![index_bytes];
     for vol in vol_names {
@@ -361,7 +415,7 @@ pub async fn repair_release<F: RepairFetcher + 'static>(
 
     // 5. Katmanı yaz.
     emit(progress, RepairPhase::Writing, 0, 0, "writing layer");
-    let mut overlay = RepairOverlay::default();
+    let mut overlay = RepairOverlay::load(overlay_dir)?.unwrap_or_default();
     let map = set.global_slice_map();
     let mut per_file: HashMap<usize, FileOverlay> = HashMap::new();
     for (global, data) in &repaired {
@@ -393,6 +447,40 @@ pub async fn repair_release<F: RepairFetcher + 'static>(
         repaired_slices: repaired.len() as u32,
         overlay_dir: Some(overlay_dir.to_path_buf()),
     })
+}
+
+fn repair_filename(name: &str) -> &str {
+    name.rsplit(['/', '\\']).next().unwrap_or(name)
+}
+
+fn is_recovery_volume(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    let Some(stem) = lower.strip_suffix(".par2") else {
+        return false;
+    };
+    let Some((_, suffix)) = stem.rsplit_once(".vol") else {
+        return false;
+    };
+    let Some((start, count)) = suffix.split_once('+') else {
+        return false;
+    };
+    !start.is_empty()
+        && !count.is_empty()
+        && start.bytes().all(|b| b.is_ascii_digit())
+        && count.bytes().all(|b| b.is_ascii_digit())
+}
+
+fn recovery_base(name: &str) -> String {
+    let lower = name.to_ascii_lowercase();
+    let stem = lower.strip_suffix(".par2").unwrap_or(&lower);
+    if is_recovery_volume(name) {
+        stem.rsplit_once(".vol")
+            .expect("validated recovery filename")
+            .0
+            .to_string()
+    } else {
+        stem.to_string()
+    }
 }
 
 enum RepairPassFailure {
@@ -535,8 +623,9 @@ async fn verify_file<F: RepairFetcher + 'static>(
         let Some(joined) = joined else {
             break;
         };
-        let (index, result, checksum) = joined
-            .map_err(|error| RepairError::Io(io::Error::other(format!("verification panicked: {error}"))))?;
+        let (index, result, checksum) = joined.map_err(|error| {
+            RepairError::Io(io::Error::other(format!("verification panicked: {error}")))
+        })?;
         health[index as usize] = match result {
             Ok(data) => {
                 let padded = pad_to_slice(set, data);
@@ -753,6 +842,72 @@ mod tests {
         assert_eq!(report.damaged_slices, 0);
         assert_eq!(report.overlay_dir, None);
         assert_eq!(report.verified_files, 10);
+    }
+
+    #[tokio::test]
+    async fn selected_episode_uses_matching_index_and_only_its_volumes() {
+        let mut fetcher = MockFetcher::new();
+        // A readable first index describes a different episode. Keep packet
+        // framing and checksums valid while changing its descriptor names.
+        let mut other = fetcher.par2["testdata.par2"].clone();
+        let mut cursor = 0;
+        while cursor < other.len() {
+            let len =
+                u64::from_le_bytes(other[cursor + 8..cursor + 16].try_into().unwrap()) as usize;
+            for offset in cursor + 64..cursor + len - 4 {
+                if &other[offset..offset + 5] == b"test-" {
+                    other[offset..offset + 5].copy_from_slice(b"else-");
+                }
+            }
+            let hash = md5::compute(&other[cursor + 32..cursor + len]);
+            other[cursor + 16..cursor + 32].copy_from_slice(&hash.0);
+            cursor += len;
+        }
+        fetcher.par2.insert("other.par2".into(), other);
+        fetcher.corrupt.insert(("test-0.data".into(), 2));
+        let mut names = vec!["other.par2".into(), "other.vol00+01.par2".into()];
+        names.extend(MockFetcher::par2_names());
+        let dir = overlay_dir("selected-episode");
+        let (progress, _) = report_progress();
+        let report = repair_selected_release(
+            &Arc::new(fetcher),
+            &names,
+            &["test-0.data".into()],
+            &dir,
+            &*progress,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(report.repaired_slices, 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn unrelated_clean_set_does_not_report_selected_episode_clean() {
+        let fetcher = Arc::new(MockFetcher::new());
+        let (progress, _) = report_progress();
+        let error = repair_selected_release(
+            &fetcher,
+            &MockFetcher::par2_names(),
+            &["another-episode.mkv".into()],
+            &overlay_dir("unmatched"),
+            &*progress,
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, RepairError::NoMatchingPar2Set));
+    }
+
+    #[test]
+    fn recovery_volume_detection_does_not_treat_title_words_as_volumes() {
+        assert!(!is_recovery_volume("movie.volcano.par2"));
+        assert!(is_recovery_volume("movie.volcano.vol00+01.par2"));
+        assert_eq!(
+            recovery_base("Movie.Volcano.VOL00+01.PAR2"),
+            "movie.volcano"
+        );
     }
 
     #[tokio::test]

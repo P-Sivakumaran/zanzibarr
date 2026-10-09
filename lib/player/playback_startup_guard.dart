@@ -37,7 +37,7 @@ class PlaybackStartupGuard {
 /// çevirir. Ham ayrıntı tanılama için korunur, fakat arayüzü taşırmaması için
 /// sınırlanır. Açıklamalar uygulamanın yerelleştirmesine uyar.
 String describePlayerError(String raw, AppLocalizations l10n) {
-  final normalized = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+  final normalized = sanitizeErrorDetails(raw);
   final detail = normalized.isEmpty
       ? l10n.errNoMpvDetail
       : normalized.length > 400
@@ -70,7 +70,7 @@ String describePlayerError(String raw, AppLocalizations l10n) {
 /// ancak kimlik bilgileri ayıklanır ve gösterilen teknik metin 400 karakterle
 /// sınırlandırılır.
 String describeStreamStartupError(Object raw, AppLocalizations l10n) {
-  final normalized = _sanitizeStreamError(raw);
+  final normalized = sanitizeErrorDetails(raw);
   final lower = normalized.toLowerCase();
   final detail = normalized.isEmpty
       ? l10n.errNoEngineDetail
@@ -129,9 +129,7 @@ String describeStreamStartupError(Object raw, AppLocalizations l10n) {
     'non-solid store',
   ])) {
     explanation = l10n.errArchiveSolid;
-  } else if (_containsAny(lower, const <String>[
-    'rar4',
-  ])) {
+  } else if (_containsAny(lower, const <String>['rar4'])) {
     explanation = l10n.errRar4;
   } else if (_isMissingSplitArchive(lower)) {
     explanation = l10n.errSplitArchiveBroken;
@@ -270,7 +268,7 @@ bool _isProviderConnectionLimit(String lower) =>
       'bağlantı limiti aşıldı',
     ]);
 
-String _sanitizeStreamError(Object raw) {
+String sanitizeErrorDetails(Object raw) {
   var value = raw.toString();
 
   // URL içindeki `kullanıcı:parola@sunucu` biçimini önce ayıkla.
@@ -297,5 +295,9 @@ String _sanitizeStreamError(Object raw) {
     (match) => '${match.group(1)}${match.group(2)}***',
   );
 
+  value = value.replaceAll(
+    RegExp(r'''[a-z][a-z0-9+.-]*://[^\s<>"']+''', caseSensitive: false),
+    '[URL]',
+  );
   return value.replaceAll(RegExp(r'\s+'), ' ').trim();
 }

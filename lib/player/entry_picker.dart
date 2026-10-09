@@ -52,6 +52,12 @@ class _PlayableEntryPickerDialog extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     return AlertDialog(
       title: Text(l10n.entryPickerTitle),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(MaterialLocalizations.of(context).cancelButtonLabel),
+        ),
+      ],
       content: SizedBox(
         width: 560,
         child: Column(
@@ -89,13 +95,12 @@ class _PlayableEntryPickerDialog extends StatelessWidget {
                     leading: Icon(_iconFor(entry.kind), size: 20),
                     title: Text(
                       entry.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13.5),
+                      softWrap: true,
+                      style: const TextStyle(fontSize: 15),
                     ),
                     subtitle: Text(
                       subtitle.toString(),
-                      style: const TextStyle(fontSize: 11.5),
+                      style: const TextStyle(fontSize: 13),
                     ),
                     onTap: () => Navigator.of(context).pop(entry.key),
                   );

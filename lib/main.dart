@@ -14,6 +14,7 @@ import 'player/player_screen.dart';
 import 'update/update_service.dart';
 import 'search/search_screen.dart';
 import 'settings/indexer_settings.dart';
+import 'settings/provider_settings.dart';
 import 'settings/settings_screen.dart';
 import 'settings/ui_preferences.dart';
 import 'src/rust/frb_generated.dart';
@@ -117,6 +118,16 @@ class ZanzibarrApp extends StatelessWidget {
       listenable: controller ?? UiPreferencesController(UiPreferencesStore()),
       builder: (context, _) => MaterialApp(
         title: 'Zanzibarr',
+        builder: (context, child) {
+          final media = MediaQuery.of(context);
+          if (media.navigationMode != NavigationMode.directional) return child!;
+          return MediaQuery(
+            data: media.copyWith(
+              textScaler: media.textScaler.clamp(minScaleFactor: 1.25),
+            ),
+            child: child!,
+          );
+        },
         debugShowCheckedModeBanner: false,
         localizationsDelegates: const [
           AppLocalizations.delegate,
@@ -264,16 +275,14 @@ class ZanzibarrApp extends StatelessWidget {
     ),
   );
 
-  OutlinedButtonThemeData _outlinedButtonTheme() => OutlinedButtonThemeData(
-    style: _tvFocusStyle(const ButtonStyle()),
-  );
+  OutlinedButtonThemeData _outlinedButtonTheme() =>
+      OutlinedButtonThemeData(style: _tvFocusStyle(const ButtonStyle()));
 
   TextButtonThemeData _textButtonTheme() =>
       TextButtonThemeData(style: _tvFocusStyle(const ButtonStyle()));
 
-  IconButtonThemeData _iconButtonTheme() => IconButtonThemeData(
-    style: _tvFocusStyle(const ButtonStyle()),
-  );
+  IconButtonThemeData _iconButtonTheme() =>
+      IconButtonThemeData(style: _tvFocusStyle(const ButtonStyle()));
 
   SegmentedButtonThemeData _segmentedButtonTheme() =>
       SegmentedButtonThemeData(style: _tvFocusStyle(const ButtonStyle()));
@@ -368,7 +377,7 @@ class _EngineStartupView extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Color(0xFFFF9F0A),
-                          fontSize: 11,
+                          fontSize: 13,
                           fontFamily: 'monospace',
                         ),
                       ),
@@ -396,6 +405,9 @@ class HomeScreen extends StatefulWidget {
     this.uiPreferences,
     this.historyStore,
     this.updateService,
+    this.providerStore,
+    this.indexerStore,
+    this.playerBuilder,
   });
 
   final UiPreferencesController? uiPreferences;
@@ -405,6 +417,11 @@ class HomeScreen extends StatefulWidget {
 
   /// Testlerde sahte güncelleme servisi enjekte etmek için.
   final UpdateService? updateService;
+  final ProviderSettingsStore? providerStore;
+  final IndexerSettingsStore? indexerStore;
+
+  /// Route factory allows flow tests to avoid starting the native player.
+  final Widget Function(String path, String? entryKey)? playerBuilder;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -417,7 +434,13 @@ class _HomeScreenState extends State<HomeScreen> {
       widget.historyStore ?? PlaybackHistoryStore();
   late final UpdateService _updateService =
       widget.updateService ?? UpdateService();
+  late final ProviderSettingsStore _providerStore =
+      widget.providerStore ?? ProviderSettingsStore();
+  late final IndexerSettingsStore _indexerStore =
+      widget.indexerStore ?? IndexerSettingsStore();
   List<PlaybackHistoryEntry> _history = const [];
+  bool _historyFailed = false;
+  bool _openingPath = false;
 
   @override
   void initState() {
@@ -451,31 +474,78 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       entries = await _historyStore.load();
     } catch (_) {
-      // Geçmiş okunamazsa bölüm gizli kalır.
+      if (mounted) setState(() => _historyFailed = true);
       return;
     }
-    if (mounted) setState(() => _history = entries);
+    if (mounted) {
+      setState(() {
+        _history = entries;
+        _historyFailed = false;
+      });
+    }
   }
 
   Future<void> _removeHistoryEntry(PlaybackHistoryEntry entry) async {
     try {
       await _historyStore.remove(entry.nzbPath, entryKey: entry.entryKey);
     } catch (_) {
-      // Silme başarısızsa liste eski hâliyle kalır.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).historyRemoveFailed),
+          ),
+        );
+      }
       return;
     }
     await _loadHistory();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).historyRemoved)),
+      );
+    }
   }
 
   Future<void> _openPath(String path, {String? entryKey}) async {
-    await Navigator.of(context).push(
-      _fadeRoute(
-        PlayerScreen(nzbPath: path, initialEntryKey: entryKey),
-        opaque: true,
-      ),
-    );
-    // Oynatıcıdan dönüşte izleme ilerlemesi tazelenir.
-    await _loadHistory();
+    if (_openingPath) return;
+    _openingPath = true;
+    try {
+      ProviderSettings settings;
+      try {
+        settings = await _providerStore.load();
+      } catch (_) {
+        settings = const ProviderSettings();
+      }
+      if (!mounted) return;
+      if (!settings.isComplete) {
+        final saved = await Navigator.of(context).push<bool>(
+          _fadeRoute(
+            SettingsScreen(
+              store: _providerStore,
+              uiPreferences: widget.uiPreferences,
+              initialSection: SettingsSection.provider,
+              finishOnSave: true,
+            ),
+          ),
+        );
+        if (!mounted || saved != true) return;
+      }
+      await Navigator.of(context).push(
+        _fadeRoute(
+          widget.playerBuilder?.call(path, entryKey) ??
+              PlayerScreen(
+                nzbPath: path,
+                initialEntryKey: entryKey,
+                store: _providerStore,
+              ),
+          opaque: true,
+        ),
+      );
+      // Oynatıcıdan dönüşte izleme ilerlemesi tazelenir.
+      await _loadHistory();
+    } finally {
+      _openingPath = false;
+    }
   }
 
   Future<void> _pickAndPlay(BuildContext context) async {
@@ -506,26 +576,34 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       IndexerSettings settings;
       try {
-        settings = await IndexerSettingsStore().load();
+        settings = await _indexerStore.load();
       } catch (_) {
         // Secure storage okunamazsa ayarları yeniden girmeye yönlendir.
         settings = const IndexerSettings();
       }
       if (!context.mounted) return;
-      if (settings.isComplete) {
-        await Navigator.of(context).push(
-          _fadeRoute(SearchScreen(uiPreferences: widget.uiPreferences)),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppLocalizations.of(context).indexerMissingHint),
+      if (!settings.isComplete) {
+        final saved = await Navigator.of(context).push<bool>(
+          _fadeRoute(
+            SettingsScreen(
+              uiPreferences: widget.uiPreferences,
+              indexerStore: _indexerStore,
+              initialSection: SettingsSection.indexer,
+              finishOnSave: true,
+            ),
           ),
         );
-        await Navigator.of(
-          context,
-        ).push(_fadeRoute(SettingsScreen(uiPreferences: widget.uiPreferences)));
+        if (!context.mounted || saved != true) return;
       }
+      if (!context.mounted) return;
+      await Navigator.of(context).push(
+        _fadeRoute(
+          SearchScreen(
+            store: _indexerStore,
+            uiPreferences: widget.uiPreferences,
+          ),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _openingIndexer = false);
     }
@@ -565,9 +643,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   padding: const EdgeInsets.all(14),
                   child: _GlassIconButton(
                     icon: Icons.settings_rounded,
-                    tooltip: AppLocalizations.of(
-                      context,
-                    ).providerSettingsTooltip,
+                    tooltip: AppLocalizations.of(context).settingsTitle,
                     onPressed: () => _openSettings(context),
                   ),
                 ),
@@ -614,12 +690,22 @@ class _HomeScreenState extends State<HomeScreen> {
                         subtitle: l10n.searchIndexerCardHint,
                         onPressed: () => _openIndexerSearch(context),
                       ),
+                      if (_historyFailed) ...[
+                        const SizedBox(height: 20),
+                        Text(l10n.historyLoadFailed),
+                        TextButton(
+                          onPressed: _loadHistory,
+                          child: Text(l10n.retry),
+                        ),
+                      ],
                       if (_history.isNotEmpty) ...[
                         const SizedBox(height: 28),
                         _ContinueWatchingSection(
                           entries: _history,
-                          onOpen: (entry) =>
-                              _openPath(entry.nzbPath, entryKey: entry.entryKey),
+                          onOpen: (entry) => _openPath(
+                            entry.nzbPath,
+                            entryKey: entry.entryKey,
+                          ),
                           onRemove: _removeHistoryEntry,
                         ),
                       ],
@@ -761,8 +847,8 @@ class _OpenMediaCardState extends State<_OpenMediaCard> {
                     Text(
                       widget.subtitle,
                       style: TextStyle(
-                        color: foreground.withValues(alpha: 0.38),
-                        fontSize: 11,
+                        color: foreground.withValues(alpha: 0.72),
+                        fontSize: 13,
                       ),
                     ),
                   ],
@@ -842,7 +928,7 @@ class _ContinueWatchingSection extends StatelessWidget {
           child: Text(
             l10n.continueWatching,
             style: TextStyle(
-              color: foreground.withValues(alpha: 0.55),
+              color: foreground.withValues(alpha: 0.72),
               fontSize: 12,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.4,
@@ -928,21 +1014,10 @@ class _HistoryCardState extends State<_HistoryCard> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    entry.durationSeconds > 0
-                        ? '${formatPlayerDuration(entry.position)} / '
-                              '${formatPlayerDuration(Duration(milliseconds: (entry.durationSeconds * 1000).round()))}'
-                        : formatPlayerDuration(entry.position),
-                    style: TextStyle(
-                      color: foreground.withValues(alpha: 0.45),
-                      fontSize: 10.5,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                  ),
                   const SizedBox(width: 4),
                   SizedBox(
-                    width: 26,
-                    height: 26,
+                    width: 48,
+                    height: 48,
                     child: IconButton(
                       tooltip: l10n.historyRemoveTooltip,
                       padding: EdgeInsets.zero,
@@ -955,6 +1030,17 @@ class _HistoryCardState extends State<_HistoryCard> {
                     ),
                   ),
                 ],
+              ),
+              Text(
+                entry.durationSeconds > 0
+                    ? '${formatPlayerDuration(entry.position)} / '
+                          '${formatPlayerDuration(Duration(milliseconds: (entry.durationSeconds * 1000).round()))}'
+                    : formatPlayerDuration(entry.position),
+                style: TextStyle(
+                  color: foreground.withValues(alpha: 0.72),
+                  fontSize: 13,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
               ),
               const SizedBox(height: 7),
               ClipRRect(
@@ -973,8 +1059,8 @@ class _HistoryCardState extends State<_HistoryCard> {
                 Text(
                   l10n.historyRemaining(formatPlayerDuration(remaining)),
                   style: TextStyle(
-                    color: foreground.withValues(alpha: 0.38),
-                    fontSize: 10.5,
+                    color: foreground.withValues(alpha: 0.72),
+                    fontSize: 13,
                   ),
                 ),
               ],

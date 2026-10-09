@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -77,6 +78,38 @@ void main() {
       expect(ReleaseInfo.normalizeVersion('1.4.0+5'), '1.4.0');
       expect(ReleaseInfo.normalizeVersion('V2.0'), '2.0');
     });
+  });
+
+  group('Android update compatibility', () {
+    setUp(() => debugDefaultTargetPlatformOverride = TargetPlatform.android);
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test('uses universal APK even when arm64 asset is also present', () {
+      final service = UpdateService(storage: _MemoryPreferenceStorage());
+      final json = _releaseJson();
+      (json['assets'] as List).add({
+        'name': 'zanzibarr-android-universal.apk',
+        'browser_download_url':
+            'https://example.com/zanzibarr-android-universal.apk',
+      });
+      expect(
+        service.assetUrlForCurrentPlatform(ReleaseInfo.fromJson(json)!),
+        endsWith('zanzibarr-android-universal.apk'),
+      );
+    });
+
+    test(
+      'falls back to release page instead of incompatible arm64-only APK',
+      () {
+        final service = UpdateService(storage: _MemoryPreferenceStorage());
+        expect(
+          service.assetUrlForCurrentPlatform(
+            ReleaseInfo.fromJson(_releaseJson())!,
+          ),
+          isNull,
+        );
+      },
+    );
   });
 
   group('UpdateService.checkForUpdate', () {

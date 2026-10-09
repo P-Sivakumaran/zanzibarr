@@ -1399,6 +1399,156 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count} parts'**
   String entryParts(int count);
+
+  /// No description provided for @providerSetupTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Set up Usenet provider'**
+  String get providerSetupTitle;
+
+  /// No description provided for @providerSetupHint.
+  ///
+  /// In en, this message translates to:
+  /// **'A Usenet provider is required to play NZBs. An indexer is optional and lets you search for releases. Save your provider details to continue.'**
+  String get providerSetupHint;
+
+  /// No description provided for @providerTestButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Test provider connection'**
+  String get providerTestButton;
+
+  /// No description provided for @providerTestSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection and authentication succeeded. Save any changes to keep them.'**
+  String get providerTestSuccess;
+
+  /// No description provided for @providerTestFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not connect. Check the server, port, username, password, and your internet connection.'**
+  String get providerTestFailed;
+
+  /// No description provided for @unsavedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Unsaved changes'**
+  String get unsavedTitle;
+
+  /// No description provided for @unsavedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Save your provider and indexer changes before leaving?'**
+  String get unsavedHint;
+
+  /// No description provided for @saveChanges.
+  ///
+  /// In en, this message translates to:
+  /// **'Save changes'**
+  String get saveChanges;
+
+  /// No description provided for @discardChanges.
+  ///
+  /// In en, this message translates to:
+  /// **'Discard changes'**
+  String get discardChanges;
+
+  /// No description provided for @keepEditing.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep editing'**
+  String get keepEditing;
+
+  /// No description provided for @appearanceSavedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Language and appearance changes are saved automatically.'**
+  String get appearanceSavedHint;
+
+  /// No description provided for @loadMore.
+  ///
+  /// In en, this message translates to:
+  /// **'Load more results'**
+  String get loadMore;
+
+  /// No description provided for @loadingMore.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading more results…'**
+  String get loadingMore;
+
+  /// No description provided for @searchPageFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'More results could not be loaded. Try again.'**
+  String get searchPageFailed;
+
+  /// No description provided for @searchFailedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search failed. Check your internet connection and indexer settings, then try again.'**
+  String get searchFailedHint;
+
+  /// No description provided for @searchDownloadHint.
+  ///
+  /// In en, this message translates to:
+  /// **'The NZB could not be downloaded. Check your connection and indexer settings, then try again.'**
+  String get searchDownloadHint;
+
+  /// No description provided for @showingResults.
+  ///
+  /// In en, this message translates to:
+  /// **'Showing {shown} of {total}'**
+  String showingResults(int shown, int total);
+
+  /// No description provided for @releaseDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Release details'**
+  String get releaseDetails;
+
+  /// No description provided for @moreControls.
+  ///
+  /// In en, this message translates to:
+  /// **'More playback controls'**
+  String get moreControls;
+
+  /// No description provided for @historyLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue watching could not be loaded.'**
+  String get historyLoadFailed;
+
+  /// No description provided for @historyRemoveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'This item could not be removed. Try again.'**
+  String get historyRemoveFailed;
+
+  /// No description provided for @historyRemoved.
+  ///
+  /// In en, this message translates to:
+  /// **'Removed from continue watching'**
+  String get historyRemoved;
+
+  /// No description provided for @technicalDetailsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Technical details'**
+  String get technicalDetailsLabel;
+
+  /// No description provided for @settingsLoadHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings could not be loaded. Try again to access your saved details.'**
+  String get settingsLoadHint;
+
+  /// No description provided for @settingsWriteHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Changes could not be saved. Keep this screen open and try again.'**
+  String get settingsWriteHint;
 }
 
 class _AppLocalizationsDelegate

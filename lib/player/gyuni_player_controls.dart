@@ -115,6 +115,7 @@ class GyuniPlayerChrome extends StatelessWidget {
   final ValueChanged<AudioTrack> onAudioSelected;
   final ValueChanged<double> onVolumeChanged;
   final VoidCallback onToggleMute;
+
   /// Alt çubuktaki "Gelişmiş ayarlar" düğmesinin callback'i. Düğme kendi
   /// ekran konumunu verir; menü o konumdan yukarı açılır. Dokunmatik
   /// ekranlarda ve TV kumandasında sağ tık karşılığı olmadığından menünün
@@ -464,7 +465,65 @@ class _TopToolbar extends StatelessWidget {
         bottom: false,
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final showFilename = constraints.maxWidth >= 520;
+            if (constraints.maxWidth < 600) {
+              final actions = <String, (String, VoidCallback)>{
+                'fit': (
+                  videoFill ? l10n.videoFitContain : l10n.videoFitCover,
+                  onToggleVideoFit,
+                ),
+                'canvas': ('Smart Canvas', onToggleCanvas),
+                'subtitles': (
+                  l10n.subtitleControlsTooltip,
+                  onToggleSubtitleControls,
+                ),
+                if (castAvailable && onCast != null)
+                  'cast': (l10n.castTooltip, onCast!),
+                if (pictureInPictureSupported)
+                  'pip': (
+                    isPictureInPicture ? l10n.exitMiniPlayer : l10n.miniPlayer,
+                    onTogglePictureInPicture,
+                  ),
+                'fullscreen': (l10n.fullscreen, onToggleFullscreen),
+              };
+              return Row(
+                children: [
+                  _CompactIconButton(
+                    icon: Icons.close_rounded,
+                    tooltip: l10n.closePlayer,
+                    onPressed: onClose,
+                  ),
+                  Expanded(
+                    child: Text(
+                      filename,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: l10n.moreControls,
+                    enabled: ready,
+                    onSelected: (key) => actions[key]!.$2(),
+                    itemBuilder: (_) => [
+                      for (final action in actions.entries)
+                        PopupMenuItem(
+                          value: action.key,
+                          child: Text(action.value.$1),
+                        ),
+                    ],
+                    icon: const Icon(
+                      Icons.more_vert_rounded,
+                      color: Colors.white,
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 200,
+                      maxWidth: 320,
+                    ),
+                  ),
+                ],
+              );
+            }
+            final showFilename = constraints.maxWidth >= 600;
             final showEngine = constraints.maxWidth >= 980;
             return Row(
               children: [
@@ -522,7 +581,9 @@ class _TopToolbar extends StatelessWidget {
                       icon: videoFill
                           ? Icons.fit_screen_rounded
                           : Icons.fit_screen_outlined,
-                      tooltip: videoFill ? l10n.videoFitContain : l10n.videoFitCover,
+                      tooltip: videoFill
+                          ? l10n.videoFitContain
+                          : l10n.videoFitCover,
                       selected: videoFill,
                       onPressed: ready ? onToggleVideoFit : null,
                     ),
@@ -708,11 +769,19 @@ class _BottomControls extends StatelessWidget {
                     ],
                   ),
                 ),
+                Text(
+                  '${formatPlayerDuration(position)} / ${formatPlayerDuration(duration)}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
                 const SizedBox(height: 2),
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    final showAudio = constraints.maxWidth >= 430;
-                    final showFrameControls = constraints.maxWidth >= 680;
+                    final showAudio = constraints.maxWidth >= 700;
+                    final showFrameControls = constraints.maxWidth >= 1000;
                     return Row(
                       children: [
                         _CompactIconButton(
@@ -760,65 +829,54 @@ class _BottomControls extends StatelessWidget {
                                     ),
                                   )
                                   .toList(growable: false),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 6,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              minWidth: 48,
+                              minHeight: 48,
                             ),
-                            child: Text(
-                              '${formatPlayerRate(rate)}×',
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 6,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  '${formatPlayerRate(rate)}×',
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
                         ),
-                        Expanded(
-                          child: Text(
-                            '${formatPlayerDuration(position)} / '
-                            '${formatPlayerDuration(duration)}',
-                            maxLines: 1,
-                            overflow: TextOverflow.fade,
-                            softWrap: false,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 11,
-                              fontFeatures: [FontFeature.tabularFigures()],
-                            ),
-                          ),
-                        ),
+                        const Spacer(),
                         if (showAudio) ...[
                           _VolumeControl(
                             volume: volume,
                             onToggleMute: onToggleMute,
                             onChanged: onVolumeChanged,
                           ),
-                          _TrackMenu<AudioTrack>(
-                            tooltip: l10n.audioTrack,
-                            icon: Icons.graphic_eq_rounded,
-                            tracks: tracks.audio,
-                            selectedId: selectedTrack.audio.id,
-                            label: (track) => trackLabel(
-                              track,
-                              auto: l10n.auto,
-                              off: l10n.off,
-                            ),
-                            onSelected: onAudioSelected,
-                            onLoadExternal: onLoadExternalAudio,
-                          ),
                         ],
+                        _TrackMenu<AudioTrack>(
+                          tooltip: l10n.audioTrack,
+                          icon: Icons.graphic_eq_rounded,
+                          tracks: tracks.audio,
+                          selectedId: selectedTrack.audio.id,
+                          label: (track) =>
+                              trackLabel(track, auto: l10n.auto, off: l10n.off),
+                          onSelected: onAudioSelected,
+                          onLoadExternal: onLoadExternalAudio,
+                        ),
                         _TrackMenu<SubtitleTrack>(
                           tooltip: l10n.subtitleTrack,
                           icon: Icons.subtitles_rounded,
                           tracks: tracks.subtitle,
                           selectedId: selectedTrack.subtitle.id,
-                          label: (track) => trackLabel(
-                            track,
-                            auto: l10n.auto,
-                            off: l10n.off,
-                          ),
+                          label: (track) =>
+                              trackLabel(track, auto: l10n.auto, off: l10n.off),
                           onSelected: onSubtitleSelected,
                           onLoadExternal: onLoadExternalSubtitle,
                         ),
@@ -1088,13 +1146,14 @@ class _CompactIconButton extends StatelessWidget {
       message: tooltip,
       child: Semantics(
         button: true,
+        onTap: onPressed,
         enabled: onPressed != null,
         toggled: selected,
         label: tooltip,
         excludeSemantics: true,
         child: IconButton(
-          visualDensity: VisualDensity.compact,
-          constraints: const BoxConstraints.tightFor(width: 34, height: 32),
+          visualDensity: VisualDensity.standard,
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
           padding: EdgeInsets.zero,
           focusNode: focusNode,
           style: IconButton.styleFrom(
@@ -1188,9 +1247,9 @@ class _TrackMenu<T> extends StatelessWidget {
           ),
         ),
       ],
-      child: Padding(
-        padding: const EdgeInsets.all(7),
-        child: Icon(icon, size: 18, color: Colors.white70),
+      child: SizedBox.square(
+        dimension: 48,
+        child: Icon(icon, size: 20, color: Colors.white70),
       ),
     );
   }
@@ -1202,11 +1261,7 @@ String _trackId(Object? track) => switch (track) {
   _ => '',
 };
 
-String trackLabel(
-  Object track, {
-  required String auto,
-  required String off,
-}) {
+String trackLabel(Object track, {required String auto, required String off}) {
   final (id, title, language, codec) = switch (track) {
     AudioTrack value => (value.id, value.title, value.language, value.codec),
     SubtitleTrack value => (value.id, value.title, value.language, value.codec),

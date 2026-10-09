@@ -4,12 +4,47 @@ name: Android build
 on:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: false
+        default: ''
+    secrets:
+      ANDROID_KEYSTORE_BASE64:
+        required: true
+      ANDROID_KEYSTORE_PASSWORD:
+        required: true
+      ANDROID_KEY_ALIAS:
+        required: true
+      ANDROID_KEY_PASSWORD:
+        required: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Restore persistent release signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing release signing secret: $name"
+              exit 1
+            fi
+          done
+          umask 077
+          keystore_path="$RUNNER_TEMP/zanzibarr-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+          echo "ANDROID_KEYSTORE_PATH=$keystore_path" >> "$GITHUB_ENV"
 
       # Yerel geliştirme sürümüyle aynı Flutter (pubspec.lock üretimiyle uyum).
       - uses: subosito/flutter-action@v2
@@ -52,3 +87,7 @@ jobs:
           name: zanzibarr-android
           path: zanzibarr-android.zip
           retention-days: 14
+
+      - name: Remove temporary signing key
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/zanzibarr-release.jks"

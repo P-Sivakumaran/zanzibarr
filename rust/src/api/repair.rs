@@ -24,7 +24,7 @@ use crate::engine::nntp::{NntpPool, TlsNntpConnector};
 use crate::engine::nntp_source::{read_body_with_timeout, SegmentCache, BODY_READ_TIMEOUT};
 use crate::engine::nzb::{self, NzbFile};
 use crate::engine::repair::{
-    repair_release, RepairError, RepairFetcher, RepairOverlay, RepairPhase, RepairProgress,
+    repair_selected_release, RepairError, RepairFetcher, RepairOverlay, RepairPhase, RepairProgress,
 };
 use crate::engine::yenc;
 
@@ -288,7 +288,7 @@ impl RepairFetcher for NntpRepairFetcher {
 
 /// Onarım oturumunu başlatır ve kimliği hemen döndürür. Sonuç
 /// [`await_repair`] ile alınır; ilerleme [`repair_progress`] ile yoklanır.
-pub fn begin_repair(config: ProviderConfigDto, nzb_path: String) -> u64 {
+pub fn begin_repair(config: ProviderConfigDto, nzb_path: String, entry_key: Option<String>) -> u64 {
     let session_id = NEXT_REPAIR_ID.fetch_add(1, Ordering::SeqCst);
     let (cancel, cancellation) = watch::channel(false);
     let (ready, ready_result) = oneshot::channel();
@@ -311,6 +311,7 @@ pub fn begin_repair(config: ProviderConfigDto, nzb_path: String) -> u64 {
     let task = RUNTIME.spawn(run_repair_session(
         config,
         nzb_path,
+        entry_key,
         cancellation,
         ready,
         Arc::clone(&progress),
@@ -383,17 +384,19 @@ pub fn cancel_repair(session_id: u64) -> bool {
 async fn run_repair_session(
     config: ProviderConfigDto,
     nzb_path: String,
+    entry_key: Option<String>,
     cancellation: watch::Receiver<bool>,
     ready: oneshot::Sender<Result<RepairReportDto, String>>,
     progress: Arc<Mutex<RepairProgressDto>>,
 ) {
-    let result = run_repair_inner(config, nzb_path, cancellation, progress).await;
+    let result = run_repair_inner(config, nzb_path, entry_key, cancellation, progress).await;
     let _ = ready.send(result);
 }
 
 async fn run_repair_inner(
     config: ProviderConfigDto,
     nzb_path: String,
+    entry_key: Option<String>,
     cancellation: watch::Receiver<bool>,
     progress: Arc<Mutex<RepairProgressDto>>,
 ) -> Result<RepairReportDto, String> {
@@ -410,6 +413,7 @@ async fn run_repair_inner(
     }
     let nzb_text = String::from_utf8(nzb_bytes).map_err(|_| "NZB is not UTF-8".to_string())?;
     let parsed = nzb::parse_nzb(&nzb_text).map_err(|error| error.to_string())?;
+    let target_files = super::streaming::repair_target_files(&parsed, entry_key.as_deref())?;
 
     let par2_names: Vec<String> = parsed
         .files
@@ -449,9 +453,10 @@ async fn run_repair_inner(
         }
     };
 
-    let report = repair_release(
+    let report = repair_selected_release(
         &fetcher,
         &par2_names,
+        &target_files,
         &overlay_dir,
         &progress_fn,
         Some(cancellation),

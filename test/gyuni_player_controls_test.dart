@@ -7,6 +7,9 @@ import 'package:zanzibarr/player/gyuni_player_controls.dart';
 import 'l10n_test_helper.dart';
 
 Widget _buildChrome({
+  double width = 780,
+  Tracks tracks = const Tracks(),
+  ValueChanged<AudioTrack>? onAudioSelected,
   bool playing = true,
   bool buffering = false,
   double volume = 80,
@@ -22,7 +25,7 @@ Widget _buildChrome({
   return l10nTestApp(
     Scaffold(
       body: SizedBox(
-        width: 780,
+        width: width,
         height: 500,
         child: GyuniPlayerChrome(
           visible: true,
@@ -35,7 +38,7 @@ Widget _buildChrome({
           position: const Duration(seconds: 30),
           duration: const Duration(minutes: 90),
           rate: 1.0,
-          tracks: const Tracks(),
+          tracks: tracks,
           selectedTrack: const Track(),
           volume: volume,
           onActivity: () {},
@@ -55,7 +58,7 @@ Widget _buildChrome({
           onScrubEnd: (_) {},
           onRateSelected: (_) {},
           onSubtitleSelected: (_) {},
-          onAudioSelected: (_) {},
+          onAudioSelected: onAudioSelected ?? (_) {},
           onShowAdvancedSettings: onShowAdvancedSettings ?? (_) {},
           onVolumeChanged: onVolumeChanged ?? (_) {},
           onToggleMute: onToggleMute ?? () {},
@@ -75,6 +78,44 @@ Future<void> _doubleTapAt(WidgetTester tester, Offset location) async {
 }
 
 void main() {
+  for (final width in [360.0, 390.0]) {
+    testWidgets('audio selection and touch targets at $width pixels', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(width, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      AudioTrack? selected;
+      await tester.pumpWidget(
+        _buildChrome(
+          width: width,
+          tracks: const Tracks(
+            audio: [AudioTrack('1', null, 'en'), AudioTrack('2', null, 'tr')],
+          ),
+          onAudioSelected: (track) => selected = track,
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      final close = find.widgetWithIcon(IconButton, Icons.close_rounded);
+      expect(tester.getSize(close).width, greaterThanOrEqualTo(48));
+      expect(tester.getSize(close).height, greaterThanOrEqualTo(48));
+      expect(
+        tester.getSize(find.byType(PopupMenuButton<double>)).height,
+        greaterThanOrEqualTo(48),
+      );
+      await tester.tap(find.byTooltip('Ses izi'));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('TR'));
+      await tester.pumpAndSettle();
+      expect(selected?.id, '2');
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('oynat düğmesi yalnız alt çubukta bir kez bulunur', (
     tester,
   ) async {
@@ -227,14 +268,13 @@ void main() {
 
   testWidgets('sağ tık gelişmiş ayarlar menüsünü açmaz', (tester) async {
     final positions = <Offset>[];
-    await tester.pumpWidget(_buildChrome(onShowAdvancedSettings: positions.add));
+    await tester.pumpWidget(
+      _buildChrome(onShowAdvancedSettings: positions.add),
+    );
 
     // Menünün tek girişi alt çubuktaki düğmedir; video üzerinde sağ tık
     // (dokunmatik/TV karşılığı yok) artık bağlı değil.
-    await tester.tapAt(
-      const Offset(390, 250),
-      buttons: kSecondaryMouseButton,
-    );
+    await tester.tapAt(const Offset(390, 250), buttons: kSecondaryMouseButton);
     await tester.pump();
 
     expect(positions, isEmpty);
