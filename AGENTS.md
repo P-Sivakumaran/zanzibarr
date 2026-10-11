@@ -106,6 +106,11 @@ Final source gate: **266 Rust + 218 Flutter tests passed**, 8 opt-in screenshots
 skipped; Clippy/analyze/actionlint clean. Windows executable, setup and portable
 ZIP built at `1.9.0+10`. Installer smoke covers repeated install, hidden startup
 and uninstall, not rendered UI or live playback.
+Candidate source is committed on `release/v1.9-packaging`. Push/PR/platform CI
+are blocked by the current GitHub OAuth token lacking `workflow` scope; SSH
+authentication also fails. Refresh with `gh auth refresh -h github.com -s workflow`,
+then push the branch, create the draft PR, and dispatch Linux/iOS build workflows.
+No tag, PR or remote release was created during preparation.
 
 **Fork multi-indexer continuation:** Claude's interrupted implementation has
 been resumed. Phases 1–5 of `docs/INDEXER_SEARCH_PLAN_2026.md` are now
@@ -324,6 +329,9 @@ Done since v1.0: Newznab indexer search (v1.1-era), RAR4/RAR5 STORE, split 7z ST
   8 opt-in screenshots skipped; Clippy/analyze/actionlint clean. Windows native
   release and installer built. Android signing secrets absent; physical-device,
   macOS signing and clean-machine validation remain outstanding.
+  Candidate committed on `release/v1.9-packaging`; remote push rejected for
+  missing OAuth `workflow` scope, and SSH public-key auth unavailable. No remote
+  PR/tag/release or Linux/iOS CI build was created.
 
 ### Key technical decisions (the *why* — don't relitigate without cause)
 

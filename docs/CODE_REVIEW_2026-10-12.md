@@ -59,3 +59,13 @@ This review does not certify physical-device playback/casting, rendered UI,
 accessibility, clean-machine startup, signing or notarization. Android signing
 secrets are absent in the fork. Linux/iOS artifacts need CI execution; macOS
 requires the signing host. See `docs/RELEASING.md` and candidate release notes.
+
+## Handoff
+
+Local branch: `release/v1.9-packaging`. GitHub rejected the push because the
+OAuth credential lacks `workflow` scope, including prior unpushed workflow
+fixes. Direct SSH authentication also failed. Refresh GitHub authentication
+with `gh auth refresh -h github.com -s workflow`, then push this branch and
+create a draft PR before dispatching Linux/iOS CI. No tag, remote PR, release
+or non-Windows artifact was produced. Android signing remains independently
+blocked by absent secrets.
