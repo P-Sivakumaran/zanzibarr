@@ -1,7 +1,11 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../l10n/app_localizations.dart';
+import '../metadata/metadata_screen.dart';
+import '../metadata/metadata_service.dart';
 import '../ui/error_feedback.dart';
 import '../player/player_screen.dart';
 import '../settings/indexer_settings.dart';
@@ -9,11 +13,13 @@ import '../settings/settings_screen.dart';
 import '../settings/ui_preferences.dart';
 import '../src/rust/api/search.dart';
 import '../tv_focus.dart';
+import 'release_search_selection.dart';
+import 'structured_search_dialog.dart';
 
-/// FRB `newznabSearch` imzası; testlerde sahte enjekte edilebilir.
+/// FRB `newznabSearchMany` imzası; testlerde sahte enjekte edilebilir.
 typedef NewznabSearchFn =
-    Future<SearchPageDto> Function(
-      IndexerConfigDto config,
+    Future<SearchManyResultDto> Function(
+      List<IndexerConfigDto> configs,
       String query,
       int limit,
       int offset,
@@ -41,6 +47,9 @@ class SearchScreen extends StatefulWidget {
     this.downloadFn,
     this.onDownloaded,
     this.uiPreferences,
+    this.metadataService,
+    this.metadataStore,
+    this.capsFn,
   });
 
   /// Testlerde sahte depo enjekte edebilmek için; null ise gerçek depo kullanılır.
@@ -59,6 +68,9 @@ class SearchScreen extends StatefulWidget {
   /// Ayarlar ekranına taşınır; oradaki Uygulama bölümü (dil/tema) ve TV
   /// autofocus hedefi için gerekli.
   final UiPreferencesController? uiPreferences;
+  final MetadataService? metadataService;
+  final MetadataSettingsStore? metadataStore;
+  final NewznabCapsFn? capsFn;
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -74,13 +86,20 @@ class _SearchScreenState extends State<SearchScreen> {
       widget.downloadFn ?? _defaultDownload;
 
   final _queryController = TextEditingController();
+  late final _metadataService = widget.metadataService ?? MetadataService();
+  late final _metadataStore = widget.metadataStore ?? MetadataSettingsStore();
+  ReleaseSearchSelection? _selection;
+  ReleaseSearchSelection? _activeSelection;
+  bool _settingSelection = false;
+  final _caps = <String, Future<IndexerCapsDto?>>{};
 
   /// TV kumandasında aşağı ok alandan çıkıp sonuç kartlarına inebilsin diye
   /// D-pad gezintili odak düğümü (issue #4).
   late final _queryFocusNode = dpadTraversalFocusNode(_queryController);
 
-  IndexerSettings _settings = const IndexerSettings();
+  List<IndexerProfile> _profiles = [];
   bool _loadingSettings = true;
+  bool _settingsLoadFailed = false;
 
   List<SearchItemDto>? _items;
   int? _total;
@@ -90,7 +109,9 @@ class _SearchScreenState extends State<SearchScreen> {
   int _nextOffset = 0;
   int _generation = 0;
   String _activeQuery = '';
-  IndexerConfigDto? _activeConfig;
+  List<IndexerConfigDto> _activeConfigs = [];
+  List<String> _failedIndexers = [];
+  Uint32List? _sourceOffsets;
   String? _pageError;
   Object? _error;
 
@@ -103,13 +124,18 @@ class _SearchScreenState extends State<SearchScreen> {
   final _nextPageFocusNode = FocusNode();
   int? _focusAfterLoadIndex;
 
-  static Future<SearchPageDto> _defaultSearch(
-    IndexerConfigDto config,
+  Future<SearchManyResultDto> _defaultSearch(
+    List<IndexerConfigDto> configs,
     String query,
     int limit,
     int offset,
-  ) =>
-      newznabSearch(config: config, query: query, limit: limit, offset: offset);
+  ) => newznabSearchMany(
+    configs: configs,
+    query: query,
+    limit: limit,
+    offset: offset,
+    offsets: offset == 0 ? null : _sourceOffsets,
+  );
 
   static Future<String> _defaultDownload(
     IndexerConfigDto config,
@@ -132,12 +158,20 @@ class _SearchScreenState extends State<SearchScreen> {
   void initState() {
     super.initState();
     // Temizle düğmesi yalnızca metin varken görünsün.
-    _queryController.addListener(() => setState(() {}));
+    _queryController.addListener(
+      () => setState(() {
+        if (!_settingSelection &&
+            _queryController.text != _selection?.fallbackQuery) {
+          _selection = null;
+        }
+      }),
+    );
     _loadSettings();
   }
 
   @override
   void dispose() {
+    if (widget.metadataService == null) _metadataService.close();
     _queryController.dispose();
     _queryFocusNode.dispose();
     _firstResultFocusNode.dispose();
@@ -146,12 +180,13 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _loadSettings() async {
+    setState(() => _loadingSettings = true);
     try {
-      final settings = await _store.load();
+      final profiles = await _store.load();
       if (!mounted) return;
       setState(() {
-        if (_settings.baseUrl != settings.baseUrl ||
-            _settings.apiKey != settings.apiKey) {
+        if (!_sameProfiles(_profiles, profiles)) {
+          _caps.clear();
           ++_generation;
           _items = null;
           _total = null;
@@ -160,52 +195,112 @@ class _SearchScreenState extends State<SearchScreen> {
           _searching = false;
           _error = null;
         }
-        _settings = settings;
+        _profiles = profiles;
         _loadingSettings = false;
+        _settingsLoadFailed = false;
       });
     } catch (_) {
-      // Secure storage okunamazsa indexer yokmuş gibi davran; kullanıcı
-      // ayarlardan yeniden girmeyi deneyebilir.
+      // Keep unreadable credentials distinct from an unconfigured indexer.
       if (!mounted) return;
-      setState(() => _loadingSettings = false);
+      setState(() {
+        _loadingSettings = false;
+        _settingsLoadFailed = true;
+        ++_generation;
+        _searching = false;
+        _loadingMore = false;
+      });
     }
   }
 
-  IndexerConfigDto get _config =>
-      IndexerConfigDto(baseUrl: _settings.baseUrl, apiKey: _settings.apiKey);
+  bool _sameProfiles(List<IndexerProfile> a, List<IndexerProfile> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].baseUrl != b[i].baseUrl ||
+          a[i].id != b[i].id ||
+          a[i].nickname != b[i].nickname ||
+          a[i].apiKey != b[i].apiKey ||
+          a[i].enabled != b[i].enabled) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  List<IndexerProfile> get _enabledProfiles =>
+      _profiles.where((p) => p.enabled && p.isComplete).toList();
+
+  List<IndexerConfigDto> get _enabledConfigs => [
+    for (final p in _enabledProfiles)
+      IndexerConfigDto(
+        id: p.id,
+        baseUrl: p.baseUrl,
+        apiKey: p.apiKey,
+        nickname: p.displayName,
+      ),
+  ];
+
+  /// Sonuç kartındaki `source_indexer` rozetinden gerçek kimlik bilgilerine
+  /// döner; indirme/NZB isteği bunu kullanır. Arama sonrası profil
+  /// silinmiş/değişmişse (nadiren) null döner — indirme kullanıcıya hata
+  /// gösterir.
+  IndexerConfigDto? _configFor(SearchItemDto item) {
+    for (final config in _activeConfigs) {
+      if (item.sourceId != null
+          ? config.id == item.sourceId
+          : config.nickname == item.sourceIndexer) {
+        return config;
+      }
+    }
+    return null;
+  }
 
   Future<void> _search() async {
     final query = _queryController.text.trim();
+    final configs = _enabledConfigs;
     if (query.isEmpty ||
         _searching ||
         _busyIndex != null ||
         _loadingSettings ||
-        !_settings.isComplete) {
+        _settingsLoadFailed ||
+        configs.isEmpty) {
       return;
     }
     final generation = ++_generation;
-    final config = _config;
     setState(() {
       _searching = true;
       _loadingMore = false;
       _error = null;
       _pageError = null;
       _activeQuery = query;
-      _activeConfig = config;
+      _activeSelection = _selection;
+      _activeConfigs = configs;
+      _failedIndexers = [];
+      _sourceOffsets = null;
       _focusAfterLoadIndex = null;
     });
     try {
-      final page = await _searchFn(config, query, _pageSize, 0);
+      final prepared = await _prepareConfigs(configs, _activeSelection);
       if (!mounted || generation != _generation) return;
+      _activeConfigs = prepared;
+      final result = await _searchFn(prepared, query, _pageSize, 0);
+      final page = result.page;
+      if (!mounted || generation != _generation) return;
+      if (result.failedIndexers.length == configs.length &&
+          page.items.isEmpty) {
+        throw StateError('All indexers failed');
+      }
       setState(() {
+        _sourceOffsets = result.nextOffsets;
         _items = _uniqueItems(page.items);
-        _nextOffset = page.items.length;
+        _nextOffset = result.nextOffsets == null ? page.items.length : 1;
         _hasMore =
-            page.items.isNotEmpty &&
-            (page.total != null
-                ? _nextOffset < page.total!.toInt()
-                : page.items.length >= _pageSize);
+            result.hasMore ??
+            (page.items.isNotEmpty &&
+                (page.total != null
+                    ? _nextOffset < page.total!.toInt()
+                    : page.items.length >= _pageSize));
         _total = page.total?.toInt();
+        _failedIndexers = result.failedIndexers;
         _searching = false;
       });
       if (page.items.isNotEmpty) {
@@ -224,12 +319,95 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
+  Future<List<IndexerConfigDto>> _prepareConfigs(
+    List<IndexerConfigDto> configs,
+    ReleaseSearchSelection? selection,
+  ) async {
+    if (selection == null) return configs;
+    return Future.wait([
+      for (final config in configs)
+        (() async {
+          final key = config.id ?? config.baseUrl;
+          final future = _caps.putIfAbsent(key, () async {
+            try {
+              return await (widget.capsFn ??
+                  (c) => newznabCheckCaps(config: c))(config);
+            } catch (_) {
+              return null;
+            }
+          });
+          final caps = await future;
+          // Failed capability discovery uses title search and can retry next time.
+          if (caps == null && identical(_caps[key], future)) _caps.remove(key);
+          final params = selection.kind == 'movie'
+              ? (caps?.movieSearchAvailable == true
+                    ? caps?.movieSearchParams
+                    : null)
+              : (caps?.tvSearchAvailable == true ? caps?.tvSearchParams : null);
+          return IndexerConfigDto(
+            id: config.id,
+            baseUrl: config.baseUrl,
+            apiKey: config.apiKey,
+            nickname: config.nickname,
+            structured: selection.toDto(params ?? const []),
+          );
+        })(),
+    ]);
+  }
+
+  Future<void> _applySelection(ReleaseSearchSelection selection) async {
+    if (!mounted) return;
+    ++_generation;
+    _settingSelection = true;
+    _queryController.text = selection.fallbackQuery;
+    _settingSelection = false;
+    setState(() {
+      _selection = selection;
+      _searching = false;
+      _loadingMore = false;
+    });
+    await _search();
+  }
+
+  Future<void> _openMetadata([String? hint]) async {
+    final selection = await Navigator.of(context).push<ReleaseSearchSelection>(
+      MaterialPageRoute(
+        builder: (_) => MetadataScreen(
+          service: _metadataService,
+          store: _metadataStore,
+          initialQuery: hint ?? _queryController.text.trim(),
+        ),
+      ),
+    );
+    if (selection != null) await _applySelection(selection);
+  }
+
+  Future<void> _openStructured() async {
+    final selection = await showStructuredSearchDialog(
+      context,
+      initial: _selection,
+      title: _queryController.text.trim(),
+    );
+    if (selection != null) await _applySelection(selection);
+  }
+
   List<SearchItemDto> _uniqueItems(Iterable<SearchItemDto> items) {
-    final seen = <String>{};
-    return [
-      for (final item in items)
-        if (seen.add(item.nzbUrl)) item,
-    ];
+    String titleKey(String title) =>
+        title.toLowerCase().replaceAll(RegExp(r'[\s._\-\[\]()]+'), '');
+    final kept = <SearchItemDto>[];
+    for (final item in items) {
+      final duplicate = kept.any((existing) {
+        if (existing.nzbUrl == item.nzbUrl) return true;
+        if (titleKey(existing.title) != titleKey(item.title)) return false;
+        final a = existing.sizeBytes;
+        final b = item.sizeBytes;
+        if (a == null || b == null) return a == b;
+        final high = a > b ? a : b;
+        return (a - b).abs() <= high ~/ BigInt.from(100);
+      });
+      if (!duplicate) kept.add(item);
+    }
+    return kept;
   }
 
   Future<void> _loadMore() async {
@@ -241,13 +419,24 @@ class _SearchScreenState extends State<SearchScreen> {
       _pageError = null;
     });
     try {
-      final page = await _searchFn(
-        _activeConfig!,
+      final result = await _searchFn(
+        _activeConfigs,
         _activeQuery,
         _pageSize,
         offset,
       );
+      final page = result.page;
       if (!mounted || generation != _generation) return;
+      if (page.items.isEmpty &&
+          result.failedIndexers.isNotEmpty &&
+          result.nextOffsets != null &&
+          result.nextOffsets!.asMap().entries.every(
+            (entry) =>
+                entry.value == 4294967295 ||
+                entry.value == _sourceOffsets?[entry.key],
+          )) {
+        throw StateError('No indexer advanced');
+      }
       final previousCount = _items?.length ?? 0;
       setState(() {
         _items = _uniqueItems([...?_items, ...page.items]);
@@ -255,12 +444,17 @@ class _SearchScreenState extends State<SearchScreen> {
             ? previousCount
             : null;
         _nextOffset += page.items.length;
+        _sourceOffsets = result.nextOffsets;
+        // A cursor remains nonzero even when an entire page deduplicates away.
+        if (_sourceOffsets != null) _nextOffset = 1;
         _total = page.total?.toInt() ?? _total;
         _hasMore =
-            page.items.isNotEmpty &&
-            (_total != null
-                ? _nextOffset < _total!
-                : page.items.length >= _pageSize);
+            result.hasMore ??
+            (page.items.isNotEmpty &&
+                (_total != null
+                    ? _nextOffset < _total!
+                    : page.items.length >= _pageSize));
+        _failedIndexers = result.failedIndexers;
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted &&
@@ -285,9 +479,19 @@ class _SearchScreenState extends State<SearchScreen> {
   Future<void> _downloadAndPlay(int index) async {
     if (_busyIndex != null) return;
     final item = _items![index];
+    final config = _configFor(item);
+    if (config == null) {
+      // Profil arama sırasından beri silinmiş/değişmiş olabilir.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context).searchDownloadHint),
+        ),
+      );
+      return;
+    }
     setState(() => _busyIndex = index);
     try {
-      final path = await _downloadFn(_config, item.nzbUrl, item.title);
+      final path = await _downloadFn(config, item.nzbUrl, item.title);
       if (!mounted) return;
       final onDownloaded = widget.onDownloaded;
       if (onDownloaded != null) {
@@ -322,9 +526,34 @@ class _SearchScreenState extends State<SearchScreen> {
     // Ayarlardan dönüldüğünde indexer yeni girilmiş olabilir.
     await _loadSettings();
     if (mounted &&
-        _settings.isComplete &&
+        _enabledProfiles.isNotEmpty &&
         _queryController.text.trim().isNotEmpty) {
       await _search();
+    }
+  }
+
+  bool _savingProfiles = false;
+  Future<void> _toggleSearchProfile(int index) async {
+    if (_savingProfiles) return;
+    setState(() => _savingProfiles = true);
+    try {
+      await _store.save([
+        for (var i = 0; i < _profiles.length; i++)
+          i == index
+              ? _profiles[i].copyWith(enabled: !_profiles[i].enabled)
+              : _profiles[i],
+      ]);
+      await _loadSettings();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).settingsWriteHint),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingProfiles = false);
     }
   }
 
@@ -333,6 +562,38 @@ class _SearchScreenState extends State<SearchScreen> {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
+        actions: [
+          IconButton(
+            tooltip: l10n.metadataBrowseTitle,
+            onPressed: _busyIndex == null ? _openMetadata : null,
+            icon: const Icon(Icons.movie_filter_outlined),
+          ),
+          IconButton(
+            tooltip: l10n.structuredSearchTitle,
+            onPressed: _busyIndex == null ? _openStructured : null,
+            icon: const Icon(Icons.tune_rounded),
+          ),
+          PopupMenuButton<int>(
+            tooltip: l10n.indexerSectionTitle,
+            enabled:
+                !_loadingSettings && !_savingProfiles && _busyIndex == null,
+            icon: const Icon(Icons.filter_alt_outlined),
+            onSelected: _toggleSearchProfile,
+            itemBuilder: (_) => [
+              for (var i = 0; i < _profiles.length; i++)
+                CheckedPopupMenuItem(
+                  value: i,
+                  checked: _profiles[i].enabled,
+                  child: Text(_profiles[i].displayName),
+                ),
+            ],
+          ),
+          IconButton(
+            tooltip: l10n.goToIndexerSettings,
+            onPressed: _busyIndex == null ? _openSettings : null,
+            icon: const Icon(Icons.settings_outlined),
+          ),
+        ],
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 17),
           tooltip: l10n.backTooltip,
@@ -390,7 +651,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       _searching ||
                           _busyIndex != null ||
                           _loadingSettings ||
-                          !_settings.isComplete
+                          _enabledProfiles.isEmpty
                       ? null
                       : _search,
                   icon: const Icon(Icons.search_rounded, size: 20),
@@ -415,6 +676,14 @@ class _SearchScreenState extends State<SearchScreen> {
                 ),
               ),
             ),
+          if (_selection != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Text(
+                l10n.structuredSearchActive,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
           Expanded(child: _buildBody(context, l10n)),
         ],
       ),
@@ -430,7 +699,18 @@ class _SearchScreenState extends State<SearchScreen> {
         ),
       );
     }
-    if (!_settings.isComplete) {
+    if (_settingsLoadFailed) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(l10n.settingsLoadHint),
+            TextButton(onPressed: _loadSettings, child: Text(l10n.retry)),
+          ],
+        ),
+      );
+    }
+    if (_enabledProfiles.isEmpty) {
       return _IndexerMissing(onOpenSettings: _openSettings);
     }
     if (_searching) {
@@ -444,7 +724,10 @@ class _SearchScreenState extends State<SearchScreen> {
     if (_error case final error?) {
       return _SearchError(
         error: error,
-        details: safeErrorDetails(error, secrets: [_settings.apiKey]),
+        details: safeErrorDetails(
+          error,
+          secrets: [for (final p in _profiles) p.apiKey],
+        ),
         onRetry: _search,
         onSettings: _openSettings,
       );
@@ -456,45 +739,67 @@ class _SearchScreenState extends State<SearchScreen> {
         message: l10n.searchEmptyHint,
       );
     }
-    if (items.isEmpty) {
+    if (items.isEmpty && !_hasMore && _failedIndexers.isEmpty) {
       return _HintView(
         icon: Icons.search_off_rounded,
         message: l10n.searchNoResults,
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
-      itemCount: items.length + (_hasMore ? 1 : 0),
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (context, index) => index == items.length
-          ? Column(
-              children: [
-                if (_pageError != null)
-                  Text(
-                    _pageError!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                OutlinedButton(
-                  onPressed: _loadingMore || _busyIndex != null
-                      ? null
-                      : _loadMore,
-                  child: Text(_loadingMore ? l10n.loadingMore : l10n.loadMore),
-                ),
-              ],
-            )
-          : _SearchResultCard(
-              item: items[index],
-              busy: _busyIndex == index,
-              enabled: _busyIndex == null,
-              focusNode: index == 0
-                  ? _firstResultFocusNode
-                  : index == _focusAfterLoadIndex
-                  ? _nextPageFocusNode
-                  : null,
-              onTap: () => _downloadAndPlay(index),
+    return Column(
+      children: [
+        if (_failedIndexers.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: _PartialFailureBanner(
+              message: l10n.indexerPartialFailureHint(
+                _failedIndexers.length,
+                _activeConfigs.length,
+              ),
             ),
+          ),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+            itemCount: items.length + (_hasMore ? 1 : 0),
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (context, index) => index == items.length
+                ? Column(
+                    children: [
+                      if (_pageError != null)
+                        Text(
+                          _pageError!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      OutlinedButton(
+                        onPressed: _loadingMore || _busyIndex != null
+                            ? null
+                            : _loadMore,
+                        child: Text(
+                          _loadingMore ? l10n.loadingMore : l10n.loadMore,
+                        ),
+                      ),
+                    ],
+                  )
+                : _SearchResultCard(
+                    onMetadata: () => _openMetadata(
+                      items[index].imdbId ??
+                          releaseTitleHint(items[index].title),
+                    ),
+                    item: items[index],
+                    busy: _busyIndex == index,
+                    enabled: _busyIndex == null,
+                    focusNode: index == 0
+                        ? _firstResultFocusNode
+                        : index == _focusAfterLoadIndex
+                        ? _nextPageFocusNode
+                        : null,
+                    onTap: () => _downloadAndPlay(index),
+                  ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -506,6 +811,7 @@ class _SearchResultCard extends StatefulWidget {
     required this.busy,
     required this.enabled,
     required this.onTap,
+    required this.onMetadata,
     this.focusNode,
   });
 
@@ -513,6 +819,7 @@ class _SearchResultCard extends StatefulWidget {
   final bool busy;
   final bool enabled;
   final VoidCallback onTap;
+  final VoidCallback onMetadata;
 
   /// İlk sonuç kartında kullanılır: arama bitince odak buraya taşınır.
   final FocusNode? focusNode;
@@ -642,12 +949,35 @@ class _SearchResultCardState extends State<_SearchResultCard> {
                           ),
                         ),
                       ),
-                    if (item.badges.isNotEmpty) ...[
+                    if (item.badges.isNotEmpty ||
+                        item.sourceIndexer.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Wrap(
                         spacing: 5,
                         runSpacing: 4,
                         children: [
+                          if (item.sourceIndexer.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: accent.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: accent.withValues(alpha: 0.4),
+                                ),
+                              ),
+                              child: Text(
+                                item.sourceIndexer,
+                                style: TextStyle(
+                                  color: accent,
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
                           for (final badge in item.badges)
                             Container(
                               padding: const EdgeInsets.symmetric(
@@ -685,6 +1015,15 @@ class _SearchResultCardState extends State<_SearchResultCard> {
                       child: SelectableText(item.title),
                     ),
                     actions: [
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          widget.onMetadata();
+                        },
+                        child: Text(
+                          AppLocalizations.of(context).metadataBrowseTitle,
+                        ),
+                      ),
                       TextButton(
                         onPressed: () => Navigator.pop(context),
                         child: Text(
@@ -857,6 +1196,39 @@ class _SearchError extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Bazı indexer'lar yanıt vermediğinde arama sonuçlarının üstünde gösterilen
+/// uyarı; sonuçlar yine de kalan indexer'lardan gösterilir.
+class _PartialFailureBanner extends StatelessWidget {
+  const _PartialFailureBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final warning = Theme.of(context).colorScheme.error;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: warning.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: warning.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.warning_amber_rounded, size: 16, color: warning),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(color: warning, fontSize: 12.5, height: 1.3),
+            ),
+          ),
+        ],
       ),
     );
   }

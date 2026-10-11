@@ -12,7 +12,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,11 +45,20 @@ jobs:
 
       - name: Paketle (tar.gz)
         run: |
+          mkdir -p dist/linux
           cd build/linux/x64/release/bundle
-          tar -czf "$GITHUB_WORKSPACE/zanzibarr-linux-x64.tar.gz" .
+          tar -czf "$GITHUB_WORKSPACE/dist/linux/zanzibarr-linux-x64.tar.gz" .
+
+      - name: Package Debian installer
+        run: |
+          python3 tools/package_linux.py
+          dpkg-deb --info dist/linux/zanzibarr-linux-x64.deb
+          dpkg-deb --contents dist/linux/zanzibarr-linux-x64.deb
 
       - uses: actions/upload-artifact@v4
         with:
           name: zanzibarr-linux-x64
-          path: zanzibarr-linux-x64.tar.gz
+          path: |
+            dist/linux/zanzibarr-linux-x64.tar.gz
+            dist/linux/zanzibarr-linux-x64.deb
           retention-days: 14

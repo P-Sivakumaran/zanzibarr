@@ -104,7 +104,12 @@ Everything heavy — parsing, decoding, archive surgery, NNTP networking — is 
 
 ## Getting started
 
-1. Grab the latest build for your platform from [Releases](https://github.com/envermeister/zanzibarr/releases) (Windows `.zip`, macOS `.zip`, Linux `.tar.gz`, Android `.apk` — pick `arm64-v8a` for phones and TV boxes).
+This fork prepares v1.9 with multi-indexer search, optional OMDb metadata and
+Windows/Linux installer packaging. See [release notes](docs/releases/v1.9.md)
+and the [build and release runbook](docs/RELEASING.md) for candidate status,
+platform requirements and signing limitations.
+
+1. Grab a published build from the [fork releases](https://github.com/P-Sivakumaran/zanzibarr/releases) (Windows setup `.exe` or portable `.zip`, Ubuntu 24.04 `.deb`, Linux `.tar.gz`, Android `.apk`). Use only artifacts actually present on that release; draft candidates are not published builds.
 2. Open the settings gear and add your Usenet provider's NNTP host, port, username and password. They're stored in the OS keychain.
 3. Drop in any `.nzb` from your favorite indexer and press play.
 

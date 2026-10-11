@@ -170,7 +170,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get indexerSectionSubtitle =>
-      'Search a Newznab-compatible indexer; the API key is stored in this device\'s secure keychain. Leave the URL empty to disable the indexer.';
+      'Search one or more Newznab-compatible indexers at once; each API key is stored in this device\'s secure keychain. Disabled indexers are skipped but kept configured.';
 
   @override
   String get indexerUrlLabel => 'Indexer URL';
@@ -196,6 +196,43 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String indexerTestFailed(String error) {
     return 'Connection failed: $error';
+  }
+
+  @override
+  String get indexerAddButton => 'Add indexer';
+
+  @override
+  String get indexerAddTitle => 'Add indexer';
+
+  @override
+  String get indexerEditTitle => 'Edit indexer';
+
+  @override
+  String get indexerNicknameLabel => 'Name';
+
+  @override
+  String get indexerNicknameHint => 'e.g. NZBFinder';
+
+  @override
+  String get indexerCustomOption => 'Custom';
+
+  @override
+  String get indexerEnabledLabel => 'Enabled';
+
+  @override
+  String get indexerDeleteButton => 'Delete';
+
+  @override
+  String get indexerDeleteConfirmTitle => 'Delete indexer?';
+
+  @override
+  String indexerDeleteConfirmHint(String name) {
+    return '$name will be removed from your search.';
+  }
+
+  @override
+  String indexerPartialFailureHint(int failed, int total) {
+    return '$failed of $total indexers didn\'t respond; showing results from the rest.';
   }
 
   @override
@@ -817,4 +854,138 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get settingsWriteHint =>
       'Changes could not be saved. Keep this screen open and try again.';
+
+  @override
+  String get indexerMoveUp => 'Move indexer up';
+
+  @override
+  String get indexerMoveDown => 'Move indexer down';
+
+  @override
+  String get metadataSetupHint =>
+      'Add your personal OMDb key to look up titles, summaries and available ratings. Test the key before saving if you want to check access.';
+
+  @override
+  String get metadataGetKey => 'Get an OMDb API key';
+
+  @override
+  String get metadataKeyFormat =>
+      'Paste the API key only (letters and numbers), not a URL.';
+
+  @override
+  String get metadataKeyRequired => 'Enter an API key to test.';
+
+  @override
+  String get metadataTestKey => 'Test API key';
+
+  @override
+  String get metadataTesting => 'Testing API key…';
+
+  @override
+  String get metadataTestSuccess =>
+      'Connected to OMDb. This API key works. Save changes to use it.';
+
+  @override
+  String get metadataTestFailed =>
+      'Could not reach OMDb or read its response. Check your connection and try again.';
+
+  @override
+  String get metadataLinkFailed =>
+      'The website could not be opened. Check that a browser is available.';
+
+  @override
+  String get metadataBrowseTitle => 'Movie and TV info';
+
+  @override
+  String get metadataConfigure => 'OMDb settings';
+
+  @override
+  String get metadataPrivacyHint =>
+      'Look up a title or IMDb ID, then choose the correct year and type. Searches go to OMDb only when you request them.';
+
+  @override
+  String get metadataType => 'Type';
+
+  @override
+  String get metadataMovie => 'Movie';
+
+  @override
+  String get metadataSeries => 'TV series';
+
+  @override
+  String get metadataTitleLabel => 'Title for fallback search';
+
+  @override
+  String get metadataTitleRequired =>
+      'Enter a title for indexers that need text search.';
+
+  @override
+  String get metadataImdbId => 'IMDb ID (optional)';
+
+  @override
+  String get metadataTvdbId => 'TVDB ID (optional)';
+
+  @override
+  String get metadataYear => 'Year (optional)';
+
+  @override
+  String get metadataSeason => 'Season (optional)';
+
+  @override
+  String get metadataEpisode => 'Episode (optional)';
+
+  @override
+  String get metadataInvalidId => 'Enter a valid ID.';
+
+  @override
+  String get metadataInvalidNumber => 'Enter a valid number.';
+
+  @override
+  String get metadataEpisodeNeedsSeason => 'Enter a season before an episode.';
+
+  @override
+  String get metadataFindReleases => 'Find releases';
+
+  @override
+  String get metadataQueryHint => 'Title or IMDb ID (tt...)';
+
+  @override
+  String get metadataKeyHint =>
+      'Optional: add your personal OMDb API key for title lookup, plots, and available IMDb, Rotten Tomatoes, and Metacritic ratings. Release search works without it.';
+
+  @override
+  String get metadataApiKey => 'OMDb API key';
+
+  @override
+  String get metadataRemoveKeyHint =>
+      'The key is saved securely. Clear this field and save to remove it.';
+
+  @override
+  String get metadataKeyFailed =>
+      'OMDb rejected the API key. Check OMDb settings.';
+
+  @override
+  String get metadataLimit => 'OMDb request limit reached. Try again later.';
+
+  @override
+  String get metadataFailed =>
+      'Movie information could not be loaded. Try again; release search is still available.';
+
+  @override
+  String get metadataNoRatings => 'No ratings available for this title.';
+
+  @override
+  String get metadataAttribution =>
+      'Information and ratings via OMDb. Scores retain their original source and scale; availability varies.';
+
+  @override
+  String get structuredSearchTitle => 'Precise release search';
+
+  @override
+  String get structuredSearchHint =>
+      'Use an IMDb or TVDB ID when supported. Other indexers use the title, year, and season/episode below.';
+
+  @override
+  String get structuredSearchActive =>
+      'Selected title: ID search where supported; title search otherwise.';
 }

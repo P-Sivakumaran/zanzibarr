@@ -1,5 +1,5 @@
 name: zanzibarr
-description: "A new Flutter project."
+description: "Stream Usenet NZB video with a native, seekable player."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.8.0+9
+version: 1.9.0+10
 
 environment:
   sdk: ^3.12.2
@@ -94,6 +94,7 @@ flutter:
     - assets/fonts/subtitle.ttf
     - assets/fonts/subtitle_serif.ttf
     - assets/fonts/subtitle_mono.ttf
+    - assets/fonts/LeagueMono-Thin.ttf
 
   # Altyazı font kataloğu (lib/player/subtitle_fonts.dart): aynı TTF'ler hem
   # Flutter UI önizlemesi (menüde kendi fontuyla gösterim) hem de libmpv
@@ -108,6 +109,10 @@ flutter:
     - family: Noto Sans Mono
       fonts:
         - asset: assets/fonts/subtitle_mono.ttf
+    - family: League Mono
+      fonts:
+        - asset: assets/fonts/LeagueMono-Thin.ttf
+          weight: 100
 
   # To add assets to your application, add an assets section, like this:
   # assets:

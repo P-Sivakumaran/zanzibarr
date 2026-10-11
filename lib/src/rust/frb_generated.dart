@@ -69,7 +69,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 1923427883;
+  int get rustContentHash => 1069048209;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -131,6 +131,14 @@ abstract class RustLibApi extends BaseApi {
     required String query,
     required int limit,
     required int offset,
+  });
+
+  Future<SearchManyResultDto> crateApiSearchNewznabSearchMany({
+    required List<IndexerConfigDto> configs,
+    required String query,
+    required int limit,
+    required int offset,
+    Uint32List? offsets,
   });
 
   Future<RepairProgressDto?> crateApiRepairRepairProgress({
@@ -559,6 +567,47 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<SearchManyResultDto> crateApiSearchNewznabSearchMany({
+    required List<IndexerConfigDto> configs,
+    required String query,
+    required int limit,
+    required int offset,
+    Uint32List? offsets,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_indexer_config_dto(configs, serializer);
+          sse_encode_String(query, serializer);
+          sse_encode_u_32(limit, serializer);
+          sse_encode_u_32(offset, serializer);
+          sse_encode_opt_list_prim_u_32_strict(offsets, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 14,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_search_many_result_dto,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSearchNewznabSearchManyConstMeta,
+        argValues: [configs, query, limit, offset, offsets],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSearchNewznabSearchManyConstMeta =>
+      const TaskConstMeta(
+        debugName: "newznab_search_many",
+        argNames: ["configs", "query", "limit", "offset", "offsets"],
+      );
+
+  @override
   Future<RepairProgressDto?> crateApiRepairRepairProgress({
     required BigInt sessionId,
   }) {
@@ -570,7 +619,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 14,
+            funcId: 15,
             port: port_,
           );
         },
@@ -605,7 +654,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 15,
+            funcId: 16,
             port: port_,
           );
         },
@@ -636,7 +685,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 16,
+            funcId: 17,
             port: port_,
           );
         },
@@ -667,6 +716,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  bool dco_decode_box_autoadd_bool(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as bool;
+  }
+
+  @protected
   PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_i_64(raw);
@@ -691,6 +746,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  StructuredSearchDto dco_decode_box_autoadd_structured_search_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_structured_search_dto(raw);
+  }
+
+  @protected
   int dco_decode_box_autoadd_u_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
@@ -712,13 +775,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   IndexerCapsDto dco_decode_indexer_caps_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return IndexerCapsDto(
-      serverTitle: dco_decode_opt_String(arr[0]),
-      searchAvailable: dco_decode_bool(arr[1]),
-      tvSearchAvailable: dco_decode_bool(arr[2]),
-      movieSearchAvailable: dco_decode_bool(arr[3]),
+      movieSearchParams: dco_decode_opt_list_String(arr[0]),
+      tvSearchParams: dco_decode_opt_list_String(arr[1]),
+      serverTitle: dco_decode_opt_String(arr[2]),
+      searchAvailable: dco_decode_bool(arr[3]),
+      tvSearchAvailable: dco_decode_bool(arr[4]),
+      movieSearchAvailable: dco_decode_bool(arr[5]),
     );
   }
 
@@ -726,11 +791,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   IndexerConfigDto dco_decode_indexer_config_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return IndexerConfigDto(
-      baseUrl: dco_decode_String(arr[0]),
-      apiKey: dco_decode_String(arr[1]),
+      structured: dco_decode_opt_box_autoadd_structured_search_dto(arr[0]),
+      id: dco_decode_opt_String(arr[1]),
+      baseUrl: dco_decode_String(arr[2]),
+      apiKey: dco_decode_String(arr[3]),
+      nickname: dco_decode_String(arr[4]),
     );
   }
 
@@ -741,9 +809,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<IndexerConfigDto> dco_decode_list_indexer_config_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_indexer_config_dto).toList();
+  }
+
+  @protected
   List<PlayableEntryDto> dco_decode_list_playable_entry_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_playable_entry_dto).toList();
+  }
+
+  @protected
+  Uint32List dco_decode_list_prim_u_32_strict(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as Uint32List;
   }
 
   @protected
@@ -765,6 +845,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  bool? dco_decode_opt_box_autoadd_bool(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_bool(raw);
+  }
+
+  @protected
   PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_i_64(raw);
@@ -779,6 +865,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  StructuredSearchDto? dco_decode_opt_box_autoadd_structured_search_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_structured_search_dto(raw);
+  }
+
+  @protected
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_u_32(raw);
@@ -788,6 +884,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_u_64(raw);
+  }
+
+  @protected
+  List<String>? dco_decode_opt_list_String(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_list_String(raw);
+  }
+
+  @protected
+  Uint32List? dco_decode_opt_list_prim_u_32_strict(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_list_prim_u_32_strict(raw);
   }
 
   @protected
@@ -853,20 +961,37 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   SearchItemDto dco_decode_search_item_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 11)
-      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    if (arr.length != 14)
+      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
     return SearchItemDto(
-      title: dco_decode_String(arr[0]),
-      nzbUrl: dco_decode_String(arr[1]),
-      infoUrl: dco_decode_opt_String(arr[2]),
-      sizeBytes: dco_decode_opt_box_autoadd_u_64(arr[3]),
-      publishedEpochSecs: dco_decode_opt_box_autoadd_i_64(arr[4]),
-      badges: dco_decode_list_String(arr[5]),
-      mediaKind: dco_decode_String(arr[6]),
-      season: dco_decode_opt_box_autoadd_u_32(arr[7]),
-      episode: dco_decode_opt_box_autoadd_u_32(arr[8]),
-      year: dco_decode_opt_box_autoadd_u_32(arr[9]),
-      group: dco_decode_opt_String(arr[10]),
+      imdbId: dco_decode_opt_String(arr[0]),
+      sourceId: dco_decode_opt_String(arr[1]),
+      title: dco_decode_String(arr[2]),
+      nzbUrl: dco_decode_String(arr[3]),
+      infoUrl: dco_decode_opt_String(arr[4]),
+      sizeBytes: dco_decode_opt_box_autoadd_u_64(arr[5]),
+      publishedEpochSecs: dco_decode_opt_box_autoadd_i_64(arr[6]),
+      badges: dco_decode_list_String(arr[7]),
+      mediaKind: dco_decode_String(arr[8]),
+      season: dco_decode_opt_box_autoadd_u_32(arr[9]),
+      episode: dco_decode_opt_box_autoadd_u_32(arr[10]),
+      year: dco_decode_opt_box_autoadd_u_32(arr[11]),
+      group: dco_decode_opt_String(arr[12]),
+      sourceIndexer: dco_decode_String(arr[13]),
+    );
+  }
+
+  @protected
+  SearchManyResultDto dco_decode_search_many_result_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return SearchManyResultDto(
+      page: dco_decode_search_page_dto(arr[0]),
+      failedIndexers: dco_decode_list_String(arr[1]),
+      nextOffsets: dco_decode_opt_list_prim_u_32_strict(arr[2]),
+      hasMore: dco_decode_opt_box_autoadd_bool(arr[3]),
     );
   }
 
@@ -896,6 +1021,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       filename: dco_decode_String(arr[4]),
       segmentCount: dco_decode_u_32(arr[5]),
       compressed: dco_decode_bool(arr[6]),
+    );
+  }
+
+  @protected
+  StructuredSearchDto dco_decode_structured_search_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return StructuredSearchDto(
+      kind: dco_decode_String(arr[0]),
+      imdbId: dco_decode_opt_String(arr[1]),
+      tvdbId: dco_decode_opt_String(arr[2]),
+      season: dco_decode_opt_box_autoadd_u_32(arr[3]),
+      episode: dco_decode_opt_box_autoadd_u_32(arr[4]),
+      supportedParams: dco_decode_list_String(arr[5]),
     );
   }
 
@@ -943,6 +1084,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  bool sse_decode_box_autoadd_bool(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_bool(deserializer));
+  }
+
+  @protected
   PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_i_64(deserializer));
@@ -973,6 +1120,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  StructuredSearchDto sse_decode_box_autoadd_structured_search_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_structured_search_dto(deserializer));
+  }
+
+  @protected
   int sse_decode_box_autoadd_u_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_u_32(deserializer));
@@ -993,11 +1148,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   IndexerCapsDto sse_decode_indexer_caps_dto(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_movieSearchParams = sse_decode_opt_list_String(deserializer);
+    var var_tvSearchParams = sse_decode_opt_list_String(deserializer);
     var var_serverTitle = sse_decode_opt_String(deserializer);
     var var_searchAvailable = sse_decode_bool(deserializer);
     var var_tvSearchAvailable = sse_decode_bool(deserializer);
     var var_movieSearchAvailable = sse_decode_bool(deserializer);
     return IndexerCapsDto(
+      movieSearchParams: var_movieSearchParams,
+      tvSearchParams: var_tvSearchParams,
       serverTitle: var_serverTitle,
       searchAvailable: var_searchAvailable,
       tvSearchAvailable: var_tvSearchAvailable,
@@ -1008,9 +1167,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   IndexerConfigDto sse_decode_indexer_config_dto(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_structured = sse_decode_opt_box_autoadd_structured_search_dto(
+      deserializer,
+    );
+    var var_id = sse_decode_opt_String(deserializer);
     var var_baseUrl = sse_decode_String(deserializer);
     var var_apiKey = sse_decode_String(deserializer);
-    return IndexerConfigDto(baseUrl: var_baseUrl, apiKey: var_apiKey);
+    var var_nickname = sse_decode_String(deserializer);
+    return IndexerConfigDto(
+      structured: var_structured,
+      id: var_id,
+      baseUrl: var_baseUrl,
+      apiKey: var_apiKey,
+      nickname: var_nickname,
+    );
   }
 
   @protected
@@ -1021,6 +1191,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <String>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_String(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<IndexerConfigDto> sse_decode_list_indexer_config_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <IndexerConfigDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_indexer_config_dto(deserializer));
     }
     return ans_;
   }
@@ -1037,6 +1221,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       ans_.add(sse_decode_playable_entry_dto(deserializer));
     }
     return ans_;
+  }
+
+  @protected
+  Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var len_ = sse_decode_i_32(deserializer);
+    return deserializer.buffer.getUint32List(len_);
   }
 
   @protected
@@ -1072,6 +1263,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_bool(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -1096,6 +1298,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  StructuredSearchDto? sse_decode_opt_box_autoadd_structured_search_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_structured_search_dto(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -1112,6 +1327,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_u_64(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  List<String>? sse_decode_opt_list_String(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_list_String(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  Uint32List? sse_decode_opt_list_prim_u_32_strict(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_list_prim_u_32_strict(deserializer));
     } else {
       return null;
     }
@@ -1190,6 +1429,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   SearchItemDto sse_decode_search_item_dto(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_imdbId = sse_decode_opt_String(deserializer);
+    var var_sourceId = sse_decode_opt_String(deserializer);
     var var_title = sse_decode_String(deserializer);
     var var_nzbUrl = sse_decode_String(deserializer);
     var var_infoUrl = sse_decode_opt_String(deserializer);
@@ -1201,7 +1442,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_episode = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_year = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_group = sse_decode_opt_String(deserializer);
+    var var_sourceIndexer = sse_decode_String(deserializer);
     return SearchItemDto(
+      imdbId: var_imdbId,
+      sourceId: var_sourceId,
       title: var_title,
       nzbUrl: var_nzbUrl,
       infoUrl: var_infoUrl,
@@ -1213,6 +1457,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       episode: var_episode,
       year: var_year,
       group: var_group,
+      sourceIndexer: var_sourceIndexer,
+    );
+  }
+
+  @protected
+  SearchManyResultDto sse_decode_search_many_result_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_page = sse_decode_search_page_dto(deserializer);
+    var var_failedIndexers = sse_decode_list_String(deserializer);
+    var var_nextOffsets = sse_decode_opt_list_prim_u_32_strict(deserializer);
+    var var_hasMore = sse_decode_opt_box_autoadd_bool(deserializer);
+    return SearchManyResultDto(
+      page: var_page,
+      failedIndexers: var_failedIndexers,
+      nextOffsets: var_nextOffsets,
+      hasMore: var_hasMore,
     );
   }
 
@@ -1242,6 +1504,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       filename: var_filename,
       segmentCount: var_segmentCount,
       compressed: var_compressed,
+    );
+  }
+
+  @protected
+  StructuredSearchDto sse_decode_structured_search_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_kind = sse_decode_String(deserializer);
+    var var_imdbId = sse_decode_opt_String(deserializer);
+    var var_tvdbId = sse_decode_opt_String(deserializer);
+    var var_season = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_episode = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_supportedParams = sse_decode_list_String(deserializer);
+    return StructuredSearchDto(
+      kind: var_kind,
+      imdbId: var_imdbId,
+      tvdbId: var_tvdbId,
+      season: var_season,
+      episode: var_episode,
+      supportedParams: var_supportedParams,
     );
   }
 
@@ -1293,6 +1576,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_bool(bool self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_i_64(
     PlatformInt64 self,
     SseSerializer serializer,
@@ -1329,6 +1618,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_structured_search_dto(
+    StructuredSearchDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_structured_search_dto(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_32(self, serializer);
@@ -1352,6 +1650,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_opt_list_String(self.movieSearchParams, serializer);
+    sse_encode_opt_list_String(self.tvSearchParams, serializer);
     sse_encode_opt_String(self.serverTitle, serializer);
     sse_encode_bool(self.searchAvailable, serializer);
     sse_encode_bool(self.tvSearchAvailable, serializer);
@@ -1364,8 +1664,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_opt_box_autoadd_structured_search_dto(
+      self.structured,
+      serializer,
+    );
+    sse_encode_opt_String(self.id, serializer);
     sse_encode_String(self.baseUrl, serializer);
     sse_encode_String(self.apiKey, serializer);
+    sse_encode_String(self.nickname, serializer);
   }
 
   @protected
@@ -1374,6 +1680,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_String(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_indexer_config_dto(
+    List<IndexerConfigDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_indexer_config_dto(item, serializer);
     }
   }
 
@@ -1387,6 +1705,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     for (final item in self) {
       sse_encode_playable_entry_dto(item, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_list_prim_u_32_strict(
+    Uint32List self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    serializer.buffer.putUint32List(self);
   }
 
   @protected
@@ -1422,6 +1750,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_bool(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_i_64(
     PlatformInt64? self,
     SseSerializer serializer,
@@ -1448,6 +1786,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_structured_search_dto(
+    StructuredSearchDto? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_structured_search_dto(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -1464,6 +1815,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_u_64(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_list_String(
+    List<String>? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_list_String(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_list_prim_u_32_strict(
+    Uint32List? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_list_prim_u_32_strict(self, serializer);
     }
   }
 
@@ -1524,6 +1901,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_opt_String(self.imdbId, serializer);
+    sse_encode_opt_String(self.sourceId, serializer);
     sse_encode_String(self.title, serializer);
     sse_encode_String(self.nzbUrl, serializer);
     sse_encode_opt_String(self.infoUrl, serializer);
@@ -1535,6 +1914,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_u_32(self.episode, serializer);
     sse_encode_opt_box_autoadd_u_32(self.year, serializer);
     sse_encode_opt_String(self.group, serializer);
+    sse_encode_String(self.sourceIndexer, serializer);
+  }
+
+  @protected
+  void sse_encode_search_many_result_dto(
+    SearchManyResultDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_search_page_dto(self.page, serializer);
+    sse_encode_list_String(self.failedIndexers, serializer);
+    sse_encode_opt_list_prim_u_32_strict(self.nextOffsets, serializer);
+    sse_encode_opt_box_autoadd_bool(self.hasMore, serializer);
   }
 
   @protected
@@ -1557,6 +1949,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.filename, serializer);
     sse_encode_u_32(self.segmentCount, serializer);
     sse_encode_bool(self.compressed, serializer);
+  }
+
+  @protected
+  void sse_encode_structured_search_dto(
+    StructuredSearchDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.kind, serializer);
+    sse_encode_opt_String(self.imdbId, serializer);
+    sse_encode_opt_String(self.tvdbId, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.season, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.episode, serializer);
+    sse_encode_list_String(self.supportedParams, serializer);
   }
 
   @protected

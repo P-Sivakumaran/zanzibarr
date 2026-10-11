@@ -6,7 +6,8 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `download_dir_path`, `fetch_checked`, `map_http_error`, `sanitize_filename`
+// These functions are ignored because they are not marked as `pub`: `download_dir_path`, `fetch_checked_async`, `fetch_checked`, `fetch_search_items_async`, `map_http_error`, `map_item`, `normalize_imdb_id`, `sanitize_filename`, `search_query_params`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`
 
 /// Indexer'ın yeteneklerini sorgular (`?t=caps`). Bağlantı ve API anahtarı
 /// doğrulaması için de kullanılır.
@@ -25,6 +26,24 @@ Future<SearchPageDto> newznabSearch({
   query: query,
   limit: limit,
   offset: offset,
+);
+
+/// Birden çok indexer'ı paralel sorgular, sonuçları birleştirip
+/// tekilleştirir. Tek bir indexer'ın zaman aşımına uğraması/hata vermesi
+/// aramanın tamamını düşürmez — o indexer `failed_indexers`'a eklenir,
+/// diğerlerinin sonuçları döner.
+Future<SearchManyResultDto> newznabSearchMany({
+  required List<IndexerConfigDto> configs,
+  required String query,
+  required int limit,
+  required int offset,
+  Uint32List? offsets,
+}) => RustLib.instance.api.crateApiSearchNewznabSearchMany(
+  configs: configs,
+  query: query,
+  limit: limit,
+  offset: offset,
+  offsets: offsets,
 );
 
 /// Arama sonucunun NZB'sini geçici dizine indirir ve dosya yolunu döndürür.
@@ -49,12 +68,16 @@ Future<String> newznabDownloadNzb({
 
 /// `?t=caps` özeti; UI hangi arama türlerinin açık olduğunu buna göre gösterir.
 class IndexerCapsDto {
+  final List<String>? movieSearchParams;
+  final List<String>? tvSearchParams;
   final String? serverTitle;
   final bool searchAvailable;
   final bool tvSearchAvailable;
   final bool movieSearchAvailable;
 
   const IndexerCapsDto({
+    this.movieSearchParams,
+    this.tvSearchParams,
     this.serverTitle,
     required this.searchAvailable,
     required this.tvSearchAvailable,
@@ -63,6 +86,8 @@ class IndexerCapsDto {
 
   @override
   int get hashCode =>
+      movieSearchParams.hashCode ^
+      tvSearchParams.hashCode ^
       serverTitle.hashCode ^
       searchAvailable.hashCode ^
       tvSearchAvailable.hashCode ^
@@ -73,6 +98,8 @@ class IndexerCapsDto {
       identical(this, other) ||
       other is IndexerCapsDto &&
           runtimeType == other.runtimeType &&
+          movieSearchParams == other.movieSearchParams &&
+          tvSearchParams == other.tvSearchParams &&
           serverTitle == other.serverTitle &&
           searchAvailable == other.searchAvailable &&
           tvSearchAvailable == other.tvSearchAvailable &&
@@ -81,26 +108,51 @@ class IndexerCapsDto {
 
 /// Dart'tan gelen indexer yapılandırması.
 class IndexerConfigDto {
+  final StructuredSearchDto? structured;
+
+  /// Stable profile identity; display names need not be unique.
+  final String? id;
+
   /// Ör. `https://miatrix.example` (sonunda `/api` olabilir ya da olmayabilir).
   final String baseUrl;
   final String apiKey;
 
-  const IndexerConfigDto({required this.baseUrl, required this.apiKey});
+  /// Kullanıcının bu profile verdiği ad; sonuçlarda kaynak rozeti ve
+  /// kısmi-hata mesajlarında ("X indexer yanıt vermedi") kullanılır.
+  final String nickname;
+
+  const IndexerConfigDto({
+    this.structured,
+    this.id,
+    required this.baseUrl,
+    required this.apiKey,
+    required this.nickname,
+  });
 
   @override
-  int get hashCode => baseUrl.hashCode ^ apiKey.hashCode;
+  int get hashCode =>
+      structured.hashCode ^
+      id.hashCode ^
+      baseUrl.hashCode ^
+      apiKey.hashCode ^
+      nickname.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is IndexerConfigDto &&
           runtimeType == other.runtimeType &&
+          structured == other.structured &&
+          id == other.id &&
           baseUrl == other.baseUrl &&
-          apiKey == other.apiKey;
+          apiKey == other.apiKey &&
+          nickname == other.nickname;
 }
 
 /// Tek arama sonucu. `nzb_url` API anahtarı içerebilir; loglanmamalıdır.
 class SearchItemDto {
+  final String? imdbId;
+  final String? sourceId;
   final String title;
   final String nzbUrl;
   final String? infoUrl;
@@ -117,7 +169,13 @@ class SearchItemDto {
   final int? year;
   final String? group;
 
+  /// Bu sonucun geldiği indexer'ın takma adı (çoklu-indexer aramada
+  /// kaynak rozeti için).
+  final String sourceIndexer;
+
   const SearchItemDto({
+    this.imdbId,
+    this.sourceId,
     required this.title,
     required this.nzbUrl,
     this.infoUrl,
@@ -129,10 +187,13 @@ class SearchItemDto {
     this.episode,
     this.year,
     this.group,
+    required this.sourceIndexer,
   });
 
   @override
   int get hashCode =>
+      imdbId.hashCode ^
+      sourceId.hashCode ^
       title.hashCode ^
       nzbUrl.hashCode ^
       infoUrl.hashCode ^
@@ -143,13 +204,16 @@ class SearchItemDto {
       season.hashCode ^
       episode.hashCode ^
       year.hashCode ^
-      group.hashCode;
+      group.hashCode ^
+      sourceIndexer.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is SearchItemDto &&
           runtimeType == other.runtimeType &&
+          imdbId == other.imdbId &&
+          sourceId == other.sourceId &&
           title == other.title &&
           nzbUrl == other.nzbUrl &&
           infoUrl == other.infoUrl &&
@@ -160,7 +224,44 @@ class SearchItemDto {
           season == other.season &&
           episode == other.episode &&
           year == other.year &&
-          group == other.group;
+          group == other.group &&
+          sourceIndexer == other.sourceIndexer;
+}
+
+/// [`newznab_search_many`] sonucu: birleşmiş/tekilleştirilmiş sayfa artı
+/// yanıt veremeyen indexer'ların takma adları (arama tamamen başarısız
+/// olmaz; UI "X / Y indexer yanıt verdi" gösterebilir).
+class SearchManyResultDto {
+  final SearchPageDto page;
+  final List<String> failedIndexers;
+
+  /// One cursor per input config; u32::MAX denotes an exhausted source.
+  final Uint32List? nextOffsets;
+  final bool? hasMore;
+
+  const SearchManyResultDto({
+    required this.page,
+    required this.failedIndexers,
+    this.nextOffsets,
+    this.hasMore,
+  });
+
+  @override
+  int get hashCode =>
+      page.hashCode ^
+      failedIndexers.hashCode ^
+      nextOffsets.hashCode ^
+      hasMore.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SearchManyResultDto &&
+          runtimeType == other.runtimeType &&
+          page == other.page &&
+          failedIndexers == other.failedIndexers &&
+          nextOffsets == other.nextOffsets &&
+          hasMore == other.hasMore;
 }
 
 class SearchPageDto {
@@ -179,4 +280,45 @@ class SearchPageDto {
           runtimeType == other.runtimeType &&
           total == other.total &&
           items == other.items;
+}
+
+/// Canonical identity plus this indexer's advertised search parameters.
+/// Empty parameters deliberately select the ordinary title fallback.
+class StructuredSearchDto {
+  final String kind;
+  final String? imdbId;
+  final String? tvdbId;
+  final int? season;
+  final int? episode;
+  final List<String> supportedParams;
+
+  const StructuredSearchDto({
+    required this.kind,
+    this.imdbId,
+    this.tvdbId,
+    this.season,
+    this.episode,
+    required this.supportedParams,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^
+      imdbId.hashCode ^
+      tvdbId.hashCode ^
+      season.hashCode ^
+      episode.hashCode ^
+      supportedParams.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StructuredSearchDto &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          imdbId == other.imdbId &&
+          tvdbId == other.tvdbId &&
+          season == other.season &&
+          episode == other.episode &&
+          supportedParams == other.supportedParams;
 }

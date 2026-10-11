@@ -68,7 +68,8 @@ pub fn parse_caps(xml: &str) -> Result<IndexerCaps, NewznabError> {
                     b"server" if caps.server_title.is_none() => {
                         caps.server_title = attr_value(&e, b"title")?;
                     }
-                    name @ (b"search" | b"tvsearch" | b"tv-search" | b"movie" | b"movie-search") => {
+                    name
+                    @ (b"search" | b"tvsearch" | b"tv-search" | b"movie" | b"movie-search") => {
                         let support = SearchSupport {
                             available: attr_value(&e, b"available")?
                                 .is_some_and(|v| v.eq_ignore_ascii_case("yes")),
@@ -157,6 +158,8 @@ pub struct SearchPage {
     pub total: Option<u64>,
     pub offset: u64,
     pub items: Vec<SearchItem>,
+    /// RSS records consumed, including records without a usable download link.
+    pub raw_item_count: u32,
 }
 
 pub fn parse_search_response(xml: &str) -> Result<SearchPage, NewznabError> {
@@ -186,6 +189,7 @@ pub fn parse_search_response(xml: &str) -> Result<SearchPage, NewznabError> {
         total: None,
         offset: 0,
         items: Vec::new(),
+        raw_item_count: 0,
     };
     let mut saw_rss = false;
     let mut in_item = false;
@@ -200,6 +204,7 @@ pub fn parse_search_response(xml: &str) -> Result<SearchPage, NewznabError> {
                 match e.local_name().as_ref() {
                     b"rss" => saw_rss = true,
                     b"item" => {
+                        page.raw_item_count = page.raw_item_count.saturating_add(1);
                         in_item = true;
                         current = Some(ItemBuilder::default());
                     }
@@ -248,9 +253,8 @@ pub fn parse_search_response(xml: &str) -> Result<SearchPage, NewznabError> {
                                     }
                                 }
                                 "imdb" | "imdbid" => {
-                                    item.imdb_id = Some(
-                                        value.trim().trim_start_matches("tt").to_string(),
-                                    );
+                                    item.imdb_id =
+                                        Some(value.trim().trim_start_matches("tt").to_string());
                                 }
                                 "season" => {
                                     item.season = parse_leading_number(&value);
@@ -792,7 +796,10 @@ fn parse_audio(tokens: &[String], index: usize) -> Option<((AudioCodec, Option<S
             None => Some(format!("{first}.0")),
         }
     } else {
-        match (next(1).and_then(single_digit), next(2).and_then(single_digit)) {
+        match (
+            next(1).and_then(single_digit),
+            next(2).and_then(single_digit),
+        ) {
             (Some(first), Some(second)) => {
                 consumed += 2;
                 Some(format!("{first}.{second}"))
@@ -891,6 +898,25 @@ pub fn dedup_items(items: Vec<SearchItem>) -> Vec<SearchItem> {
         });
         if !duplicate {
             kept.push(item);
+        }
+    }
+    kept
+}
+
+/// Same matching rule as [`dedup_items`] (normalized title + size within
+/// 1% tolerance), but carries a source-indexer tag through so a
+/// multi-indexer search can still badge each kept result by where it
+/// came from. First occurrence wins, same as `dedup_items`.
+pub fn dedup_items_with_source(items: Vec<(String, SearchItem)>) -> Vec<(String, SearchItem)> {
+    let mut kept: Vec<(String, SearchItem)> = Vec::with_capacity(items.len());
+    for (source, item) in items {
+        let title_key = normalize_title(&item.title);
+        let duplicate = kept.iter().any(|(_, existing)| {
+            normalize_title(&existing.title) == title_key
+                && sizes_match(existing.size_bytes, item.size_bytes)
+        });
+        if !duplicate {
+            kept.push((source, item));
         }
     }
     kept
@@ -1076,7 +1102,10 @@ mod tests {
         let first = &page.items[0];
         assert_eq!(first.size_bytes, Some(1_500_000_000));
         assert_eq!(first.imdb_id.as_deref(), Some("0137523"));
-        assert_eq!(first.info_url.as_deref(), Some("https://idx.example/details/fc1999"));
+        assert_eq!(
+            first.info_url.as_deref(),
+            Some("https://idx.example/details/fc1999")
+        );
         // &amp; entity'si çözülmüş olmalı.
         assert!(first.nzb_url.contains("t=get&id=fc1999"));
         assert!(first.categories.contains(&2000) && first.categories.contains(&2040));
@@ -1106,20 +1135,13 @@ mod tests {
 
     #[test]
     fn release_gercek_ornekler() {
-        let info = ReleaseInfo::parse(
-            "Fight.Club.1999.UHD.BluRay.2160p.DDP.5.1.DV.HDR10.x265-hallowed",
-        );
+        let info =
+            ReleaseInfo::parse("Fight.Club.1999.UHD.BluRay.2160p.DDP.5.1.DV.HDR10.x265-hallowed");
         assert_eq!(info.resolution, Some(Resolution::Uhd2160));
         assert_eq!(info.source, Some(Source::BluRay));
         assert_eq!(info.video_codec, Some(VideoCodec::Hevc));
-        assert_eq!(
-            info.hdr,
-            vec![HdrFormat::DolbyVision, HdrFormat::Hdr10]
-        );
-        assert_eq!(
-            info.audio,
-            vec![(AudioCodec::Ddp, Some("5.1".to_string()))]
-        );
+        assert_eq!(info.hdr, vec![HdrFormat::DolbyVision, HdrFormat::Hdr10]);
+        assert_eq!(info.audio, vec![(AudioCodec::Ddp, Some("5.1".to_string()))]);
         assert_eq!(info.year, Some(1999));
         assert_eq!(info.group.as_deref(), Some("hallowed"));
 
@@ -1143,7 +1165,9 @@ mod tests {
         assert_eq!(info.season, Some(1));
         assert_eq!(info.episode, Some(2));
         assert_eq!(info.source, Some(Source::WebDl));
-        assert!(info.audio.contains(&(AudioCodec::Ddp, Some("5.1".to_string()))));
+        assert!(info
+            .audio
+            .contains(&(AudioCodec::Ddp, Some("5.1".to_string()))));
         assert!(info.audio.contains(&(AudioCodec::Atmos, None)));
 
         let info = ReleaseInfo::parse("Old.Movie.1956.480p.DVDRip.XviD");
@@ -1249,16 +1273,46 @@ mod tests {
         assert_eq!(kept[1].size_bytes, Some(2000));
     }
 
+    #[test]
+    fn kaynak_etiketli_tekillestirme_ilk_indexeri_tutar() {
+        let items = vec![
+            (
+                "IndexerA".to_string(),
+                item("Movie.2024.2160p.WEB-DL-GRP", Some(1000)),
+            ),
+            (
+                // Aynı release, farklı indexer: elenir, IndexerA'nın kopyası kalır.
+                "IndexerB".to_string(),
+                item("movie.2024.2160p.web.dl-grp", Some(1005)),
+            ),
+            ("IndexerB".to_string(), item("Other.2024.1080p-XYZ", None)),
+        ];
+        let kept = dedup_items_with_source(items);
+        assert_eq!(kept.len(), 2);
+        assert_eq!(kept[0].0, "IndexerA");
+        assert_eq!(kept[0].1.size_bytes, Some(1000));
+        assert_eq!(kept[1].0, "IndexerB");
+    }
+
     // -- Tarih ------------------------------------------------------------------
 
     #[test]
     fn tarih_ayristirma() {
-        assert_eq!(parse_rfc2822_date("Sat, 01 Jan 2000 00:00:00 +0000"), Some(946_684_800));
+        assert_eq!(
+            parse_rfc2822_date("Sat, 01 Jan 2000 00:00:00 +0000"),
+            Some(946_684_800)
+        );
         assert_eq!(parse_rfc2822_date("Thu, 01 Jan 1970 00:00:00 GMT"), Some(0));
         // +0200 ofset UTC'den 2 saat çıkarır.
-        assert_eq!(parse_rfc2822_date("01 Jan 2000 02:00:00 +0200"), Some(946_684_800));
+        assert_eq!(
+            parse_rfc2822_date("01 Jan 2000 02:00:00 +0200"),
+            Some(946_684_800)
+        );
         // -0530: yerel saat UTC-5:30 → UTC = 11:00.
-        assert_eq!(parse_rfc2822_date("Sat, 01 Jan 2000 05:30:00 -0530"), Some(946_724_400));
+        assert_eq!(
+            parse_rfc2822_date("Sat, 01 Jan 2000 05:30:00 -0530"),
+            Some(946_724_400)
+        );
         assert_eq!(parse_rfc2822_date("not a date"), None);
         assert_eq!(parse_rfc2822_date("32 Foo 9999 99:99:99 +0000"), None);
     }

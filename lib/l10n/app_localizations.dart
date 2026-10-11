@@ -425,7 +425,7 @@ abstract class AppLocalizations {
   /// No description provided for @indexerSectionSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Search a Newznab-compatible indexer; the API key is stored in this device\'s secure keychain. Leave the URL empty to disable the indexer.'**
+  /// **'Search one or more Newznab-compatible indexers at once; each API key is stored in this device\'s secure keychain. Disabled indexers are skipped but kept configured.'**
   String get indexerSectionSubtitle;
 
   /// No description provided for @indexerUrlLabel.
@@ -469,6 +469,72 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Connection failed: {error}'**
   String indexerTestFailed(String error);
+
+  /// No description provided for @indexerAddButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Add indexer'**
+  String get indexerAddButton;
+
+  /// No description provided for @indexerAddTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add indexer'**
+  String get indexerAddTitle;
+
+  /// No description provided for @indexerEditTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit indexer'**
+  String get indexerEditTitle;
+
+  /// No description provided for @indexerNicknameLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get indexerNicknameLabel;
+
+  /// No description provided for @indexerNicknameHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. NZBFinder'**
+  String get indexerNicknameHint;
+
+  /// No description provided for @indexerCustomOption.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom'**
+  String get indexerCustomOption;
+
+  /// No description provided for @indexerEnabledLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Enabled'**
+  String get indexerEnabledLabel;
+
+  /// No description provided for @indexerDeleteButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get indexerDeleteButton;
+
+  /// No description provided for @indexerDeleteConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete indexer?'**
+  String get indexerDeleteConfirmTitle;
+
+  /// No description provided for @indexerDeleteConfirmHint.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} will be removed from your search.'**
+  String indexerDeleteConfirmHint(String name);
+
+  /// No description provided for @indexerPartialFailureHint.
+  ///
+  /// In en, this message translates to:
+  /// **'{failed} of {total} indexers didn\'t respond; showing results from the rest.'**
+  String indexerPartialFailureHint(int failed, int total);
 
   /// No description provided for @validationRequired.
   ///
@@ -1439,7 +1505,7 @@ abstract class AppLocalizations {
   /// No description provided for @unsavedHint.
   ///
   /// In en, this message translates to:
-  /// **'Save your provider and indexer changes before leaving?'**
+  /// **'Save your provider changes before leaving?'**
   String get unsavedHint;
 
   /// No description provided for @saveChanges.
@@ -1549,6 +1615,246 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Changes could not be saved. Keep this screen open and try again.'**
   String get settingsWriteHint;
+
+  /// No description provided for @indexerMoveUp.
+  ///
+  /// In en, this message translates to:
+  /// **'Move indexer up'**
+  String get indexerMoveUp;
+
+  /// No description provided for @indexerMoveDown.
+  ///
+  /// In en, this message translates to:
+  /// **'Move indexer down'**
+  String get indexerMoveDown;
+
+  /// No description provided for @metadataSetupHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Add your personal OMDb key to look up titles, summaries and available ratings. Test the key before saving if you want to check access.'**
+  String get metadataSetupHint;
+
+  /// No description provided for @metadataGetKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Get an OMDb API key'**
+  String get metadataGetKey;
+
+  /// No description provided for @metadataKeyFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste the API key only (letters and numbers), not a URL.'**
+  String get metadataKeyFormat;
+
+  /// No description provided for @metadataKeyRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter an API key to test.'**
+  String get metadataKeyRequired;
+
+  /// No description provided for @metadataTestKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Test API key'**
+  String get metadataTestKey;
+
+  /// No description provided for @metadataTesting.
+  ///
+  /// In en, this message translates to:
+  /// **'Testing API key…'**
+  String get metadataTesting;
+
+  /// No description provided for @metadataTestSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected to OMDb. This API key works. Save changes to use it.'**
+  String get metadataTestSuccess;
+
+  /// No description provided for @metadataTestFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not reach OMDb or read its response. Check your connection and try again.'**
+  String get metadataTestFailed;
+
+  /// No description provided for @metadataLinkFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The website could not be opened. Check that a browser is available.'**
+  String get metadataLinkFailed;
+
+  /// No description provided for @metadataBrowseTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Movie and TV info'**
+  String get metadataBrowseTitle;
+
+  /// No description provided for @metadataConfigure.
+  ///
+  /// In en, this message translates to:
+  /// **'OMDb settings'**
+  String get metadataConfigure;
+
+  /// No description provided for @metadataPrivacyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Look up a title or IMDb ID, then choose the correct year and type. Searches go to OMDb only when you request them.'**
+  String get metadataPrivacyHint;
+
+  /// No description provided for @metadataType.
+  ///
+  /// In en, this message translates to:
+  /// **'Type'**
+  String get metadataType;
+
+  /// No description provided for @metadataMovie.
+  ///
+  /// In en, this message translates to:
+  /// **'Movie'**
+  String get metadataMovie;
+
+  /// No description provided for @metadataSeries.
+  ///
+  /// In en, this message translates to:
+  /// **'TV series'**
+  String get metadataSeries;
+
+  /// No description provided for @metadataTitleLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Title for fallback search'**
+  String get metadataTitleLabel;
+
+  /// No description provided for @metadataTitleRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a title for indexers that need text search.'**
+  String get metadataTitleRequired;
+
+  /// No description provided for @metadataImdbId.
+  ///
+  /// In en, this message translates to:
+  /// **'IMDb ID (optional)'**
+  String get metadataImdbId;
+
+  /// No description provided for @metadataTvdbId.
+  ///
+  /// In en, this message translates to:
+  /// **'TVDB ID (optional)'**
+  String get metadataTvdbId;
+
+  /// No description provided for @metadataYear.
+  ///
+  /// In en, this message translates to:
+  /// **'Year (optional)'**
+  String get metadataYear;
+
+  /// No description provided for @metadataSeason.
+  ///
+  /// In en, this message translates to:
+  /// **'Season (optional)'**
+  String get metadataSeason;
+
+  /// No description provided for @metadataEpisode.
+  ///
+  /// In en, this message translates to:
+  /// **'Episode (optional)'**
+  String get metadataEpisode;
+
+  /// No description provided for @metadataInvalidId.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid ID.'**
+  String get metadataInvalidId;
+
+  /// No description provided for @metadataInvalidNumber.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid number.'**
+  String get metadataInvalidNumber;
+
+  /// No description provided for @metadataEpisodeNeedsSeason.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a season before an episode.'**
+  String get metadataEpisodeNeedsSeason;
+
+  /// No description provided for @metadataFindReleases.
+  ///
+  /// In en, this message translates to:
+  /// **'Find releases'**
+  String get metadataFindReleases;
+
+  /// No description provided for @metadataQueryHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Title or IMDb ID (tt...)'**
+  String get metadataQueryHint;
+
+  /// No description provided for @metadataKeyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional: add your personal OMDb API key for title lookup, plots, and available IMDb, Rotten Tomatoes, and Metacritic ratings. Release search works without it.'**
+  String get metadataKeyHint;
+
+  /// No description provided for @metadataApiKey.
+  ///
+  /// In en, this message translates to:
+  /// **'OMDb API key'**
+  String get metadataApiKey;
+
+  /// No description provided for @metadataRemoveKeyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'The key is saved securely. Clear this field and save to remove it.'**
+  String get metadataRemoveKeyHint;
+
+  /// No description provided for @metadataKeyFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'OMDb rejected the API key. Check OMDb settings.'**
+  String get metadataKeyFailed;
+
+  /// No description provided for @metadataLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'OMDb request limit reached. Try again later.'**
+  String get metadataLimit;
+
+  /// No description provided for @metadataFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Movie information could not be loaded. Try again; release search is still available.'**
+  String get metadataFailed;
+
+  /// No description provided for @metadataNoRatings.
+  ///
+  /// In en, this message translates to:
+  /// **'No ratings available for this title.'**
+  String get metadataNoRatings;
+
+  /// No description provided for @metadataAttribution.
+  ///
+  /// In en, this message translates to:
+  /// **'Information and ratings via OMDb. Scores retain their original source and scale; availability varies.'**
+  String get metadataAttribution;
+
+  /// No description provided for @structuredSearchTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Precise release search'**
+  String get structuredSearchTitle;
+
+  /// No description provided for @structuredSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Use an IMDb or TVDB ID when supported. Other indexers use the title, year, and season/episode below.'**
+  String get structuredSearchHint;
+
+  /// No description provided for @structuredSearchActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected title: ID search where supported; title search otherwise.'**
+  String get structuredSearchActive;
 }
 
 class _AppLocalizationsDelegate

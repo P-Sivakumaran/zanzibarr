@@ -14,7 +14,7 @@
 - **zanzibarr** streams video from Usenet NZBs **without downloading**: seekable playback straight from NNTP segments, through a local range-aware HTTP server, into libmpv.
 - Repo: <https://github.com/envermeister/zanzibarr> (public) · Site: <https://zanzibarr.app> (GitHub Pages, served from `docs/`, download links point at `releases/latest`)
 - Local working copy: `~/Downloads/USENET/Zanzibarr` (renamed 2026-09-08; formerly `~/Downloads/CodexGPT/UseNews`). Sibling fork: **Usetopia** at `~/Downloads/USENET/Usetopia` (repo `envermeister/usetopia`) — a separate app developed with Claude/ChatGPT; never touch it during zanzibarr work.
-- Current release: **v1.6** (`pubspec.yaml` → `version: 1.6.0+7`). `main` == release — see §6.
+- Upstream release: **v1.8**. Fork candidate: **v1.9** (`pubspec.yaml` → `1.9.0+10`); candidate work is not a published release — see §6.
 - Platforms: **macOS** (arm64, signed), **Windows**, **Android** (phone + Android TV leanback), **Linux** (new), **iOS** (unsigned package; no TestFlight yet). Web is intentionally out of scope (no raw NNTP in browsers).
 - The owner communicates in **Turkish** → always reply in Turkish. Repo artifacts (code comments, docs, release notes) in **English**. Commit messages: **Turkish conventional commits** (`feat(engine): …`, `fix(android): …`).
 - Donations: buymeacoffee.com/envermeister + ko-fi.com/envermeister (referenced in README/site only).
@@ -57,7 +57,8 @@ Key directories:
 - Provider of record: **Easynews**, `secure-eu.news.easynews.com:563` (TLS). Connection limit configured to 60 — plan support for that number was never verified; lower if auth/throttle errors appear.
 - NNTP engine (`:563`) and the Easynews **web search API** are separate code paths; web API integration is still on the roadmap.
 - Indexer: any **Newznab-compatible** one (developed against Miatrix): `?t=caps` discovery → search → release-name parser (resolution/codec/HDR/audio/group) → NZB straight into the player. Cross-indexer dedup is still open.
-- Metadata (TMDB + OMDb) is planned, not implemented.
+- Optional OMDb title/IMDb lookup and source-labelled ratings are implemented
+  locally in the fork; TMDB browsing/ID translation remains planned.
 
 ## 4. Standing rules (non-negotiable)
 
@@ -91,7 +92,44 @@ Release pipeline (v1.4+):
 
 Debug hooks (developer-only, env vars): `ZANZIBARR_DEBUG_NZB=/path/to.nzb` (open NZB directly at startup), `ZANZIBARR_DEBUG_PROBE=1` (dump video params + audio tracks to stdout).
 
-## 6. Current state (updated 2026-10-10)
+## 6. Current state (updated 2026-10-12)
+
+**2026-10-12 release preparation:** v1.9 fork candidate adds per-user Windows
+Inno Setup installer + portable ZIP with app-local CRT, Ubuntu 24.04 `.deb`,
+automated verification, tag/version/notes checks, checksums and draft release
+publication. Updater now targets `P-Sivakumaran/zanzibarr`. Review fixes surface
+indexer storage failures with retry and advance source cursors by raw RSS item
+count. See `docs/RELEASING.md`, `docs/releases/v1.9.md` and the dated review.
+Android repository signing secrets are currently absent; combined release CI
+cannot complete until configured. Existing user branding/metadata work preserved.
+Final source gate: **266 Rust + 218 Flutter tests passed**, 8 opt-in screenshots
+skipped; Clippy/analyze/actionlint clean. Windows executable, setup and portable
+ZIP built at `1.9.0+10`. Installer smoke covers repeated install, hidden startup
+and uninstall, not rendered UI or live playback.
+
+**Fork multi-indexer continuation:** Claude's interrupted implementation has
+been resumed. Phases 1–5 of `docs/INDEXER_SEARCH_PLAN_2026.md` are now
+implemented locally, including test migration, independent source cursors,
+stable download source IDs, deterministic deduplication, profile ordering,
+search toggles, draft/save recovery, and D-pad dialog navigation. Existing
+logo/font/background edits are preserved. Phase 4 adds explicit OMDb
+title/IMDb lookup, synopsis and available source-labelled IMDb/Rotten
+Tomatoes/Metacritic scores, plus manual IMDb/TVDB search. The optional key
+uses secure storage; release search works without it. Capability-aware
+native requests use supported IDs and season/episode parameters, with full
+title fallback when unavailable. Editing the query clears the selected ID;
+pagination preserves it. No release/tag created.
+
+OMDb settings now offers Test API key against the unsaved draft, bypassing
+cached metadata without saving credentials. The outlined key field validates
+key-only input, trims outer whitespace, supports visibility toggling, and
+clears test status after edits. Success, rejected key, quota and connection
+failures have static, readable messages. Windows debug app is rebuilt for
+local use; live OMDb account verification remains user-triggered.
+
+Continuation gate: **265 Rust tests and 216 Flutter tests passed**, with 8
+existing opt-in screenshot cases skipped. Clippy (locked, all targets,
+warnings denied), Flutter analysis, and host native build passed.
 
 The owner requested committing and pushing the completed review fixes, UX implementation, and Claude handover to the fork's `origin/main`. See `docs/CLAUDE_HANDOVER_2026-10-10.md` for continuation details. No release/tag is being created; device/signing checks in sections 7–8 remain outstanding.
 
@@ -140,6 +178,28 @@ Gate after the change: 223 Rust tests, clippy clean, flutter analyze clean, 152 
 
 ## 7. Known issues / watch list
 
+- Fork v1.9 distribution: Android signing secrets are absent; Windows signing
+  certificate, live playback/casting and clean-machine checks remain separate
+  distribution requirements. Linux/iOS builds need CI, macOS needs the signing
+  host. No all-platform readiness claim follows from offline test results.
+
+- Multi-indexer: live indexer/caps/download and physical TV verification
+  remain outstanding. Multi-source totals are intentionally unknown after
+  deduplication. Failed sources retain cursors for retry. Caps testing is
+  optional so configuration can be saved offline. See the search plan for
+  implementation decisions and proposed release-filter/health follow-ups.
+
+- Metadata: live OMDb lookup needs a personal API key entered in the app;
+  only offline service/UI tests were used here. Availability of individual
+  ratings varies. There is no direct Rotten Tomatoes API, scraping, logo
+  use, TMDB browsing or TVDB lookup. Direct RT integration requires its
+  licensing process. Metadata is requested explicitly, bounded to 15 seconds
+  and 1 MiB, and cached only in memory (six hours, 100 entries maximum).
+  Check real indexer capabilities/ID results and physical remote navigation
+  before distributing. New English/Turkish copy has English fallbacks elsewhere.
+  Use the settings Test API key button to verify a draft against OMDb; offline
+  tests cover this flow but no personal key was read or tested by the agent.
+
 - UI/UX follow-up: local fixes cover all eight findings. Verify real phone/TV playback, physical remote navigation, TalkBack/NVDA, and final rendered contrast on target devices. New copy is English/Turkish with English fallbacks in the other locales, preserving all existing translations. Existing desktop screenshots predate the UX changes.
 
 - *Pillarbox report* on `The.Runner.2026.1080p...` (16:9 content, bars on sides) — fit/fill button added in `3713b31`; if bars persist on a 16:9 TV, that's a render bug → get on-device logcat.
@@ -153,9 +213,19 @@ Gate after the change: 223 Rust tests, clippy clean, flutter analyze clean, 152 
 - *Xcode 27 / macOS 26 toolchain — proc-macro LINKEDIT:* `cargo build --release` fails with `can't find crate for tokio_macros`/`futures_macro` — dyld on macOS 26+ rejects stripped proc-macro dylibs ("mis-aligned LINKEDIT string pool", [rust-lang/rust#157750](https://github.com/rust-lang/rust/issues/157750)); surfaced 2026-10-08 after a rustup/Xcode update (the 2026-10-01 build was still fine). Fixed via `[profile.release.build-override] debug = 2, codegen-units = 256` in `rust/Cargo.toml` (committed) — host-side macro builds keep debuginfo, shipped binaries unchanged. Remove when rustup ships the llvm-objcopy alignment fix.
 
 - **Fork signing setup (2026-10-09):** Android release builds require the four repository secrets documented in `docs/ANDROID_SIGNING.md`. Keys from earlier CI debug-signed APKs cannot be reconstructed; upgrades require their original certificate. No release was built or published during the fixes.
-- **Fork code review (2026-10-09):** seven findings have local fixes and regression coverage; episode picker still cannot select inner files of a single archive. Updater still points at upstream releases; configure the endpoint before independently distributing fork releases.
+- **Fork code review (2026-10-09):** seven findings have fixes and regression coverage; episode picker still cannot select inner files of a single archive. Fork updater endpoint configured during v1.9 preparation.
 
 ## 8. Roadmap (priority order, status)
+
+- Fork v1.9: validate Windows installer lifecycle and platform CI artifacts,
+  configure persistent Android signing, complete device checks and promote the
+  reviewed draft. Packaging/runbook work is implemented; signing is not assumed.
+
+- Fork multi-indexer plan: Phases 1–5 implemented locally, including optional
+  OMDb and manual structured/ID search. Next: release preferences, indexer
+  health/rate budgets, duplicate alternatives, and bounded completion checks. See
+  `docs/INDEXER_SEARCH_PLAN_2026.md`.
+  OMDb setup includes live API testing; verify real account access in the app.
 
 - Fork UI/UX: implementation complete locally; device validation and refreshed release screenshots remain before distribution.
 
@@ -167,8 +237,8 @@ Fork next steps: configure the persistent Android signing key, review the local 
 | 2 | Play queue / auto-play next episode (natural follow-up to #1) | proposed |
 | 3 | NZB completion pre-check — sample STAT on segments before playback, health badge in search results | proposed |
 | 4 | Easynews web search API (separate code path) | open |
-| 5 | Cross-indexer dedup | open |
-| 6 | TMDB + OMDb metadata | open |
+| 5 | Cross-indexer dedup | implemented locally with multi-indexer search; live validation pending |
+| 6 | TMDB + OMDb metadata | OMDb implemented locally; TMDB discovery/ID mapping proposed |
 | 7 | OpenSubtitles integration | open |
 | 8 | Sleep timer (TV-friendly) | proposed |
 | 9 | Search history / saved searches | proposed |
@@ -215,6 +285,45 @@ Done since v1.0: Newznab indexer search (v1.1-era), RAR4/RAR5 STORE, split 7z ST
 - **2026-10-10 — Implemented UI/UX review.** Fixed mobile track access/touch targets, pending-task provider/indexer setup, draft protection, pagination/late-response/dedup/focus behavior, filename inspection, readability/large-text reflow, and recoverable errors/history feedback. Added a bounded single-connection native provider test and regenerated FRB/localization bindings. `intl` is now a direct dependency at its existing locked version. Added offline flow, narrow-screen/200%-text/RTL, redaction, native-bridge, and history failure regressions. Gate: **257 Rust + 190 Flutter**, 8 opt-in screenshots skipped; Clippy/analyze/native build/diff check passed. Prior code-review fixes remain intact; nothing committed, pushed, or released.
 
 - **2026-10-10 — Claude handover.** Added `docs/CLAUDE_HANDOVER_2026-10-10.md` with the uncommitted implementation scope, latest verification evidence, local Windows toolchain, remaining device/release checks, and continuation prompt. No application changes or additional test run; prior final gate remains 257 Rust + 190 Flutter (8 opt-in screenshots skipped).
+
+- **2026-10-11 — Resumed multi-indexer development.** Migrated remaining
+  screenshot/UX/TV tests to profile lists and fan-out results. Fixed source
+  cursors, duplicate-name download routing, all-failed retry, cross-page
+  deduplication, unreadable-storage handling, draft protection, failed-save
+  recovery, and D-pad dialog navigation. Added profile ordering and search
+  toggles. Regenerated FRB/localizations and rebuilt the host library.
+  Gate: 260 Rust + 203 Flutter passed (8 opt-in screenshots skipped),
+  Clippy/analyze/native build clean. Preserved prior branding/background
+  changes; no commit, push, release, or tag during this continuation.
+
+- **2026-10-11 — Metadata and precise release search.** Added optional
+  secure-stored OMDb setup, explicit title/IMDb lookup, source-labelled
+  ratings/synopsis, title confirmation, and manual IMDb/TVDB/season/episode
+  entry. Native search honors advertised ID parameters and safely falls
+  back to full text; result IMDb attributes become lookup hints. Added
+  bounded/cached/coalesced metadata requests, safe errors, draft recovery,
+  large-text scrolling, and query-identity/pagination regressions. Regenerated
+  FRB/localizations. Gate: **265 Rust + 214 Flutter**, 8 opt-in screenshots
+  skipped; Clippy/analyze/native build/diff check passed. Updated indexing
+  follow-up plan. Live API/device checks remain outstanding; no commit,
+  push, release or tag during this continuation.
+
+- **2026-10-11 — OMDb API test and form formatting.** Added an explicit
+  uncached API check using the draft key, without persisting it. Added
+  key-only format validation, whitespace trimming, visibility toggle,
+  structured status feedback and edit invalidation. Offline regressions
+  cover successful/rejected keys, malformed input and cache bypass.
+  Gate: **265 Rust + 216 Flutter**, 8 opt-in screenshots skipped;
+  Clippy/analyze/diff check clean. No personal API key accessed.
+
+- **2026-10-12 — Fork review and release preparation.** Fixed silent profile
+  load failures, raw RSS pagination counts and upstream update routing. Added
+  Windows Inno Setup/portable packaging with CRT/notices/version checks, Linux
+  deb packaging, verification CI, release input validation/checksums/drafts,
+  v1.9 candidate notes and runbook. Final gate: 266 Rust + 218 Flutter passed,
+  8 opt-in screenshots skipped; Clippy/analyze/actionlint clean. Windows native
+  release and installer built. Android signing secrets absent; physical-device,
+  macOS signing and clean-machine validation remain outstanding.
 
 ### Key technical decisions (the *why* — don't relitigate without cause)
 

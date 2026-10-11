@@ -174,7 +174,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get indexerSectionSubtitle =>
-      'Newznab uyumlu indexer\'da arama yapın; API anahtarı bu cihazın güvenli anahtar zincirinde saklanır. Indexer\'ı kapatmak için URL\'yi boş bırakın.';
+      'Birden çok Newznab uyumlu indexer\'da aynı anda arama yapın; her API anahtarı bu cihazın güvenli anahtar zincirinde saklanır. Kapalı indexer\'lar atlanır ama ayarlarda kalır.';
 
   @override
   String get indexerUrlLabel => 'Indexer URL\'si';
@@ -200,6 +200,43 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String indexerTestFailed(String error) {
     return 'Bağlantı kurulamadı: $error';
+  }
+
+  @override
+  String get indexerAddButton => 'Indexer ekle';
+
+  @override
+  String get indexerAddTitle => 'Indexer ekle';
+
+  @override
+  String get indexerEditTitle => 'Indexer\'ı düzenle';
+
+  @override
+  String get indexerNicknameLabel => 'Ad';
+
+  @override
+  String get indexerNicknameHint => 'ör. NZBFinder';
+
+  @override
+  String get indexerCustomOption => 'Özel';
+
+  @override
+  String get indexerEnabledLabel => 'Açık';
+
+  @override
+  String get indexerDeleteButton => 'Sil';
+
+  @override
+  String get indexerDeleteConfirmTitle => 'Indexer silinsin mi?';
+
+  @override
+  String indexerDeleteConfirmHint(String name) {
+    return '$name aramadan kaldırılacak.';
+  }
+
+  @override
+  String indexerPartialFailureHint(int failed, int total) {
+    return '$total indexer\'dan $failed tanesi yanıt vermedi; kalanların sonuçları gösteriliyor.';
   }
 
   @override
@@ -764,7 +801,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get unsavedHint =>
-      'Çıkmadan önce sağlayıcı ve indexer değişiklikleri kaydedilsin mi?';
+      'Çıkmadan önce sağlayıcı değişiklikleri kaydedilsin mi?';
 
   @override
   String get saveChanges => 'Değişiklikleri kaydet';
@@ -826,4 +863,139 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get settingsWriteHint =>
       'Değişiklikler kaydedilemedi. Bu ekranı açık tutup yeniden deneyin.';
+
+  @override
+  String get indexerMoveUp => 'Indexer\'ı yukarı taşı';
+
+  @override
+  String get indexerMoveDown => 'Indexer\'ı aşağı taşı';
+
+  @override
+  String get metadataSetupHint =>
+      'Başlık, özet ve mevcut puanları aramak için kişisel OMDb anahtarınızı ekleyin. Erişimi kontrol etmek için kaydetmeden önce anahtarı test edebilirsiniz.';
+
+  @override
+  String get metadataGetKey => 'OMDb API anahtarı al';
+
+  @override
+  String get metadataKeyFormat =>
+      'URL yerine yalnızca API anahtarını (harfler ve rakamlar) yapıştırın.';
+
+  @override
+  String get metadataKeyRequired => 'Test etmek için bir API anahtarı girin.';
+
+  @override
+  String get metadataTestKey => 'API anahtarını test et';
+
+  @override
+  String get metadataTesting => 'API anahtarı test ediliyor…';
+
+  @override
+  String get metadataTestSuccess =>
+      'OMDb bağlantısı başarılı. Bu API anahtarı çalışıyor. Kullanmak için değişiklikleri kaydedin.';
+
+  @override
+  String get metadataTestFailed =>
+      'OMDb\'ye ulaşılamadı veya yanıtı okunamadı. Bağlantınızı kontrol edip yeniden deneyin.';
+
+  @override
+  String get metadataLinkFailed =>
+      'Web sitesi açılamadı. Bir tarayıcının kullanılabilir olduğunu kontrol edin.';
+
+  @override
+  String get metadataBrowseTitle => 'Film ve dizi bilgisi';
+
+  @override
+  String get metadataConfigure => 'OMDb ayarları';
+
+  @override
+  String get metadataPrivacyHint =>
+      'Başlık veya IMDb kimliği arayın, ardından doğru yılı ve türü seçin. Aramalar yalnızca siz istediğinizde OMDb\'ye gönderilir.';
+
+  @override
+  String get metadataType => 'Tür';
+
+  @override
+  String get metadataMovie => 'Film';
+
+  @override
+  String get metadataSeries => 'Dizi';
+
+  @override
+  String get metadataTitleLabel => 'Metin araması için başlık';
+
+  @override
+  String get metadataTitleRequired =>
+      'Metin araması gerektiren indexer\'lar için bir başlık girin.';
+
+  @override
+  String get metadataImdbId => 'IMDb kimliği (isteğe bağlı)';
+
+  @override
+  String get metadataTvdbId => 'TVDB kimliği (isteğe bağlı)';
+
+  @override
+  String get metadataYear => 'Yıl (isteğe bağlı)';
+
+  @override
+  String get metadataSeason => 'Sezon (isteğe bağlı)';
+
+  @override
+  String get metadataEpisode => 'Bölüm (isteğe bağlı)';
+
+  @override
+  String get metadataInvalidId => 'Geçerli bir kimlik girin.';
+
+  @override
+  String get metadataInvalidNumber => 'Geçerli bir sayı girin.';
+
+  @override
+  String get metadataEpisodeNeedsSeason => 'Bölümden önce sezon girin.';
+
+  @override
+  String get metadataFindReleases => 'Sürümleri bul';
+
+  @override
+  String get metadataQueryHint => 'Başlık veya IMDb kimliği (tt...)';
+
+  @override
+  String get metadataKeyHint =>
+      'İsteğe bağlı: başlık araması, özetler ve mevcut IMDb, Rotten Tomatoes ve Metacritic puanları için kişisel OMDb API anahtarınızı ekleyin. Sürüm araması anahtar olmadan da çalışır.';
+
+  @override
+  String get metadataApiKey => 'OMDb API anahtarı';
+
+  @override
+  String get metadataRemoveKeyHint =>
+      'Anahtar güvenli biçimde kaydedilir. Kaldırmak için bu alanı temizleyip kaydedin.';
+
+  @override
+  String get metadataKeyFailed =>
+      'OMDb API anahtarını reddetti. OMDb ayarlarını kontrol edin.';
+
+  @override
+  String get metadataLimit =>
+      'OMDb istek sınırına ulaşıldı. Daha sonra yeniden deneyin.';
+
+  @override
+  String get metadataFailed =>
+      'Film bilgileri yüklenemedi. Yeniden deneyin; sürüm araması hâlâ kullanılabilir.';
+
+  @override
+  String get metadataNoRatings => 'Bu başlık için puan bulunmuyor.';
+
+  @override
+  String get metadataAttribution =>
+      'Bilgiler ve puanlar OMDb üzerinden sağlanır. Puanların özgün kaynağı ve ölçeği korunur; bulunabilirlik değişebilir.';
+
+  @override
+  String get structuredSearchTitle => 'Ayrıntılı sürüm araması';
+
+  @override
+  String get structuredSearchHint =>
+      'Desteklendiğinde IMDb veya TVDB kimliği kullanılır. Diğer indexer\'lar aşağıdaki başlık, yıl ve sezon/bölüm bilgisiyle arar.';
+
+  @override
+  String get structuredSearchActive =>
+      'Seçilen başlık: desteklendiğinde kimlikle, aksi hâlde başlıkla arama.';
 }

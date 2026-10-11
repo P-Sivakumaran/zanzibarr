@@ -33,16 +33,19 @@ class _ProviderStore extends ProviderSettingsStore {
 class _IndexerStore extends IndexerSettingsStore {
   _IndexerStore({bool complete = true})
     : value = complete
-          ? const IndexerSettings(
-              baseUrl: 'https://indexer.example',
-              apiKey: 'TESTPASS123',
-            )
-          : const IndexerSettings();
-  IndexerSettings value;
+          ? const [
+              IndexerProfile(
+                id: '1',
+                baseUrl: 'https://indexer.example',
+                apiKey: 'TESTPASS123',
+              ),
+            ]
+          : const [];
+  List<IndexerProfile> value;
   @override
-  Future<IndexerSettings> load() async => value;
+  Future<List<IndexerProfile>> load() async => value;
   @override
-  Future<void> save(IndexerSettings settings) async => value = settings;
+  Future<void> save(List<IndexerProfile> profiles) async => value = profiles;
 }
 
 class _NoUpdates extends UpdateService {
@@ -83,6 +86,7 @@ SearchItemDto _item(String id) => SearchItemDto(
   nzbUrl: 'https://indexer.example/$id',
   badges: const [],
   mediaKind: 'tv',
+  sourceIndexer: 'https://indexer.example',
 );
 
 Widget _app(Widget home) => ZanzibarrApp(home: home);
@@ -175,8 +179,10 @@ void main() {
         uiPreferences: prefs,
         home: SearchScreen(
           store: _IndexerStore(),
-          searchFn: (_, query, limit, offset) async =>
-              SearchPageDto(items: [_item('rtl')]),
+          searchFn: (_, query, limit, offset) async => SearchManyResultDto(
+            page: SearchPageDto(items: [_item('rtl')]),
+            failedIndexers: const [],
+          ),
         ),
       ),
     );
@@ -265,18 +271,24 @@ void main() {
               offsets.add(offset);
               queries.add(query);
               if (offset == 0) {
-                return SearchPageDto(
-                  total: BigInt.from(4),
-                  items: [_item('a'), _item('b')],
+                return SearchManyResultDto(
+                  page: SearchPageDto(
+                    total: BigInt.from(4),
+                    items: [_item('a'), _item('b')],
+                  ),
+                  failedIndexers: const [],
                 );
               }
               if (fail) {
                 fail = false;
                 throw StateError('offline');
               }
-              return SearchPageDto(
-                total: BigInt.from(4),
-                items: [_item('b'), _item('c')],
+              return SearchManyResultDto(
+                page: SearchPageDto(
+                  total: BigInt.from(4),
+                  items: [_item('b'), _item('c')],
+                ),
+                failedIndexers: const [],
               );
             },
           ),
@@ -309,7 +321,7 @@ void main() {
   testWidgets('clearing a pending search ignores its late result', (
     tester,
   ) async {
-    final result = Completer<SearchPageDto>();
+    final result = Completer<SearchManyResultDto>();
     await tester.pumpWidget(
       _app(
         SearchScreen(
@@ -324,7 +336,12 @@ void main() {
     await tester.pump();
     await tester.tap(find.byIcon(Icons.close_rounded));
     await tester.pump();
-    result.complete(SearchPageDto(total: BigInt.one, items: [_item('late')]));
+    result.complete(
+      SearchManyResultDto(
+        page: SearchPageDto(total: BigInt.one, items: [_item('late')]),
+        failedIndexers: const [],
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text(_item('late').title), findsNothing);
   });
@@ -337,8 +354,10 @@ void main() {
       _app(
         SearchScreen(
           store: _IndexerStore(),
-          searchFn: (_, query, limit, offset) async =>
-              SearchPageDto(items: [item]),
+          searchFn: (_, query, limit, offset) async => SearchManyResultDto(
+            page: SearchPageDto(items: [item]),
+            failedIndexers: const [],
+          ),
         ),
       ),
     );
@@ -461,6 +480,8 @@ void main() {
       await tester.tap(find.text('Search the indexer'));
       await tester.pumpAndSettle();
       expect(find.text('NNTP connection'), findsNothing);
+      await tester.tap(find.text('Add indexer'));
+      await tester.pumpAndSettle();
       await tester.enterText(
         find.widgetWithText(TextFormField, 'Indexer URL'),
         'https://indexer.example',
@@ -473,7 +494,7 @@ void main() {
       await tester.tap(find.text('Save indexer'));
       await tester.pumpAndSettle();
       expect(find.byType(SearchScreen), findsOneWidget);
-      expect(indexer.value.isComplete, isTrue);
+      expect(indexer.value.single.isComplete, isTrue);
     },
   );
 
@@ -489,8 +510,10 @@ void main() {
       _app(
         SearchScreen(
           store: _IndexerStore(),
-          searchFn: (_, query, limit, offset) async =>
-              SearchPageDto(items: [_item('long.' * 10)]),
+          searchFn: (_, query, limit, offset) async => SearchManyResultDto(
+            page: SearchPageDto(items: [_item('long.' * 10)]),
+            failedIndexers: const [],
+          ),
         ),
       ),
     );

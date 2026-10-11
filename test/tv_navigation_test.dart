@@ -35,15 +35,15 @@ class _FakeProviderStore extends ProviderSettingsStore {
 }
 
 class _FakeIndexerStore extends IndexerSettingsStore {
-  _FakeIndexerStore(this.settings);
+  _FakeIndexerStore(this.profiles);
 
-  IndexerSettings settings;
-
-  @override
-  Future<IndexerSettings> load() async => settings;
+  List<IndexerProfile> profiles;
 
   @override
-  Future<void> save(IndexerSettings value) async => settings = value;
+  Future<List<IndexerProfile>> load() async => profiles;
+
+  @override
+  Future<void> save(List<IndexerProfile> value) async => profiles = value;
 }
 
 class _NullUpdateService extends UpdateService {
@@ -96,8 +96,7 @@ bool _focusedWithin(Finder finder) {
 String _focusLabel(WidgetTester tester) {
   final context = FocusManager.instance.primaryFocus?.context;
   if (context == null) return 'HİÇBİRŞEY';
-  W? ancestor<W extends Widget>() =>
-      context.findAncestorWidgetOfExactType<W>();
+  W? ancestor<W extends Widget>() => context.findAncestorWidgetOfExactType<W>();
   if (ancestor<DropdownButtonFormField<Locale>>() != null) return 'dil-seçici';
   if (ancestor<SegmentedButton<ThemeMode>>() != null) return 'tema';
   final textForm = ancestor<TextFormField>();
@@ -109,6 +108,8 @@ String _focusLabel(WidgetTester tester) {
   if (outlined != null) return 'dışçizgili:${_buttonText(tester, outlined)}';
   final filled = ancestor<FilledButton>();
   if (filled != null) return 'dolgun:${_buttonText(tester, filled)}';
+  final textButton = ancestor<TextButton>();
+  if (textButton != null) return 'metin:${_buttonText(tester, textButton)}';
   if (ancestor<InkWell>() != null) return 'kart';
   return 'diğer:${context.widget.runtimeType}';
 }
@@ -132,31 +133,71 @@ Future<void> _dpadUp(WidgetTester tester) async {
 }
 
 void main() {
-  group('Ayarlar ekranı D-pad gezintisi', () {
-    testWidgets('açılışta odak dil seçicide başlar ve yukarı geri düğmesine çıkar', (
-      tester,
-    ) async {
+  testWidgets(
+    'indexer dialog traverses nickname URL key eye and test with D-pad',
+    (tester) async {
       await tester.pumpWithL10n(
         SettingsScreen(
           store: _FakeProviderStore(),
-          uiPreferences: turkishUiPreferences(),
-          indexerStore: _FakeIndexerStore(const IndexerSettings()),
+          indexerStore: _FakeIndexerStore(const []),
+          initialSection: SettingsSection.indexer,
         ),
       );
       await tester.pumpAndSettle();
+      await tester.tap(find.text('Indexer ekle'));
+      await tester.pumpAndSettle();
+      expect(_focusLabel(tester), 'alan:');
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Indexer URL\'si'),
+        'https://indexer.example',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'API anahtarı'),
+        'TESTPASS123',
+      );
+      final fields = tester.widgetList<TextField>(find.descendant(
+        of: find.byType(AlertDialog), matching: find.byType(TextField))).toList();
+      fields.first.focusNode!.requestFocus();
+      await tester.pumpAndSettle();
+      await _dpadDown(tester);
+      expect(_focusLabel(tester), 'alan:https://indexer.example');
+      await _dpadDown(tester);
+      expect(_focusLabel(tester), 'alan:TESTPASS123');
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      expect(_focusLabel(tester), 'simge:Parolayı göster');
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pumpAndSettle();
+      await _dpadDown(tester);
+      expect(_focusLabel(tester), 'dışçizgili:Bağlantıyı sına');
+    },
+  );
+  group('Ayarlar ekranı D-pad gezintisi', () {
+    testWidgets(
+      'açılışta odak dil seçicide başlar ve yukarı geri düğmesine çıkar',
+      (tester) async {
+        await tester.pumpWithL10n(
+          SettingsScreen(
+            store: _FakeProviderStore(),
+            uiPreferences: turkishUiPreferences(),
+            indexerStore: _FakeIndexerStore(const []),
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      expect(_focusLabel(tester), 'dil-seçici');
+        expect(_focusLabel(tester), 'dil-seçici');
 
-      await _dpadUp(tester);
-      expect(_focusLabel(tester), startsWith('simge:'));
-    });
+        await _dpadUp(tester);
+        expect(_focusLabel(tester), startsWith('simge:'));
+      },
+    );
 
     testWidgets('aşağı ok tüm kontrolleri erişilebilir kılar', (tester) async {
       await tester.pumpWithL10n(
         SettingsScreen(
           store: _FakeProviderStore(),
           uiPreferences: turkishUiPreferences(),
-          indexerStore: _FakeIndexerStore(const IndexerSettings()),
+          indexerStore: _FakeIndexerStore(const []),
         ),
       );
       await tester.pumpAndSettle();
@@ -180,8 +221,8 @@ void main() {
         'alan:kullanici',
         'alan:TESTPASS123',
         'dolgun:Güvenle kaydet',
-        'dışçizgili:Bağlantıyı sına',
-        "dolgun:Indexer'ı kaydet",
+        'dışçizgili:Sağlayıcı bağlantısını sına',
+        'metin:Indexer ekle',
       };
       expect(
         stops.toSet(),
@@ -197,7 +238,7 @@ void main() {
       // İki boş indexer alanı (URL + API anahtarı) da dolaşılmış olmalı.
       // Ardışık aynı etiketler stops'ta tekilleştiği için ham adımlarda
       // sayılır: zincir "alan: → alan:" diye iniyor.
-      expect(steps.where((step) => step == 'alan:').length, 2);
+      expect(stops, contains('metin:Indexer ekle'));
     });
 
     testWidgets('yan yana alanlar arasında sol/sağ ok gezer', (tester) async {
@@ -205,13 +246,17 @@ void main() {
         SettingsScreen(
           store: _FakeProviderStore(),
           uiPreferences: turkishUiPreferences(),
-          indexerStore: _FakeIndexerStore(const IndexerSettings()),
+          indexerStore: _FakeIndexerStore(const []),
         ),
       );
       await tester.pumpAndSettle();
 
       // Sunucu adresi alanına in (dil → tema → sunucu).
-      for (var i = 0; i < 6 && _focusLabel(tester) != 'alan:news.example.com'; i++) {
+      for (
+        var i = 0;
+        i < 6 && _focusLabel(tester) != 'alan:news.example.com';
+        i++
+      ) {
         await _dpadDown(tester);
       }
       expect(_focusLabel(tester), 'alan:news.example.com');
@@ -249,12 +294,16 @@ void main() {
         SettingsScreen(
           store: _FakeProviderStore(),
           uiPreferences: turkishUiPreferences(),
-          indexerStore: _FakeIndexerStore(const IndexerSettings()),
+          indexerStore: _FakeIndexerStore(const []),
         ),
       );
       await tester.pumpAndSettle();
 
-      for (var i = 0; i < 16 && _focusLabel(tester) != 'alan:TESTPASS123'; i++) {
+      for (
+        var i = 0;
+        i < 16 && _focusLabel(tester) != 'alan:TESTPASS123';
+        i++
+      ) {
         await _dpadDown(tester);
       }
       expect(_focusLabel(tester), 'alan:TESTPASS123');
@@ -274,91 +323,105 @@ void main() {
       expect(_focusLabel(tester), 'alan:TESTPASS123');
     });
 
-    testWidgets('DPAD_CENTER (select) odaktaki kaydet düğmesini etkinleştirir', (
-      tester,
-    ) async {
-      final store = _FakeProviderStore();
-      await tester.pumpWithL10n(
-        SettingsScreen(
-          store: store,
-          uiPreferences: turkishUiPreferences(),
-          indexerStore: _FakeIndexerStore(const IndexerSettings()),
-        ),
-      );
-      await tester.pumpAndSettle();
+    testWidgets(
+      'DPAD_CENTER (select) odaktaki kaydet düğmesini etkinleştirir',
+      (tester) async {
+        final store = _FakeProviderStore();
+        await tester.pumpWithL10n(
+          SettingsScreen(
+            store: store,
+            uiPreferences: turkishUiPreferences(),
+            indexerStore: _FakeIndexerStore(const []),
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      // "Güvenle kaydet" düğmesine inene kadar aşağı gez.
-      for (var i = 0; i < 16 && _focusLabel(tester) != 'dolgun:Güvenle kaydet'; i++) {
-        await _dpadDown(tester);
-      }
-      expect(_focusLabel(tester), 'dolgun:Güvenle kaydet');
+        // "Güvenle kaydet" düğmesine inene kadar aşağı gez.
+        for (
+          var i = 0;
+          i < 16 && _focusLabel(tester) != 'dolgun:Güvenle kaydet';
+          i++
+        ) {
+          await _dpadDown(tester);
+        }
+        expect(_focusLabel(tester), 'dolgun:Güvenle kaydet');
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.select);
-      await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
 
-      expect(find.text('Ayarlar güvenli depoya kaydedildi.'), findsOneWidget);
-      expect(store.saved.host, 'news.example.com');
-    });
+        expect(find.text('Ayarlar güvenli depoya kaydedildi.'), findsOneWidget);
+        expect(store.saved.host, 'news.example.com');
+      },
+    );
   });
 
   group('Arama ekranı D-pad gezintisi', () {
-    Future<SearchPageDto> fakeSearch(
-      IndexerConfigDto config,
+    Future<SearchManyResultDto> fakeSearch(
+      List<IndexerConfigDto> configs,
       String query,
       int limit,
       int offset,
-    ) async => SearchPageDto(
-      total: BigInt.from(1),
-      items: [
-        SearchItemDto(
-          title: 'Bir.Film.2024.2160p.WEB-DL.DV.HEVC-GRP',
-          nzbUrl: 'https://indexer.example/getnzb/1',
-          sizeBytes: BigInt.from(1000000),
-          badges: const ['2160p'],
-          mediaKind: 'movie',
-        ),
-      ],
+    ) async => SearchManyResultDto(
+      page: SearchPageDto(
+        total: BigInt.from(1),
+        items: [
+          SearchItemDto(
+            title: 'Bir.Film.2024.2160p.WEB-DL.DV.HEVC-GRP',
+            nzbUrl: 'https://indexer.example/getnzb/1',
+            sizeBytes: BigInt.from(1000000),
+            badges: const ['2160p'],
+            mediaKind: 'movie',
+            sourceIndexer: 'https://indexer.example',
+          ),
+        ],
+      ),
+      failedIndexers: const [],
     );
 
-    testWidgets('odak arama alanında başlar, sonuç kartına inip select oynatır', (
-      tester,
-    ) async {
-      String? downloadedUrl;
-      await tester.pumpWithL10n(
-        SearchScreen(
-          store: _FakeIndexerStore(
-            const IndexerSettings(
-              baseUrl: 'https://indexer.example',
-              apiKey: 'anahtar',
-            ),
+    testWidgets(
+      'odak arama alanında başlar, sonuç kartına inip select oynatır',
+      (tester) async {
+        String? downloadedUrl;
+        await tester.pumpWithL10n(
+          SearchScreen(
+            store: _FakeIndexerStore(const [
+              IndexerProfile(
+                id: '1',
+                baseUrl: 'https://indexer.example',
+                apiKey: 'TESTPASS123',
+              ),
+            ]),
+            searchFn: fakeSearch,
+            downloadFn: (config, nzbUrl, suggestedName) async {
+              downloadedUrl = nzbUrl;
+              return '/tmp/indirilen.nzb';
+            },
+            onDownloaded: (_) {},
           ),
-          searchFn: fakeSearch,
-          downloadFn: (config, nzbUrl, suggestedName) async {
-            downloadedUrl = nzbUrl;
-            return '/tmp/indirilen.nzb';
-          },
-          onDownloaded: (_) {},
-        ),
-      );
-      await tester.pumpAndSettle();
+        );
+        await tester.pumpAndSettle();
 
-      expect(_focusLabel(tester), 'arama-alanı');
+        expect(_focusLabel(tester), 'arama-alanı');
 
-      await tester.enterText(find.byType(TextField), 'film');
-      // Klavyeden "ara" eylemi aramayı başlatır.
-      await tester.testTextInput.receiveAction(TextInputAction.search);
-      await tester.pumpAndSettle();
-      expect(find.text('Bir.Film.2024.2160p.WEB-DL.DV.HEVC-GRP'), findsOneWidget);
+        await tester.enterText(find.byType(TextField), 'film');
+        // Klavyeden "ara" eylemi aramayı başlatır.
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Bir.Film.2024.2160p.WEB-DL.DV.HEVC-GRP'),
+          findsOneWidget,
+        );
 
-      // Sonuçlar gelince odak ilk karta taşınır (IME odağı düşürür; D-pad
-      // zinciri karttan devam eder).
-      expect(_focusLabel(tester), 'kart');
+        // Sonuçlar gelince odak ilk karta taşınır (IME odağı düşürür; D-pad
+        // zinciri karttan devam eder).
+        expect(_focusLabel(tester), 'kart');
 
-      // DPAD_CENTER kartı etkinleştirir → NZB indirme başlar.
-      await tester.sendKeyEvent(LogicalKeyboardKey.select);
-      await tester.pumpAndSettle();
-      expect(downloadedUrl, 'https://indexer.example/getnzb/1');
-    });
+        // DPAD_CENTER kartı etkinleştirir → NZB indirme başlar.
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        expect(downloadedUrl, 'https://indexer.example/getnzb/1');
+      },
+    );
   });
 
   group('Ana ekran D-pad gezintisi', () {

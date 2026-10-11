@@ -113,6 +113,22 @@ void main() {
   });
 
   group('UpdateService.checkForUpdate', () {
+    test('checks this fork rather than upstream releases', () async {
+      Uri? requested;
+      final service = UpdateService(
+        client: MockClient((request) async {
+          requested = request.url;
+          return http.Response('{}', 404);
+        }),
+        storage: _MemoryPreferenceStorage(),
+      );
+      expect(await service.checkForUpdate(), isNull);
+      expect(
+        requested.toString(),
+        'https://api.github.com/repos/P-Sivakumaran/zanzibarr/releases/latest',
+      );
+    });
+
     test('daha yeni sürüm varsa ReleaseInfo döner', () async {
       final service = UpdateService(
         client: _clientWith(_releaseJson(tag: 'v9.9.9')),

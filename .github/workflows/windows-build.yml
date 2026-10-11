@@ -34,15 +34,20 @@ jobs:
       - name: flutter build windows (release)
         run: flutter build windows --release
 
-      # Release klasörü exe + tüm DLL'leri içerir; tek başına taşınabilir.
-      - name: Paketle (zip)
+      - name: Package installer and portable ZIP
         shell: pwsh
         run: |
-          Compress-Archive -Path "build/windows/x64/runner/Release/*" `
-            -DestinationPath "zanzibarr-windows-x64.zip" -Force
+          $compiler = ./tools/windows/install-inno.ps1
+          ./tools/windows/package.ps1 -Iscc $compiler
+
+      - name: Smoke test installer lifecycle
+        shell: pwsh
+        run: ./tools/windows/smoke-installer.ps1
 
       - uses: actions/upload-artifact@v4
         with:
           name: zanzibarr-windows-x64
-          path: zanzibarr-windows-x64.zip
+          path: |
+            dist/windows/zanzibarr-windows-x64.zip
+            dist/windows/zanzibarr-windows-x64-setup.exe
           retention-days: 14

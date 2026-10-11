@@ -7,7 +7,9 @@ import '../l10n/app_localizations.dart';
 import '../src/rust/api/search.dart';
 import '../src/rust/api/streaming.dart';
 import '../tv_focus.dart';
+import '../ui/app_background.dart';
 import 'indexer_settings.dart';
+import '../ui/error_feedback.dart';
 import 'provider_settings.dart';
 import 'ui_preferences.dart';
 
@@ -70,11 +72,6 @@ class _SettingsScreenState extends State<SettingsScreen>
   final _passwordController = TextEditingController();
   final _maxConnectionsController = TextEditingController();
 
-  // Indexer bölümü NNTP formundan bağımsızdır: ayrı Form, ayrı kaydet düğmesi.
-  final _indexerFormKey = GlobalKey<FormState>();
-  final _indexerUrlController = TextEditingController();
-  final _indexerApiKeyController = TextEditingController();
-
   // TV kumandasında yukarı/aşağı oklar alandan çıkabilsin diye D-pad
   // gezintili odak düğümleri (issue #4). Parola/API anahtarı alanlarının
   // göz simgeleri `skipTraversal` ile yön gezintisinden çıkarılmıştır —
@@ -95,25 +92,14 @@ class _SettingsScreenState extends State<SettingsScreen>
     controller: _passwordController,
     fieldNode: _passwordFocusNode,
   );
-  late final _indexerUrlFocusNode = dpadTraversalFocusNode(
-    _indexerUrlController,
-  );
-  late final FocusNode _indexerApiKeyFocusNode = dpadTraversalFocusNode(
-    _indexerApiKeyController,
-    focusOnRightEdge: () => _indexerApiKeyEyeFocusNode,
-  );
-  late final FocusNode _indexerApiKeyEyeFocusNode = dpadFieldActionFocusNode(
-    controller: _indexerApiKeyController,
-    fieldNode: _indexerApiKeyFocusNode,
-  );
 
   List<String>? _providerBaseline;
-  List<String>? _indexerBaseline;
   bool _allowPop = false;
   bool _confirmingLeave = false;
   bool _testingProvider = false;
-  bool _indexerLoading = true;
-  bool _indexerLoadFailed = false;
+  List<IndexerProfile> _profiles = [];
+  bool _profilesLoading = true;
+  bool _profilesLoadFailed = false;
   final _loadTimers = <Timer>{};
 
   Future<T> _loadWithTimeout<T>(Future<T> future) async {
@@ -141,10 +127,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     _passwordController,
     _maxConnectionsController,
   ];
-  List<TextEditingController> get _indexerControllers => [
-    _indexerUrlController,
-    _indexerApiKeyController,
-  ];
   List<String> _values(List<TextEditingController> controllers) => [
     for (final controller in controllers) controller.text,
   ];
@@ -155,15 +137,14 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool get _providerDirty =>
       widget.initialSection != SettingsSection.indexer &&
       _different(_providerBaseline, _providerControllers);
-  bool get _indexerDirty =>
-      widget.initialSection != SettingsSection.provider &&
-      _different(_indexerBaseline, _indexerControllers);
-  bool get _dirty => _providerDirty || _indexerDirty;
+  // Indexer profilleri liste/diyalog akışıyla anında kaydedilir; ertelenmiş
+  // "kirli" durumu yok, bu yüzden genel kirlilik yalnızca NNTP formuna bakar.
+  bool get _dirty => _providerDirty;
 
   List<String>? _lastValues;
 
   void _changed() {
-    final values = _values([..._providerControllers, ..._indexerControllers]);
+    final values = _values(_providerControllers);
     if (listEquals(values, _lastValues)) return;
     _lastValues = values;
     if (mounted) {
@@ -174,7 +155,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Future<void> _leave() async {
-    if (_confirmingLeave || _saving || _savingIndexer) return;
+    if (_confirmingLeave || _saving) return;
     var savedOnLeave = false;
     if (_dirty) {
       _confirmingLeave = true;
@@ -204,7 +185,6 @@ class _SettingsScreenState extends State<SettingsScreen>
       if (!mounted || action == null || action == 'keep') return;
       if (action == 'save') {
         if (_providerDirty) await _save(finish: false);
-        if (mounted && _indexerDirty) await _saveIndexer(finish: false);
         if (!mounted || _dirty) return;
         savedOnLeave = true;
       }
@@ -304,19 +284,13 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _loading = true;
   bool _saving = false;
   bool _obscurePassword = true;
-  bool _savingIndexer = false;
-  bool _testingIndexer = false;
-  bool _obscureApiKey = true;
   Object? _loadError;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    for (final controller in [
-      ..._providerControllers,
-      ..._indexerControllers,
-    ]) {
+    for (final controller in _providerControllers) {
       controller.addListener(_changed);
     }
     if (widget.initialSection != SettingsSection.indexer) {
@@ -325,19 +299,18 @@ class _SettingsScreenState extends State<SettingsScreen>
       _loading = false;
     }
     if (widget.initialSection != SettingsSection.provider) {
-      _loadIndexer();
+      _loadProfiles();
     } else {
-      _indexerLoading = false;
+      _profilesLoading = false;
     }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed && mounted) {
-      if (!_obscurePassword || !_obscureApiKey) {
+      if (!_obscurePassword) {
         setState(() {
           _obscurePassword = true;
-          _obscureApiKey = true;
         });
       }
     }
@@ -372,29 +345,111 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   /// Indexer okuması NNTP'den bağımsızdır: depo okunamazsa (veya hiç
-  /// tamamlanamazsa) NNTP formu kilitlenmesin, indexer alanları boş kalsın.
-  Future<void> _loadIndexer() async {
+  /// tamamlanamazsa) NNTP formu kilitlenmesin, profil listesi boş kalsın.
+  Future<void> _loadProfiles() async {
     if (mounted) {
       setState(() {
-        _indexerLoading = true;
-        _indexerLoadFailed = false;
+        _profilesLoading = true;
+        _profilesLoadFailed = false;
       });
     }
     try {
-      final indexer = await _loadWithTimeout(_indexerStore.load());
+      final profiles = await _loadWithTimeout(_indexerStore.load());
       if (!mounted) return;
       setState(() {
-        _indexerUrlController.text = indexer.baseUrl;
-        _indexerApiKeyController.text = indexer.apiKey;
-        _indexerBaseline = _values(_indexerControllers);
-        _indexerLoading = false;
+        _profiles = profiles;
+        _profilesLoading = false;
       });
     } catch (_) {
       if (mounted) {
         setState(() {
-          _indexerLoading = false;
-          _indexerLoadFailed = true;
+          _profilesLoading = false;
+          _profilesLoadFailed = true;
         });
+      }
+    }
+  }
+
+  bool _profilesSaving = false;
+  Future<void> _persistProfiles(List<IndexerProfile> profiles) async {
+    setState(() => _profilesSaving = true);
+    try {
+      await _indexerStore.save(profiles);
+      if (!mounted) return;
+      setState(() => _profiles = profiles);
+    } finally {
+      if (mounted) setState(() => _profilesSaving = false);
+    }
+  }
+
+  Future<void> _openIndexerDialog({IndexerProfile? editing}) async {
+    if (_profilesSaving) return;
+    final result = await showDialog<_IndexerDialogResult>(
+      context: context,
+      builder: (context) => _IndexerProfileDialog(
+        profile: editing,
+        capsFn: _capsFn,
+        onSave: (profile) async {
+          await _persistProfiles([
+            for (final p in _profiles)
+              if (p.id == profile.id) profile else p,
+            if (editing == null) profile,
+          ]);
+        },
+      ),
+    );
+    if (result == null) return;
+    if (!result.delete) {
+      _finishSetup();
+      return;
+    }
+    final updated = [..._profiles]..removeWhere((p) => p.id == editing?.id);
+    try {
+      await _persistProfiles(updated);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).settingsWriteHint),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _toggleProfile(IndexerProfile profile, bool enabled) async {
+    if (_profilesSaving) return;
+    final updated = [
+      for (final p in _profiles)
+        if (p.id == profile.id) p.copyWith(enabled: enabled) else p,
+    ];
+    try {
+      await _persistProfiles(updated);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).settingsWriteHint),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _moveProfile(int index, int delta) async {
+    if (_profilesSaving) return;
+    final updated = [..._profiles];
+    final profile = updated.removeAt(index);
+    updated.insert(index + delta, profile);
+    try {
+      await _persistProfiles(updated);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).settingsWriteHint),
+          ),
+        );
       }
     }
   }
@@ -435,105 +490,6 @@ class _SettingsScreenState extends State<SettingsScreen>
       SnackBar(content: Text(AppLocalizations.of(context).settingsSaved)),
     );
     if (finish) await _finishSetup();
-  }
-
-  Future<void> _saveIndexer({bool finish = true}) async {
-    if (_savingIndexer) return;
-    if (_indexerLoading ||
-        _indexerLoadFailed ||
-        !_validate(_indexerFormKey.currentState!)) {
-      return;
-    }
-    final savedValues = _values(_indexerControllers);
-    setState(() {
-      _savingIndexer = true;
-      _obscureApiKey = true;
-    });
-    var saved = false;
-    try {
-      await _indexerStore.save(
-        IndexerSettings(
-          baseUrl: _indexerUrlController.text.trim(),
-          apiKey: _indexerApiKeyController.text.trim(),
-        ),
-      );
-      _indexerBaseline = savedValues;
-      saved = true;
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context).settingsWriteHint)),
-      );
-    } finally {
-      if (mounted) setState(() => _savingIndexer = false);
-    }
-    if (!mounted || !saved) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(AppLocalizations.of(context).settingsSaved)),
-    );
-    if (finish && _indexerUrlController.text.trim().isNotEmpty) {
-      await _finishSetup();
-    }
-  }
-
-  /// Formdaki güncel değerlerle `?t=caps` sorgusu atar; sonucu SnackBar'da
-  /// gösterir. API anahtarı hiçbir yere yazılmaz/loglanmaz.
-  Future<void> _testIndexer() async {
-    if (_testingIndexer) return;
-    if (!_validate(_indexerFormKey.currentState!)) return;
-    final l10n = AppLocalizations.of(context);
-    final baseUrl = _indexerUrlController.text.trim();
-    final apiKey = _indexerApiKeyController.text.trim();
-    if (baseUrl.isEmpty || apiKey.isEmpty) {
-      // Boş URL indexer kapalı demektir; sınanacak bir bağlantı yok.
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.indexerMissingHint)));
-      return;
-    }
-    setState(() => _testingIndexer = true);
-    try {
-      final caps = await _capsFn(
-        IndexerConfigDto(baseUrl: baseUrl, apiKey: apiKey),
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.indexerTestSuccess(caps.serverTitle ?? baseUrl)),
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.searchFailedHint)));
-    } finally {
-      if (mounted) setState(() => _testingIndexer = false);
-    }
-  }
-
-  /// Boş URL geçerlidir (indexer kapalı); doluysa http(s) URL'si olmalı.
-  String? _validateIndexerUrl(String? value) {
-    final l10n = AppLocalizations.of(context);
-    final url = value?.trim() ?? '';
-    if (url.isEmpty) return null;
-    if (url.contains(RegExp(r'\s'))) return l10n.indexerUrlInvalid;
-    final uri = Uri.tryParse(url);
-    if (uri == null ||
-        !(uri.isScheme('http') || uri.isScheme('https')) ||
-        uri.host.isEmpty) {
-      return l10n.indexerUrlInvalid;
-    }
-    return null;
-  }
-
-  /// URL doluyken API anahtarı zorunludur.
-  String? _validateIndexerApiKey(String? value) {
-    final url = _indexerUrlController.text.trim();
-    if (url.isNotEmpty) {
-      return _required(value, AppLocalizations.of(context).indexerApiKeyLabel);
-    }
-    return null;
   }
 
   String? _validateIntegerRange(
@@ -613,10 +569,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     for (final timer in _loadTimers) {
       timer.cancel();
     }
-    for (final controller in [
-      ..._providerControllers,
-      ..._indexerControllers,
-    ]) {
+    for (final controller in _providerControllers) {
       controller.removeListener(_changed);
     }
     WidgetsBinding.instance.removeObserver(this);
@@ -627,19 +580,12 @@ class _SettingsScreenState extends State<SettingsScreen>
       ..clear()
       ..dispose();
     _maxConnectionsController.dispose();
-    _indexerUrlController.dispose();
-    _indexerApiKeyController
-      ..clear()
-      ..dispose();
     _hostFocusNode.dispose();
     _portFocusNode.dispose();
     _maxConnectionsFocusNode.dispose();
     _usernameFocusNode.dispose();
     _passwordFocusNode.dispose();
     _passwordEyeFocusNode.dispose();
-    _indexerUrlFocusNode.dispose();
-    _indexerApiKeyFocusNode.dispose();
-    _indexerApiKeyEyeFocusNode.dispose();
     super.dispose();
   }
 
@@ -647,12 +593,16 @@ class _SettingsScreenState extends State<SettingsScreen>
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return PopScope(
-      canPop: _allowPop || (!_dirty && !_saving && !_savingIndexer),
+      canPop: _allowPop || (!_dirty && !_saving),
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) _leave();
       },
       child: Scaffold(
+        extendBodyBehindAppBar: true,
         appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 17),
             tooltip: l10n.backTooltip,
@@ -665,538 +615,502 @@ class _SettingsScreenState extends State<SettingsScreen>
             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
           ),
         ),
-        body: _loading && widget.initialSection != SettingsSection.indexer
-            ? const Center(
-                child: SizedBox.square(
-                  dimension: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              )
-            : _loadError != null &&
-                  widget.initialSection != SettingsSection.indexer
-            ? _SettingsLoadError(error: _loadError!, onRetry: _load)
-            : Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 620),
-                  child: Form(
-                    key: _formKey,
-                    child: ListView(
-                      padding: const EdgeInsets.fromLTRB(24, 18, 24, 32),
-                      children: [
-                        if (widget.initialSection == null)
-                          if (widget.uiPreferences case final prefs?) ...[
-                            Text(
-                              l10n.appSectionTitle,
-                              style: Theme.of(context).textTheme.titleLarge
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: -0.35,
-                                  ),
-                            ),
-                            const SizedBox(height: 7),
-                            Text(
-                              l10n.appearanceSavedHint,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurface
-                                        .withValues(alpha: 0.72),
-                                    height: 1.4,
-                                  ),
-                            ),
-                            const SizedBox(height: 24),
-                            _SettingsCard(
-                              children: [
-                                DropdownButtonFormField<Locale>(
-                                  isExpanded: true,
-                                  initialValue: prefs.locale,
-                                  // TV kumandasında D-pad gezintisi bu ilk
-                                  // kontrolden başlar (metin alanı olmadığı için
-                                  // girişte ekran klavyesi açılmaz).
-                                  autofocus: true,
-                                  decoration: InputDecoration(
-                                    labelText: l10n.languageLabel,
-                                    prefixIcon: const Icon(
-                                      Icons.language_rounded,
-                                      size: 19,
-                                    ),
-                                  ),
-                                  items: [
-                                    for (final (locale, name)
-                                        in supportedAppLocales)
-                                      DropdownMenuItem(
-                                        value: locale,
-                                        child: Text(name),
+        body: AppBackground(
+          child: SafeArea(
+            child: _loading && widget.initialSection != SettingsSection.indexer
+                ? const Center(
+                    child: SizedBox.square(
+                      dimension: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : _loadError != null &&
+                      widget.initialSection != SettingsSection.indexer
+                ? _SettingsLoadError(error: _loadError!, onRetry: _load)
+                : Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 620),
+                      child: Form(
+                        key: _formKey,
+                        child: ListView(
+                          padding: const EdgeInsets.fromLTRB(24, 18, 24, 32),
+                          children: [
+                            if (widget.initialSection == null)
+                              if (widget.uiPreferences case final prefs?) ...[
+                                Text(
+                                  l10n.appSectionTitle,
+                                  style: Theme.of(context).textTheme.titleLarge
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: -0.35,
                                       ),
-                                  ],
-                                  onChanged: (locale) {
-                                    if (locale != null) {
-                                      prefs.setLocale(locale);
-                                    }
-                                  },
                                 ),
-                                const SizedBox(height: 16),
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Text(
-                                    l10n.themeLabel,
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onSurface
-                                              .withValues(alpha: 0.72),
-                                        ),
-                                  ),
+                                const SizedBox(height: 7),
+                                Text(
+                                  l10n.appearanceSavedHint,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.72),
+                                        height: 1.4,
+                                      ),
                                 ),
-                                const SizedBox(height: 8),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child:
-                                      MediaQuery.textScalerOf(
-                                            context,
-                                          ).scale(14) >
-                                          20
-                                      ? DropdownButtonFormField<ThemeMode>(
-                                          isExpanded: true,
-                                          initialValue: prefs.themeMode,
-                                          decoration: InputDecoration(
-                                            labelText: l10n.themeLabel,
-                                          ),
-                                          items: [
-                                            DropdownMenuItem(
-                                              value: ThemeMode.dark,
-                                              child: Text(l10n.themeDark),
-                                            ),
-                                            DropdownMenuItem(
-                                              value: ThemeMode.light,
-                                              child: Text(l10n.themeLight),
-                                            ),
-                                          ],
-                                          onChanged: (mode) {
-                                            if (mode != null) {
-                                              prefs.setThemeMode(mode);
-                                            }
-                                          },
-                                        )
-                                      : SegmentedButton<ThemeMode>(
-                                          showSelectedIcon: false,
-                                          segments: [
-                                            ButtonSegment(
-                                              value: ThemeMode.dark,
-                                              icon: const Icon(
-                                                Icons.dark_mode_rounded,
-                                                size: 17,
-                                              ),
-                                              label: Text(l10n.themeDark),
-                                            ),
-                                            ButtonSegment(
-                                              value: ThemeMode.light,
-                                              icon: const Icon(
-                                                Icons.light_mode_rounded,
-                                                size: 17,
-                                              ),
-                                              label: Text(l10n.themeLight),
-                                            ),
-                                          ],
-                                          selected: {prefs.themeMode},
-                                          onSelectionChanged: (selection) =>
-                                              prefs.setThemeMode(
-                                                selection.first,
-                                              ),
-                                        ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 14),
-                          ],
-                        if (widget.initialSection !=
-                            SettingsSection.indexer) ...[
-                          if (widget.initialSection ==
-                              SettingsSection.provider) ...[
-                            Text(
-                              l10n.providerSetupHint,
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                            const SizedBox(height: 20),
-                          ],
-                          Text(
-                            l10n.nntpSectionTitle,
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: -0.35,
-                                ),
-                          ),
-                          const SizedBox(height: 7),
-                          Text(
-                            l10n.nntpSectionSubtitle,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurface
-                                      .withValues(alpha: 0.72),
-                                  height: 1.4,
-                                ),
-                          ),
-                          const SizedBox(height: 24),
-                          _SettingsCard(
-                            children: [
-                              TextFormField(
-                                controller: _hostController,
-                                focusNode: _hostFocusNode,
-                                // Uygulama bölümü yoksa (arama ekranından eski
-                                // yol) ilk kontrol bu alan; TV'de D-pad gezintisi
-                                // buradan başlar.
-                                autofocus:
-                                    widget.initialSection ==
-                                        SettingsSection.provider ||
-                                    widget.uiPreferences == null,
-                                decoration: InputDecoration(
-                                  labelText: l10n.serverAddressLabel,
-                                  hintText: 'news.example.com',
-                                  prefixIcon: const Icon(
-                                    Icons.dns_rounded,
-                                    size: 19,
-                                  ),
-                                ),
-                                textInputAction: TextInputAction.next,
-                                keyboardType: TextInputType.url,
-                                autocorrect: false,
-                                validator: _validateHost,
-                              ),
-                              const SizedBox(height: 12),
-                              LayoutBuilder(
-                                builder: (context, constraints) {
-                                  if (constraints.maxWidth < 440) {
-                                    return Column(
-                                      children: [
-                                        _portField(),
-                                        const SizedBox(height: 12),
-                                        _connectionField(),
-                                      ],
-                                    );
-                                  }
-                                  return Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Expanded(child: _portField()),
-                                      const SizedBox(width: 12),
-                                      Expanded(child: _connectionField()),
-                                    ],
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          _SettingsCard(
-                            children: [
-                              TextFormField(
-                                controller: _usernameController,
-                                focusNode: _usernameFocusNode,
-                                decoration: InputDecoration(
-                                  labelText: l10n.usernameLabel,
-                                  prefixIcon: const Icon(
-                                    Icons.person_outline_rounded,
-                                    size: 19,
-                                  ),
-                                ),
-                                autofillHints: const [AutofillHints.username],
-                                textInputAction: TextInputAction.next,
-                                autocorrect: false,
-                                validator: (value) =>
-                                    _required(value, l10n.usernameLabel),
-                              ),
-                              const SizedBox(height: 12),
-                              // Göz düğmesi alanın İÇİNDE değil yanında durur ve
-                              // skipTraversal ile yön gezintisi adaylığından
-                              // çıkarılmıştır: aşağı ok bu satıra inerken her
-                              // zaman alanı seçer; simgeye yalnızca alanın metin
-                              // sonundan sağ okla geçilir (issue #4).
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Expanded(
-                                    child: TextFormField(
-                                      controller: _passwordController,
-                                      focusNode: _passwordFocusNode,
-                                      obscureText: _obscurePassword,
-                                      enableSuggestions: false,
-                                      autocorrect: false,
-                                      autofillHints: const [
-                                        AutofillHints.password,
-                                      ],
-                                      onFieldSubmitted: (_) => _save(),
-                                      validator: (value) =>
-                                          _required(value, l10n.passwordLabel),
+                                const SizedBox(height: 24),
+                                _SettingsCard(
+                                  children: [
+                                    DropdownButtonFormField<Locale>(
+                                      isExpanded: true,
+                                      initialValue: prefs.locale,
+                                      // TV kumandasında D-pad gezintisi bu ilk
+                                      // kontrolden başlar (metin alanı olmadığı için
+                                      // girişte ekran klavyesi açılmaz).
+                                      autofocus: true,
                                       decoration: InputDecoration(
-                                        labelText: l10n.passwordLabel,
+                                        labelText: l10n.languageLabel,
                                         prefixIcon: const Icon(
-                                          Icons.lock_outline_rounded,
+                                          Icons.language_rounded,
                                           size: 19,
                                         ),
                                       ),
+                                      items: [
+                                        for (final (locale, name)
+                                            in supportedAppLocales)
+                                          DropdownMenuItem(
+                                            value: locale,
+                                            child: Text(name),
+                                          ),
+                                      ],
+                                      onChanged: (locale) {
+                                        if (locale != null) {
+                                          prefs.setLocale(locale);
+                                        }
+                                      },
                                     ),
+                                    const SizedBox(height: 16),
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        l10n.themeLabel,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurface
+                                                  .withValues(alpha: 0.72),
+                                            ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child:
+                                          MediaQuery.textScalerOf(
+                                                context,
+                                              ).scale(14) >
+                                              20
+                                          ? DropdownButtonFormField<ThemeMode>(
+                                              isExpanded: true,
+                                              initialValue: prefs.themeMode,
+                                              decoration: InputDecoration(
+                                                labelText: l10n.themeLabel,
+                                              ),
+                                              items: [
+                                                DropdownMenuItem(
+                                                  value: ThemeMode.dark,
+                                                  child: Text(l10n.themeDark),
+                                                ),
+                                                DropdownMenuItem(
+                                                  value: ThemeMode.light,
+                                                  child: Text(l10n.themeLight),
+                                                ),
+                                              ],
+                                              onChanged: (mode) {
+                                                if (mode != null) {
+                                                  prefs.setThemeMode(mode);
+                                                }
+                                              },
+                                            )
+                                          : SegmentedButton<ThemeMode>(
+                                              showSelectedIcon: false,
+                                              segments: [
+                                                ButtonSegment(
+                                                  value: ThemeMode.dark,
+                                                  icon: const Icon(
+                                                    Icons.dark_mode_rounded,
+                                                    size: 17,
+                                                  ),
+                                                  label: Text(l10n.themeDark),
+                                                ),
+                                                ButtonSegment(
+                                                  value: ThemeMode.light,
+                                                  icon: const Icon(
+                                                    Icons.light_mode_rounded,
+                                                    size: 17,
+                                                  ),
+                                                  label: Text(l10n.themeLight),
+                                                ),
+                                              ],
+                                              selected: {prefs.themeMode},
+                                              onSelectionChanged: (selection) =>
+                                                  prefs.setThemeMode(
+                                                    selection.first,
+                                                  ),
+                                            ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 14),
+                              ],
+                            if (widget.initialSection !=
+                                SettingsSection.indexer) ...[
+                              if (widget.initialSection ==
+                                  SettingsSection.provider) ...[
+                                Text(
+                                  l10n.providerSetupHint,
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                                const SizedBox(height: 20),
+                              ],
+                              Text(
+                                l10n.nntpSectionTitle,
+                                style: Theme.of(context).textTheme.titleLarge
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: -0.35,
+                                    ),
+                              ),
+                              const SizedBox(height: 7),
+                              Text(
+                                l10n.nntpSectionSubtitle,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.72),
+                                      height: 1.4,
+                                    ),
+                              ),
+                              const SizedBox(height: 24),
+                              _SettingsCard(
+                                children: [
+                                  TextFormField(
+                                    controller: _hostController,
+                                    focusNode: _hostFocusNode,
+                                    // Uygulama bölümü yoksa (arama ekranından eski
+                                    // yol) ilk kontrol bu alan; TV'de D-pad gezintisi
+                                    // buradan başlar.
+                                    autofocus:
+                                        widget.initialSection ==
+                                            SettingsSection.provider ||
+                                        widget.uiPreferences == null,
+                                    decoration: InputDecoration(
+                                      labelText: l10n.serverAddressLabel,
+                                      hintText: 'news.example.com',
+                                      prefixIcon: const Icon(
+                                        Icons.dns_rounded,
+                                        size: 19,
+                                      ),
+                                    ),
+                                    textInputAction: TextInputAction.next,
+                                    keyboardType: TextInputType.url,
+                                    autocorrect: false,
+                                    validator: _validateHost,
                                   ),
-                                  const SizedBox(width: 8),
-                                  IconButton(
-                                    focusNode: _passwordEyeFocusNode,
-                                    tooltip: _obscurePassword
-                                        ? l10n.passwordShowTooltip
-                                        : l10n.passwordHideTooltip,
-                                    icon: Icon(
-                                      _obscurePassword
-                                          ? Icons.visibility_rounded
-                                          : Icons.visibility_off_rounded,
-                                      size: 18,
-                                    ),
-                                    onPressed: () => setState(
-                                      () =>
-                                          _obscurePassword = !_obscurePassword,
-                                    ),
+                                  const SizedBox(height: 12),
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      if (constraints.maxWidth < 440) {
+                                        return Column(
+                                          children: [
+                                            _portField(),
+                                            const SizedBox(height: 12),
+                                            _connectionField(),
+                                          ],
+                                        );
+                                      }
+                                      return Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(child: _portField()),
+                                          const SizedBox(width: 12),
+                                          Expanded(child: _connectionField()),
+                                        ],
+                                      );
+                                    },
                                   ),
                                 ],
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          const _ConnectionHint(),
-                          const SizedBox(height: 12),
-                          Align(
-                            alignment: AlignmentDirectional.centerEnd,
-                            child: OutlinedButton.icon(
-                              onPressed: _testingProvider
-                                  ? null
-                                  : _testProvider,
-                              icon: _testingProvider
-                                  ? const SizedBox.square(
-                                      dimension: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.cable_rounded),
-                              label: Text(l10n.providerTestButton),
-                            ),
-                          ),
-                          if (_providerTestMessage != null)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              child: Semantics(
-                                liveRegion: true,
-                                child: Text(
-                                  _providerTestMessage!,
-                                  style: TextStyle(
-                                    color: _providerTestPassed
-                                        ? Theme.of(
-                                            context,
-                                          ).colorScheme.onSurface
-                                        : Theme.of(context).colorScheme.error,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          const SizedBox(height: 12),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: FilledButton.icon(
-                              onPressed: _saving ? null : _save,
-                              icon: _saving
-                                  ? const SizedBox.square(
-                                      dimension: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 1.8,
-                                      ),
-                                    )
-                                  : const Icon(Icons.check_rounded, size: 18),
-                              label: Text(
-                                _saving
-                                    ? l10n.savingLabel
-                                    : l10n.saveSecurelyLabel,
-                              ),
-                            ),
-                          ),
-                        ],
-                        if (widget.initialSection !=
-                            SettingsSection.provider) ...[
-                          const SizedBox(height: 30),
-                          Text(
-                            l10n.indexerSectionTitle,
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: -0.35,
-                                ),
-                          ),
-                          const SizedBox(height: 7),
-                          Text(
-                            l10n.indexerSectionSubtitle,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurface
-                                      .withValues(alpha: 0.72),
-                                  height: 1.4,
-                                ),
-                          ),
-                          const SizedBox(height: 24),
-                          // Indexer ayarları NNTP formundan bağımsız kaydedilir;
-                          // iç içe Form'lar alanları ayrı ayrı doğrular.
-                          if (_indexerLoading)
-                            const Center(child: CircularProgressIndicator())
-                          else if (_indexerLoadFailed)
-                            Column(
-                              children: [
-                                Text(l10n.settingsLoadHint),
-                                TextButton(
-                                  onPressed: _loadIndexer,
-                                  child: Text(l10n.retry),
-                                ),
-                              ],
-                            )
-                          else
-                            Form(
-                              key: _indexerFormKey,
-                              child: Column(
+                              const SizedBox(height: 14),
+                              _SettingsCard(
                                 children: [
-                                  _SettingsCard(
+                                  TextFormField(
+                                    controller: _usernameController,
+                                    focusNode: _usernameFocusNode,
+                                    decoration: InputDecoration(
+                                      labelText: l10n.usernameLabel,
+                                      prefixIcon: const Icon(
+                                        Icons.person_outline_rounded,
+                                        size: 19,
+                                      ),
+                                    ),
+                                    autofillHints: const [
+                                      AutofillHints.username,
+                                    ],
+                                    textInputAction: TextInputAction.next,
+                                    autocorrect: false,
+                                    validator: (value) =>
+                                        _required(value, l10n.usernameLabel),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  // Göz düğmesi alanın İÇİNDE değil yanında durur ve
+                                  // skipTraversal ile yön gezintisi adaylığından
+                                  // çıkarılmıştır: aşağı ok bu satıra inerken her
+                                  // zaman alanı seçer; simgeye yalnızca alanın metin
+                                  // sonundan sağ okla geçilir (issue #4).
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
                                     children: [
-                                      TextFormField(
-                                        controller: _indexerUrlController,
-                                        autofocus:
-                                            widget.initialSection ==
-                                            SettingsSection.indexer,
-                                        focusNode: _indexerUrlFocusNode,
-                                        decoration: InputDecoration(
-                                          labelText: l10n.indexerUrlLabel,
-                                          hintText: 'https://indexer.example',
-                                          prefixIcon: const Icon(
-                                            Icons.travel_explore_rounded,
-                                            size: 19,
+                                      Expanded(
+                                        child: TextFormField(
+                                          controller: _passwordController,
+                                          focusNode: _passwordFocusNode,
+                                          obscureText: _obscurePassword,
+                                          enableSuggestions: false,
+                                          autocorrect: false,
+                                          autofillHints: const [
+                                            AutofillHints.password,
+                                          ],
+                                          onFieldSubmitted: (_) => _save(),
+                                          validator: (value) => _required(
+                                            value,
+                                            l10n.passwordLabel,
+                                          ),
+                                          decoration: InputDecoration(
+                                            labelText: l10n.passwordLabel,
+                                            prefixIcon: const Icon(
+                                              Icons.lock_outline_rounded,
+                                              size: 19,
+                                            ),
                                           ),
                                         ),
-                                        textInputAction: TextInputAction.next,
-                                        keyboardType: TextInputType.url,
-                                        autocorrect: false,
-                                        validator: _validateIndexerUrl,
                                       ),
-                                      const SizedBox(height: 12),
-                                      // Parola alanıyla aynı düzen: göz düğmesi
-                                      // yanda ve skipTraversal'lı; sağ okla alandan
-                                      // geçilir (issue #4).
-                                      Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.center,
-                                        children: [
-                                          Expanded(
-                                            child: TextFormField(
-                                              controller:
-                                                  _indexerApiKeyController,
-                                              focusNode:
-                                                  _indexerApiKeyFocusNode,
-                                              obscureText: _obscureApiKey,
-                                              enableSuggestions: false,
-                                              autocorrect: false,
-                                              onFieldSubmitted: (_) =>
-                                                  _saveIndexer(),
-                                              validator: _validateIndexerApiKey,
-                                              decoration: InputDecoration(
-                                                labelText:
-                                                    l10n.indexerApiKeyLabel,
-                                                prefixIcon: const Icon(
-                                                  Icons.key_rounded,
-                                                  size: 19,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          IconButton(
-                                            focusNode:
-                                                _indexerApiKeyEyeFocusNode,
-                                            tooltip: _obscureApiKey
-                                                ? l10n.passwordShowTooltip
-                                                : l10n.passwordHideTooltip,
-                                            icon: Icon(
-                                              _obscureApiKey
-                                                  ? Icons.visibility_rounded
-                                                  : Icons
-                                                        .visibility_off_rounded,
-                                              size: 18,
-                                            ),
-                                            onPressed: () => setState(
-                                              () => _obscureApiKey =
-                                                  !_obscureApiKey,
-                                            ),
-                                          ),
-                                        ],
+                                      const SizedBox(width: 8),
+                                      IconButton(
+                                        focusNode: _passwordEyeFocusNode,
+                                        tooltip: _obscurePassword
+                                            ? l10n.passwordShowTooltip
+                                            : l10n.passwordHideTooltip,
+                                        icon: Icon(
+                                          _obscurePassword
+                                              ? Icons.visibility_rounded
+                                              : Icons.visibility_off_rounded,
+                                          size: 18,
+                                        ),
+                                        onPressed: () => setState(
+                                          () => _obscurePassword =
+                                              !_obscurePassword,
+                                        ),
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: 22),
-                                  // Düğmeler dikey dizilir: yan yana olsalardı aşağı
-                                  // ok yalnızca birine inebilirdi; kumandayla ikisi
-                                  // de dikey zincirde olmalı (issue #4).
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.end,
-                                      children: [
-                                        OutlinedButton.icon(
-                                          onPressed: _testingIndexer
-                                              ? null
-                                              : _testIndexer,
-                                          icon: _testingIndexer
-                                              ? const SizedBox.square(
-                                                  dimension: 16,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                        strokeWidth: 1.8,
-                                                      ),
-                                                )
-                                              : const Icon(
-                                                  Icons.cable_rounded,
-                                                  size: 18,
-                                                ),
-                                          label: Text(l10n.indexerTestButton),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        FilledButton.icon(
-                                          onPressed: _savingIndexer
-                                              ? null
-                                              : _saveIndexer,
-                                          icon: _savingIndexer
-                                              ? const SizedBox.square(
-                                                  dimension: 16,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                        strokeWidth: 1.8,
-                                                      ),
-                                                )
-                                              : const Icon(
-                                                  Icons.check_rounded,
-                                                  size: 18,
-                                                ),
-                                          label: Text(
-                                            _savingIndexer
-                                                ? l10n.savingLabel
-                                                : l10n.indexerSaveLabel,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
                                 ],
                               ),
-                            ),
-                        ],
-                      ],
+                              const SizedBox(height: 12),
+                              const _ConnectionHint(),
+                              const SizedBox(height: 12),
+                              Align(
+                                alignment: AlignmentDirectional.centerEnd,
+                                child: OutlinedButton.icon(
+                                  onPressed: _testingProvider
+                                      ? null
+                                      : _testProvider,
+                                  icon: _testingProvider
+                                      ? const SizedBox.square(
+                                          dimension: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(Icons.cable_rounded),
+                                  label: Text(l10n.providerTestButton),
+                                ),
+                              ),
+                              if (_providerTestMessage != null)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 8,
+                                  ),
+                                  child: Semantics(
+                                    liveRegion: true,
+                                    child: Text(
+                                      _providerTestMessage!,
+                                      style: TextStyle(
+                                        color: _providerTestPassed
+                                            ? Theme.of(
+                                                context,
+                                              ).colorScheme.onSurface
+                                            : Theme.of(
+                                                context,
+                                              ).colorScheme.error,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              const SizedBox(height: 12),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: FilledButton.icon(
+                                  onPressed: _saving ? null : _save,
+                                  icon: _saving
+                                      ? const SizedBox.square(
+                                          dimension: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 1.8,
+                                          ),
+                                        )
+                                      : const Icon(
+                                          Icons.check_rounded,
+                                          size: 18,
+                                        ),
+                                  label: Text(
+                                    _saving
+                                        ? l10n.savingLabel
+                                        : l10n.saveSecurelyLabel,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            if (widget.initialSection !=
+                                SettingsSection.provider) ...[
+                              const SizedBox(height: 30),
+                              Text(
+                                l10n.indexerSectionTitle,
+                                style: Theme.of(context).textTheme.titleLarge
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: -0.35,
+                                    ),
+                              ),
+                              const SizedBox(height: 7),
+                              Text(
+                                l10n.indexerSectionSubtitle,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.72),
+                                      height: 1.4,
+                                    ),
+                              ),
+                              const SizedBox(height: 24),
+                              if (_profilesLoading)
+                                const Center(child: CircularProgressIndicator())
+                              else if (_profilesLoadFailed)
+                                Column(
+                                  children: [
+                                    Text(l10n.settingsLoadHint),
+                                    TextButton(
+                                      onPressed: _loadProfiles,
+                                      child: Text(l10n.retry),
+                                    ),
+                                  ],
+                                )
+                              else
+                                _SettingsCard(
+                                  children: [
+                                    if (_profiles.isEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 8,
+                                        ),
+                                        child: Text(
+                                          l10n.indexerMissingHint,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodyMedium
+                                              ?.copyWith(
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .onSurface
+                                                    .withValues(alpha: 0.72),
+                                              ),
+                                        ),
+                                      )
+                                    else
+                                      for (final (index, profile)
+                                          in _profiles.indexed) ...[
+                                        _IndexerProfileRow(
+                                          profile: profile,
+                                          onTap: () => _openIndexerDialog(
+                                            editing: profile,
+                                          ),
+                                          onToggle: (enabled) =>
+                                              _toggleProfile(profile, enabled),
+                                        ),
+                                        if (_profiles.length > 1)
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.end,
+                                            children: [
+                                              IconButton(
+                                                tooltip: l10n.indexerMoveUp,
+                                                onPressed: index > 0
+                                                    ? () => _moveProfile(
+                                                        index,
+                                                        -1,
+                                                      )
+                                                    : null,
+                                                icon: const Icon(
+                                                  Icons.arrow_upward_rounded,
+                                                ),
+                                              ),
+                                              IconButton(
+                                                tooltip: l10n.indexerMoveDown,
+                                                onPressed:
+                                                    index + 1 < _profiles.length
+                                                    ? () =>
+                                                          _moveProfile(index, 1)
+                                                    : null,
+                                                icon: const Icon(
+                                                  Icons.arrow_downward_rounded,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        const SizedBox(height: 8),
+                                      ],
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: TextButton.icon(
+                                        autofocus:
+                                            widget.initialSection ==
+                                            SettingsSection.indexer,
+                                        onPressed: () => _openIndexerDialog(),
+                                        icon: const Icon(
+                                          Icons.add_rounded,
+                                          size: 18,
+                                        ),
+                                        label: Text(l10n.indexerAddButton),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                            ],
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
+          ),
+        ),
       ),
     );
   }
@@ -1209,15 +1123,16 @@ class _SettingsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cardForeground = Theme.of(context).colorScheme.onSurface;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardForeground = isDark ? Colors.white : Colors.black;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: cardForeground.withValues(alpha: 0.035),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: cardForeground.withValues(alpha: 0.075)),
+        color: cardForeground.withValues(alpha: isDark ? 0.055 : 0.045),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: cardForeground.withValues(alpha: 0.09)),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         child: Column(children: children),
       ),
     );
@@ -1306,6 +1221,479 @@ class _ConnectionHint extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Tek bir indexer profilinin özet satırı: ad/URL, açık/kapalı anahtarı,
+/// dokununca düzenleme diyaloğunu açar.
+class _IndexerProfileRow extends StatelessWidget {
+  const _IndexerProfileRow({
+    required this.profile,
+    required this.onTap,
+    required this.onToggle,
+  });
+
+  final IndexerProfile profile;
+  final VoidCallback onTap;
+  final ValueChanged<bool> onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final foreground = Theme.of(context).colorScheme.onSurface;
+    return Material(
+      color: foreground.withValues(alpha: 0.035),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: foreground.withValues(alpha: 0.07)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      profile.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: foreground.withValues(
+                          alpha: profile.enabled ? 0.9 : 0.5,
+                        ),
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (profile.nickname.isNotEmpty)
+                      Text(
+                        profile.baseUrl,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: foreground.withValues(
+                            alpha: profile.enabled ? 0.65 : 0.4,
+                          ),
+                          fontSize: 12,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Semantics(
+                label: l10n.indexerEnabledLabel,
+                child: Switch(value: profile.enabled, onChanged: onToggle),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// [_IndexerProfileDialog] sonucu: kaydedilecek profil (ekleme/düzenleme)
+/// veya silme isteği. İkisi birden null ise kullanıcı iptal etmiştir ve
+/// diyalog hiç bu türü döndürmez (showDialog null döner).
+class _IndexerDialogResult {
+  const _IndexerDialogResult.save(this.profile) : delete = false;
+  const _IndexerDialogResult.delete() : profile = null, delete = true;
+
+  final IndexerProfile? profile;
+  final bool delete;
+}
+
+/// Indexer ekleme/düzenleme diyaloğu. Kendi kaydetme/test akışına sahiptir;
+/// dış ekranın NNTP formundaki "kirli durum" izlemesine katılmaz — Kaydet'e
+/// basınca sonuç döner, asıl depoya yazma işini çağıran taraf yapar.
+class _IndexerProfileDialog extends StatefulWidget {
+  const _IndexerProfileDialog({
+    required this.profile,
+    required this.capsFn,
+    required this.onSave,
+  });
+
+  /// Null ise yeni profil ekleniyor demektir.
+  final IndexerProfile? profile;
+  final NewznabCapsFn capsFn;
+  final Future<void> Function(IndexerProfile) onSave;
+
+  @override
+  State<_IndexerProfileDialog> createState() => _IndexerProfileDialogState();
+}
+
+class _IndexerProfileDialogState extends State<_IndexerProfileDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final _nicknameController = TextEditingController(
+    text: widget.profile?.nickname ?? '',
+  );
+  late final _urlController = TextEditingController(
+    text: widget.profile?.baseUrl ?? '',
+  );
+  late final _apiKeyController = TextEditingController(
+    text: widget.profile?.apiKey ?? '',
+  );
+  bool _obscureApiKey = true;
+  bool _testing = false;
+  bool _saving = false;
+  String? _testMessage;
+  bool _testPassed = false;
+  late final _nicknameFocus = dpadTraversalFocusNode(_nicknameController);
+  late final _urlFocus = dpadTraversalFocusNode(_urlController);
+  late final FocusNode _keyFocus = dpadTraversalFocusNode(
+    _apiKeyController,
+    focusOnRightEdge: () => _eyeFocus,
+  );
+  late final FocusNode _eyeFocus = dpadFieldActionFocusNode(
+    controller: _apiKeyController,
+    fieldNode: _keyFocus,
+  );
+  bool _allowClose = false;
+
+  bool get _dirty =>
+      _nicknameController.text != (widget.profile?.nickname ?? '') ||
+      _urlController.text != (widget.profile?.baseUrl ?? '') ||
+      _apiKeyController.text != (widget.profile?.apiKey ?? '');
+
+  Future<void> _cancel() async {
+    if (_saving || _testing) return;
+    if (_dirty) {
+      final l10n = AppLocalizations.of(context);
+      final discard = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(l10n.unsavedTitle),
+          content: Text(l10n.unsavedHint),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(l10n.keepEditing),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(l10n.discardChanges),
+            ),
+          ],
+        ),
+      );
+      if (discard != true || !mounted) return;
+    }
+    setState(() => _allowClose = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.pop(context);
+    });
+  }
+
+  bool get _isEditing => widget.profile != null;
+
+  @override
+  void dispose() {
+    _nicknameFocus.dispose();
+    _urlFocus.dispose();
+    _keyFocus.dispose();
+    _eyeFocus.dispose();
+    _nicknameController.dispose();
+    _urlController.dispose();
+    _apiKeyController
+      ..clear()
+      ..dispose();
+    super.dispose();
+  }
+
+  void _applyPreset(KnownIndexer preset) {
+    setState(() {
+      if (_nicknameController.text.trim().isEmpty) {
+        _nicknameController.text = preset.name;
+      }
+      _urlController.text = preset.baseUrl;
+      _testMessage = null;
+    });
+  }
+
+  String? _validateUrl(String? value) {
+    final l10n = AppLocalizations.of(context);
+    final url = value?.trim() ?? '';
+    if (url.isEmpty) return l10n.validationRequired(l10n.indexerUrlLabel);
+    if (url.contains(RegExp(r'\s'))) return l10n.indexerUrlInvalid;
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !(uri.isScheme('http') || uri.isScheme('https')) ||
+        uri.host.isEmpty) {
+      return l10n.indexerUrlInvalid;
+    }
+    return null;
+  }
+
+  String? _validateApiKey(String? value) {
+    final l10n = AppLocalizations.of(context);
+    if (value == null || value.trim().isEmpty) {
+      return l10n.validationRequired(l10n.indexerApiKeyLabel);
+    }
+    return null;
+  }
+
+  Future<void> _test() async {
+    if (_testing || !(_formKey.currentState?.validate() ?? false)) return;
+    final l10n = AppLocalizations.of(context);
+    final baseUrl = _urlController.text.trim();
+    final apiKey = _apiKeyController.text.trim();
+    setState(() {
+      _testing = true;
+      _testMessage = null;
+    });
+    try {
+      final caps = await widget.capsFn(
+        IndexerConfigDto(baseUrl: baseUrl, apiKey: apiKey, nickname: baseUrl),
+      );
+      if (!mounted) return;
+      setState(() {
+        _testPassed = true;
+        _testMessage = l10n.indexerTestSuccess(caps.serverTitle ?? baseUrl);
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _testPassed = false;
+        _testMessage = l10n.indexerTestFailed(
+          safeErrorDetails(error, secrets: [apiKey]),
+        );
+      });
+    } finally {
+      if (mounted) setState(() => _testing = false);
+    }
+  }
+
+  Future<void> _save() async {
+    if (_saving || _testing) return;
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    setState(() => _saving = true);
+    final profile = IndexerProfile(
+      id:
+          widget.profile?.id ??
+          'indexer-${DateTime.now().microsecondsSinceEpoch}',
+      nickname: _nicknameController.text.trim(),
+      baseUrl: _urlController.text.trim(),
+      apiKey: _apiKeyController.text.trim(),
+      enabled: widget.profile?.enabled ?? true,
+    );
+    try {
+      await widget.onSave(profile);
+      if (!mounted) return;
+      setState(() => _allowClose = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.of(context).pop(_IndexerDialogResult.save(profile));
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _testPassed = false;
+        _testMessage = AppLocalizations.of(context).settingsWriteHint;
+      });
+    }
+  }
+
+  Future<void> _confirmDelete() async {
+    final l10n = AppLocalizations.of(context);
+    final name = widget.profile!.displayName;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.indexerDeleteConfirmTitle),
+        content: Text(l10n.indexerDeleteConfirmHint(name)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(l10n.keepEditing),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(l10n.indexerDeleteButton),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      setState(() => _allowClose = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.of(context).pop(const _IndexerDialogResult.delete());
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return PopScope(
+      canPop: _allowClose,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _cancel();
+      },
+      child: AlertDialog(
+        title: Text(_isEditing ? l10n.indexerEditTitle : l10n.indexerAddTitle),
+        content: SizedBox(
+          width: 420,
+          child: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!_isEditing) ...[
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final preset in knownIndexers)
+                          ActionChip(
+                            label: Text(preset.name),
+                            onPressed: () => _applyPreset(preset),
+                          ),
+                        ActionChip(
+                          label: Text(l10n.indexerCustomOption),
+                          onPressed: () => setState(() {
+                            _nicknameController.clear();
+                            _urlController.clear();
+                            _testMessage = null;
+                          }),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  TextFormField(
+                    controller: _nicknameController,
+                    focusNode: _nicknameFocus,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      labelText: l10n.indexerNicknameLabel,
+                      hintText: l10n.indexerNicknameHint,
+                      prefixIcon: const Icon(
+                        Icons.label_outline_rounded,
+                        size: 19,
+                      ),
+                    ),
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _urlController,
+                    focusNode: _urlFocus,
+                    decoration: InputDecoration(
+                      labelText: l10n.indexerUrlLabel,
+                      hintText: 'https://indexer.example',
+                      prefixIcon: const Icon(
+                        Icons.travel_explore_rounded,
+                        size: 19,
+                      ),
+                    ),
+                    textInputAction: TextInputAction.next,
+                    keyboardType: TextInputType.url,
+                    autocorrect: false,
+                    validator: _validateUrl,
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _apiKeyController,
+                          focusNode: _keyFocus,
+                          obscureText: _obscureApiKey,
+                          enableSuggestions: false,
+                          autocorrect: false,
+                          onFieldSubmitted: (_) => _save(),
+                          validator: _validateApiKey,
+                          decoration: InputDecoration(
+                            labelText: l10n.indexerApiKeyLabel,
+                            prefixIcon: const Icon(Icons.key_rounded, size: 19),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        focusNode: _eyeFocus,
+                        tooltip: _obscureApiKey
+                            ? l10n.passwordShowTooltip
+                            : l10n.passwordHideTooltip,
+                        icon: Icon(
+                          _obscureApiKey
+                              ? Icons.visibility_rounded
+                              : Icons.visibility_off_rounded,
+                          size: 18,
+                        ),
+                        onPressed: () =>
+                            setState(() => _obscureApiKey = !_obscureApiKey),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      onPressed: _testing ? null : _test,
+                      icon: _testing
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.8,
+                              ),
+                            )
+                          : const Icon(Icons.cable_rounded, size: 18),
+                      label: Text(l10n.indexerTestButton),
+                    ),
+                  ),
+                  if (_testMessage != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Semantics(
+                        liveRegion: true,
+                        child: Text(
+                          _testMessage!,
+                          style: TextStyle(
+                            color: _testPassed
+                                ? Theme.of(context).colorScheme.onSurface
+                                : Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          if (_isEditing)
+            TextButton(
+              onPressed: _confirmDelete,
+              child: Text(
+                l10n.indexerDeleteButton,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          TextButton(
+            onPressed: _cancel,
+            child: Text(MaterialLocalizations.of(context).cancelButtonLabel),
+          ),
+          FilledButton(
+            onPressed: _saving ? null : _save,
+            child: Text(l10n.indexerSaveLabel),
+          ),
+        ],
+      ),
     );
   }
 }

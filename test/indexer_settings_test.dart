@@ -37,13 +37,17 @@ void _mockSecureStorage() {
 
 /// Ayar ekranı testlerinde gerçek secure storage yerine bellek içi sahte depo.
 class _FakeIndexerStore extends IndexerSettingsStore {
-  IndexerSettings saved = const IndexerSettings();
+  List<IndexerProfile> saved = const [];
+  bool failSave = false;
 
   @override
-  Future<IndexerSettings> load() async => saved;
+  Future<List<IndexerProfile>> load() async => saved;
 
   @override
-  Future<void> save(IndexerSettings settings) async => saved = settings;
+  Future<void> save(List<IndexerProfile> profiles) async {
+    if (failSave) throw StateError('write failed');
+    saved = profiles;
+  }
 }
 
 /// NNTP bölümü de ekran açılışında depo okur; kanala düşmemesi için sahte.
@@ -81,54 +85,181 @@ void main() {
       _mockSecureStorage();
     });
 
-    test('Boş depoda varsayılan (boş) ayarlar döner', () async {
-      final settings = await IndexerSettingsStore().load();
-      expect(settings.baseUrl, isEmpty);
-      expect(settings.apiKey, isEmpty);
-      expect(settings.isComplete, isFalse);
+    test('Boş depoda boş liste döner', () async {
+      final profiles = await IndexerSettingsStore().load();
+      expect(profiles, isEmpty);
     });
 
-    test('Kaydedilen ayarlar geri okunur', () async {
+    test('corrupt storage is reported and preserved', () async {
+      _memoryStorage['indexer.profiles.v2'] = 'corrupt';
+      await expectLater(IndexerSettingsStore().load(), throwsFormatException);
+      expect(_memoryStorage['indexer.profiles.v2'], 'corrupt');
+    });
+
+    test('Kaydedilen profiller geri okunur', () async {
       final store = IndexerSettingsStore();
-      await store.save(
-        const IndexerSettings(
+      await store.save(const [
+        IndexerProfile(
+          id: '1',
+          nickname: 'NZBFinder',
           baseUrl: 'https://indexer.example',
           apiKey: 'gizli-anahtar',
         ),
-      );
-      final settings = await store.load();
-      expect(settings.baseUrl, 'https://indexer.example');
-      expect(settings.apiKey, 'gizli-anahtar');
-      expect(settings.isComplete, isTrue);
+      ]);
+      final profiles = await store.load();
+      expect(profiles, hasLength(1));
+      expect(profiles.single.nickname, 'NZBFinder');
+      expect(profiles.single.baseUrl, 'https://indexer.example');
+      expect(profiles.single.apiKey, 'gizli-anahtar');
+      expect(profiles.single.isComplete, isTrue);
     });
 
-    test('clear anahtarları siler', () async {
+    test('Birden çok profil sırasıyla korunur', () async {
       final store = IndexerSettingsStore();
-      await store.save(
-        const IndexerSettings(baseUrl: 'https://indexer.example', apiKey: 'k'),
-      );
-      await store.clear();
-      final settings = await store.load();
-      expect(settings.isComplete, isFalse);
+      const profiles = [
+        IndexerProfile(id: 'a', baseUrl: 'https://a.example', apiKey: 'ka'),
+        IndexerProfile(id: 'b', baseUrl: 'https://b.example', apiKey: 'kb'),
+      ];
+      await store.save(profiles);
+      final loaded = await store.load();
+      expect(loaded.map((p) => p.id), ['a', 'b']);
     });
 
-    test('isComplete yalnızca iki alan da doluyken true olur', () {
-      expect(const IndexerSettings().isComplete, isFalse);
+    test('clear tüm profilleri siler', () async {
+      final store = IndexerSettingsStore();
+      await store.save(const [
+        IndexerProfile(
+          id: '1',
+          baseUrl: 'https://indexer.example',
+          apiKey: 'k',
+        ),
+      ]);
+      await store.clear();
+      final profiles = await store.load();
+      expect(profiles, isEmpty);
+    });
+
+    test('isComplete yalnızca URL ve anahtar doluyken true olur', () {
+      expect(const IndexerProfile(id: '1').isComplete, isFalse);
       expect(
-        const IndexerSettings(baseUrl: 'https://x.example').isComplete,
+        const IndexerProfile(id: '1', baseUrl: 'https://x.example').isComplete,
         isFalse,
       );
-      expect(const IndexerSettings(apiKey: 'k').isComplete, isFalse);
+      expect(const IndexerProfile(id: '1', apiKey: 'k').isComplete, isFalse);
       expect(
-        const IndexerSettings(baseUrl: 'https://x.example', apiKey: 'k')
-            .isComplete,
+        const IndexerProfile(
+          id: '1',
+          baseUrl: 'https://x.example',
+          apiKey: 'k',
+        ).isComplete,
         isTrue,
       );
+    });
+
+    test('displayName nickname yoksa base URL\'e düşer', () {
+      expect(
+        const IndexerProfile(id: '1', baseUrl: 'https://x.example').displayName,
+        'https://x.example',
+      );
+      expect(
+        const IndexerProfile(
+          id: '1',
+          nickname: 'My Indexer',
+          baseUrl: 'https://x.example',
+        ).displayName,
+        'My Indexer',
+      );
+    });
+
+    test('Eski tek-indexer kaydı tek profile göç eder', () async {
+      // Eski biçimin kullandığı ham anahtarları doğrudan belleğe yaz.
+      _memoryStorage['indexer.baseUrl'] = 'https://legacy.example';
+      _memoryStorage['indexer.apiKey'] = 'eski-anahtar';
+      _memoryStorage['indexer.nickname'] = 'Legacy';
+
+      final store = IndexerSettingsStore();
+      final profiles = await store.load();
+
+      expect(profiles, hasLength(1));
+      expect(profiles.single.baseUrl, 'https://legacy.example');
+      expect(profiles.single.apiKey, 'eski-anahtar');
+      expect(profiles.single.nickname, 'Legacy');
+      // Eski anahtarlar temizlenmiş olmalı.
+      expect(_memoryStorage.containsKey('indexer.baseUrl'), isFalse);
+      expect(_memoryStorage.containsKey('indexer.apiKey'), isFalse);
+
+      // İkinci okuma yeni biçimden gelir, göç tekrarlanmaz.
+      final reloaded = await store.load();
+      expect(reloaded, hasLength(1));
+      expect(reloaded.single.baseUrl, 'https://legacy.example');
     });
   });
 
   group('SettingsScreen indexer bölümü', () {
-    testWidgets('Indexer bölümü görünür ve sahte depoya kaydeder', (
+    testWidgets('failed profile save retains draft and cancel protects edits', (
+      tester,
+    ) async {
+      final store = _FakeIndexerStore()..failSave = true;
+      await tester.pumpWithL10n(
+        SettingsScreen(
+          store: _FakeProviderStore(),
+          indexerStore: store,
+          initialSection: SettingsSection.indexer,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Indexer ekle'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ActionChip, 'NZBFinder'));
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'API anahtarı'),
+        'TESTPASS123',
+      );
+      await tester.tap(find.text("Indexer'ı kaydet"));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.text('https://nzbfinder.ws'), findsOneWidget);
+      expect(store.saved, isEmpty);
+      await tester.tap(
+        find.widgetWithText(
+          TextButton,
+          MaterialLocalizations.of(
+            tester.element(find.byType(AlertDialog)),
+          ).cancelButtonLabel,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNWidgets(2));
+      await tester.tap(find.text('Düzenlemeye devam et'));
+      await tester.pumpAndSettle();
+      store.failSave = false;
+      await tester.tap(find.text("Indexer'ı kaydet"));
+      await tester.pumpAndSettle();
+      expect(store.saved.single.apiKey, 'TESTPASS123');
+      expect(store.saved.single.nickname, 'NZBFinder');
+    });
+
+    testWidgets('profile order persists through keyboard accessible controls', (
+      tester,
+    ) async {
+      final store = _FakeIndexerStore()
+        ..saved = const [
+          IndexerProfile(id: 'a', nickname: 'First'),
+          IndexerProfile(id: 'b', nickname: 'Second'),
+        ];
+      await tester.pumpWithL10n(
+        SettingsScreen(
+          store: _FakeProviderStore(),
+          indexerStore: store,
+          initialSection: SettingsSection.indexer,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip("Indexer'ı yukarı taşı").last);
+      await tester.pumpAndSettle();
+      expect(store.saved.map((p) => p.id), ['b', 'a']);
+    });
+    testWidgets('Boşken ekleme düğmesi görünür, diyalogla profil eklenir', (
       tester,
     ) async {
       final store = _FakeIndexerStore();
@@ -140,10 +271,11 @@ void main() {
       await _reveal(tester, find.text('Indexer (Newznab)'));
       await tester.pumpAndSettle();
       expect(find.text('Indexer (Newznab)'), findsOneWidget);
-      expect(find.text("Indexer URL'si"), findsOneWidget);
-      expect(find.text('API anahtarı'), findsOneWidget);
 
-      await _reveal(tester, find.widgetWithText(TextFormField, "Indexer URL'si"));
+      await _reveal(tester, find.text("Indexer ekle"));
+      await tester.tap(find.text("Indexer ekle"));
+      await tester.pumpAndSettle();
+
       await tester.enterText(
         find.widgetWithText(TextFormField, "Indexer URL'si"),
         'https://indexer.example',
@@ -152,15 +284,13 @@ void main() {
         find.widgetWithText(TextFormField, 'API anahtarı'),
         'cok-gizli',
       );
-
-      await _reveal(tester, find.text("Indexer'ı kaydet"));
       await tester.tap(find.text("Indexer'ı kaydet"));
       await tester.pumpAndSettle();
 
-      expect(store.saved.baseUrl, 'https://indexer.example');
-      expect(store.saved.apiKey, 'cok-gizli');
-      expect(store.saved.isComplete, isTrue);
-      expect(find.text('Ayarlar güvenli depoya kaydedildi.'), findsOneWidget);
+      expect(store.saved, hasLength(1));
+      expect(store.saved.single.baseUrl, 'https://indexer.example');
+      expect(store.saved.single.apiKey, 'cok-gizli');
+      expect(store.saved.single.isComplete, isTrue);
     });
 
     testWidgets('Geçersiz URL kaydı engelliyor', (tester) async {
@@ -170,7 +300,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await _reveal(tester, find.widgetWithText(TextFormField, "Indexer URL'si"));
+      await _reveal(tester, find.text("Indexer ekle"));
+      await tester.tap(find.text("Indexer ekle"));
+      await tester.pumpAndSettle();
+
       await tester.enterText(
         find.widgetWithText(TextFormField, "Indexer URL'si"),
         'ftp://indexer.example',
@@ -179,8 +312,6 @@ void main() {
         find.widgetWithText(TextFormField, 'API anahtarı'),
         'anahtar',
       );
-
-      await _reveal(tester, find.text("Indexer'ı kaydet"));
       await tester.tap(find.text("Indexer'ı kaydet"));
       await tester.pumpAndSettle();
 
@@ -188,7 +319,7 @@ void main() {
         find.text('http:// veya https:// ile başlayan geçerli bir URL girin'),
         findsOneWidget,
       );
-      expect(store.saved.isComplete, isFalse);
+      expect(store.saved, isEmpty);
     });
 
     testWidgets('URL doluyken API anahtarı zorunlu', (tester) async {
@@ -198,39 +329,22 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await _reveal(tester, find.widgetWithText(TextFormField, "Indexer URL'si"));
+      await _reveal(tester, find.text("Indexer ekle"));
+      await tester.tap(find.text("Indexer ekle"));
+      await tester.pumpAndSettle();
+
       await tester.enterText(
         find.widgetWithText(TextFormField, "Indexer URL'si"),
         'https://indexer.example',
       );
-
-      await _reveal(tester, find.text("Indexer'ı kaydet"));
       await tester.tap(find.text("Indexer'ı kaydet"));
       await tester.pumpAndSettle();
 
       expect(find.text('API anahtarı gerekli'), findsOneWidget);
-      expect(store.saved.isComplete, isFalse);
+      expect(store.saved, isEmpty);
     });
 
-    testWidgets('Boş URL geçerli sayılır (indexer kapalı)', (tester) async {
-      final store = _FakeIndexerStore();
-      await tester.pumpWithL10n(
-        SettingsScreen(store: _FakeProviderStore(), indexerStore: store),
-      );
-      await tester.pumpAndSettle();
-
-      await _reveal(tester, find.text("Indexer'ı kaydet"));
-      await tester.tap(find.text("Indexer'ı kaydet"));
-      await tester.pumpAndSettle();
-
-      expect(store.saved.baseUrl, isEmpty);
-      expect(store.saved.apiKey, isEmpty);
-      expect(find.text('Ayarlar güvenli depoya kaydedildi.'), findsOneWidget);
-    });
-
-    testWidgets('Bağlantıyı sına caps sonucunu SnackBar ile gösterir', (
-      tester,
-    ) async {
+    testWidgets('Bağlantıyı sına caps sonucunu gösterir', (tester) async {
       final store = _FakeIndexerStore();
       IndexerConfigDto? capsConfig;
       await tester.pumpWithL10n(
@@ -250,7 +364,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await _reveal(tester, find.widgetWithText(TextFormField, "Indexer URL'si"));
+      await _reveal(tester, find.text("Indexer ekle"));
+      await tester.tap(find.text("Indexer ekle"));
+      await tester.pumpAndSettle();
+
       await tester.enterText(
         find.widgetWithText(TextFormField, "Indexer URL'si"),
         'https://indexer.example',
@@ -259,13 +376,74 @@ void main() {
         find.widgetWithText(TextFormField, 'API anahtarı'),
         'anahtar',
       );
-
-      await _reveal(tester, find.text('Bağlantıyı sına'));
-      await tester.tap(find.text('Bağlantıyı sına'));
+      await tester.ensureVisible(
+        find.widgetWithText(OutlinedButton, 'Bağlantıyı sına').last,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.widgetWithText(OutlinedButton, 'Bağlantıyı sına').last,
+      );
       await tester.pumpAndSettle();
 
       expect(capsConfig?.baseUrl, 'https://indexer.example');
       expect(find.text('Bağlandı: Miatrix'), findsOneWidget);
+    });
+
+    testWidgets(
+      'Mevcut profil listede görünür ve açık/kapalı değiştirilebilir',
+      (tester) async {
+        final store = _FakeIndexerStore()
+          ..saved = const [
+            IndexerProfile(
+              id: '1',
+              nickname: 'NZBFinder',
+              baseUrl: 'https://indexer.example',
+              apiKey: 'k',
+            ),
+          ];
+        await tester.pumpWithL10n(
+          SettingsScreen(store: _FakeProviderStore(), indexerStore: store),
+        );
+        await tester.pumpAndSettle();
+
+        await _reveal(tester, find.text('NZBFinder'));
+        expect(find.text('NZBFinder'), findsOneWidget);
+
+        final toggle = find.byType(Switch);
+        await _reveal(tester, toggle);
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+
+        expect(store.saved.single.enabled, isFalse);
+      },
+    );
+
+    testWidgets('Profil düzenleme diyaloğundan silinebilir', (tester) async {
+      final store = _FakeIndexerStore()
+        ..saved = const [
+          IndexerProfile(
+            id: '1',
+            nickname: 'NZBFinder',
+            baseUrl: 'https://indexer.example',
+            apiKey: 'k',
+          ),
+        ];
+      await tester.pumpWithL10n(
+        SettingsScreen(store: _FakeProviderStore(), indexerStore: store),
+      );
+      await tester.pumpAndSettle();
+
+      await _reveal(tester, find.text('NZBFinder'));
+      await tester.tap(find.text('NZBFinder'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Sil'));
+      await tester.pumpAndSettle();
+      // Onay diyaloğu.
+      await tester.tap(find.widgetWithText(FilledButton, 'Sil'));
+      await tester.pumpAndSettle();
+
+      expect(store.saved, isEmpty);
     });
   });
 }

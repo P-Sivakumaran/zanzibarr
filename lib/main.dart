@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -18,6 +19,7 @@ import 'settings/provider_settings.dart';
 import 'settings/settings_screen.dart';
 import 'settings/ui_preferences.dart';
 import 'src/rust/frb_generated.dart';
+import 'ui/app_background.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -574,15 +576,15 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_openingIndexer) return;
     setState(() => _openingIndexer = true);
     try {
-      IndexerSettings settings;
+      List<IndexerProfile> profiles;
       try {
-        settings = await _indexerStore.load();
+        profiles = await _indexerStore.load();
       } catch (_) {
         // Secure storage okunamazsa ayarları yeniden girmeye yönlendir.
-        settings = const IndexerSettings();
+        profiles = const [];
       }
       if (!context.mounted) return;
-      if (!settings.isComplete) {
+      if (!profiles.any((p) => p.enabled && p.isComplete)) {
         final saved = await Navigator.of(context).push<bool>(
           _fadeRoute(
             SettingsScreen(
@@ -618,21 +620,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final foreground = isDark ? Colors.white : Colors.black;
     return Scaffold(
-      body: DecoratedBox(
-        decoration: BoxDecoration(
-          // Koyu modda logo zeminiyle aynı lacivert aile (logo: #0B0E17);
-          // açık modda aynı ailenin aydınlık karşılığı.
-          gradient: RadialGradient(
-            center: const Alignment(0, -0.35),
-            radius: 1.15,
-            colors: isDark
-                ? const [Color(0xFF161D33), Color(0xFF05070D)]
-                : const [Color(0xFFFFFFFF), Color(0xFFDDE3F2)],
-          ),
-        ),
+      body: AppBackground(
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -659,18 +648,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       const _AppLogoMark(),
                       const SizedBox(height: 20),
-                      Text(
-                        'zanzibarr',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: foreground.withValues(
-                                alpha: isDark ? 0.9 : 0.75,
-                              ),
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 5.2,
-                            ),
-                      ),
+                      const _AnimatedWordmark(),
                       const SizedBox(height: 34),
                       _OpenMediaCard(
                         busy: _pickingFile,
@@ -680,6 +658,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         // TV kumandasında D-pad gezintisinin başlayabilmesi
                         // için ilk odak bu kartta kalır.
                         autofocus: true,
+                        primary: true,
                         onPressed: () => _pickAndPlay(context),
                       ),
                       const SizedBox(height: 12),
@@ -756,6 +735,151 @@ class _AppLogoMark extends StatelessWidget {
   );
 }
 
+/// Wordmark intro: "n", "z", "b" (the Usenet file format it streams) hold
+/// their position and blur in first, then slide into their real spots in
+/// "zanzibarr" while the rest of the letters cascade in around them. Plays
+/// once on mount; the n/z/b letters keep the accent tint at rest as a
+/// lasting signature rather than a one-off transition gimmick.
+class _AnimatedWordmark extends StatefulWidget {
+  const _AnimatedWordmark();
+
+  @override
+  State<_AnimatedWordmark> createState() => _AnimatedWordmarkState();
+}
+
+class _LogoLetter {
+  const _LogoLetter(
+    this.char, {
+    this.isCore = false,
+    this.startOffset = 0,
+    this.revealIndex = 0,
+  });
+
+  final String char;
+  final bool isCore;
+  final double startOffset;
+  final int revealIndex;
+}
+
+const _wordmarkLetters = [
+  _LogoLetter('z', revealIndex: 0),
+  _LogoLetter('a', revealIndex: 1),
+  _LogoLetter('n', isCore: true, startOffset: 34),
+  _LogoLetter('z', isCore: true, startOffset: 34),
+  _LogoLetter('i', revealIndex: 2),
+  _LogoLetter('b', isCore: true, startOffset: 12),
+  _LogoLetter('a', revealIndex: 3),
+  _LogoLetter('r', revealIndex: 4),
+  _LogoLetter('r', revealIndex: 5),
+];
+
+class _AnimatedWordmarkState extends State<_AnimatedWordmark>
+    with SingleTickerProviderStateMixin {
+  static const _totalMs = 2300;
+
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: _totalMs),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  static Interval _interval(double startMs, double durationMs) => Interval(
+    (startMs / _totalMs).clamp(0.0, 1.0),
+    ((startMs + durationMs) / _totalMs).clamp(0.0, 1.0),
+    curve: Curves.easeOutCubic,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final base = (isDark ? Colors.white : Colors.black).withValues(
+      alpha: isDark ? 0.9 : 0.75,
+    );
+    const accent = Color(0xFFFF453A);
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+
+    Widget letterWidget(_LogoLetter letter, {required double t}) {
+      double opacity = 1;
+      double dx = 0;
+      double blur = 0;
+      double scale = 1;
+
+      if (!reduceMotion) {
+        if (letter.isCore) {
+          final typeIn = _interval(120, 500).transform(t);
+          final expand = _interval(1050, 900).transform(t);
+          opacity = typeIn;
+          blur = (1 - typeIn) * 6;
+          dx = letter.startOffset * (1 - expand);
+        } else {
+          final revealStart = 1180.0 + letter.revealIndex * 45.0;
+          final reveal = _interval(revealStart, 750).transform(t);
+          opacity = reveal;
+          blur = (1 - reveal) * 5;
+          dx = 8 * (1 - reveal);
+          scale = 0.94 + 0.06 * reveal;
+        }
+      }
+
+      Widget text = Text(
+        letter.char,
+        style: TextStyle(
+          fontFamily: 'League Mono',
+          fontWeight: FontWeight.w100,
+          fontSize: 40,
+          color: letter.isCore ? accent : base,
+        ),
+      );
+
+      if (blur > 0.05) {
+        text = ImageFiltered(
+          imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+          child: text,
+        );
+      }
+
+      return Opacity(
+        opacity: opacity.clamp(0.0, 1.0),
+        child: Transform.translate(
+          offset: Offset(dx, 0),
+          child: Transform.scale(scale: scale, child: text),
+        ),
+      );
+    }
+
+    return Semantics(
+      label: 'zanzibarr',
+      child: ExcludeSemantics(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final letter in _wordmarkLetters)
+              if (reduceMotion)
+                letterWidget(letter, t: 1)
+              else
+                AnimatedBuilder(
+                  animation: _controller,
+                  builder: (context, _) =>
+                      letterWidget(letter, t: _controller.value),
+                ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _OpenMediaCard extends StatefulWidget {
   const _OpenMediaCard({
     required this.onPressed,
@@ -764,6 +888,7 @@ class _OpenMediaCard extends StatefulWidget {
     required this.title,
     required this.subtitle,
     this.autofocus = false,
+    this.primary = false,
   });
 
   final VoidCallback onPressed;
@@ -776,33 +901,45 @@ class _OpenMediaCard extends StatefulWidget {
   /// kartta olması gerekir; yalnızca ilk kartta true olmalı.
   final bool autofocus;
 
+  /// Filled/accent treatment for the single most important action on the
+  /// screen; every other card stays the understated outlined look.
+  final bool primary;
+
   @override
   State<_OpenMediaCard> createState() => _OpenMediaCardState();
 }
 
 class _OpenMediaCardState extends State<_OpenMediaCard> {
+  static const _accent = Color(0xFFFF453A);
+
   bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final foreground = isDark ? Colors.white : Colors.black;
-    final accent = Theme.of(context).colorScheme.primary;
+    final foreground = widget.primary
+        ? Colors.white
+        : (isDark ? Colors.white : Colors.black);
     return Material(
-      color: foreground.withValues(
-        alpha: _focused ? (isDark ? 0.1 : 0.08) : (isDark ? 0.055 : 0.045),
-      ),
+      color: widget.primary
+          ? _accent.withValues(alpha: _focused ? 1 : 0.94)
+          : foreground.withValues(
+              alpha: _focused ? (isDark ? 0.1 : 0.08) : (isDark ? 0.055 : 0.045),
+            ),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: _focused ? accent : foreground.withValues(alpha: 0.1),
-          width: _focused ? 1.8 : 1,
-        ),
+        borderRadius: BorderRadius.circular(18),
+        side: widget.primary
+            ? BorderSide.none
+            : BorderSide(
+                color: _focused ? _accent : foreground.withValues(alpha: 0.1),
+                width: _focused ? 1.8 : 1,
+              ),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: widget.busy ? null : widget.onPressed,
-        hoverColor: foreground.withValues(alpha: 0.045),
+        hoverColor: foreground.withValues(alpha: widget.primary ? 0.08 : 0.045),
+        focusColor: widget.primary ? Colors.white.withValues(alpha: 0.12) : null,
         autofocus: widget.autofocus,
         onFocusChange: (focused) => setState(() => _focused = focused),
         child: Padding(
@@ -813,7 +950,7 @@ class _OpenMediaCardState extends State<_OpenMediaCard> {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: foreground.withValues(alpha: 0.08),
+                  color: foreground.withValues(alpha: widget.primary ? 0.18 : 0.08),
                   borderRadius: BorderRadius.circular(11),
                 ),
                 child: widget.busy
@@ -821,13 +958,17 @@ class _OpenMediaCardState extends State<_OpenMediaCard> {
                         padding: const EdgeInsets.all(13),
                         child: CircularProgressIndicator(
                           strokeWidth: 1.8,
-                          color: foreground.withValues(alpha: 0.7),
+                          color: foreground.withValues(
+                            alpha: widget.primary ? 1 : 0.7,
+                          ),
                         ),
                       )
                     : Icon(
                         widget.icon,
                         size: 21,
-                        color: foreground.withValues(alpha: 0.7),
+                        color: foreground.withValues(
+                          alpha: widget.primary ? 1 : 0.7,
+                        ),
                       ),
               ),
               const SizedBox(width: 15),
@@ -847,7 +988,9 @@ class _OpenMediaCardState extends State<_OpenMediaCard> {
                     Text(
                       widget.subtitle,
                       style: TextStyle(
-                        color: foreground.withValues(alpha: 0.72),
+                        color: foreground.withValues(
+                          alpha: widget.primary ? 0.85 : 0.72,
+                        ),
                         fontSize: 13,
                       ),
                     ),
@@ -858,7 +1001,9 @@ class _OpenMediaCardState extends State<_OpenMediaCard> {
                 Icon(
                   Icons.chevron_right_rounded,
                   size: 20,
-                  color: foreground.withValues(alpha: 0.3),
+                  color: foreground.withValues(
+                    alpha: widget.primary ? 0.55 : 0.3,
+                  ),
                 ),
             ],
           ),
@@ -965,6 +1110,8 @@ class _HistoryCard extends StatefulWidget {
 }
 
 class _HistoryCardState extends State<_HistoryCard> {
+  static const _accent = Color(0xFFFF453A);
+
   bool _focused = false;
 
   @override
@@ -972,7 +1119,6 @@ class _HistoryCardState extends State<_HistoryCard> {
     final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final foreground = isDark ? Colors.white : Colors.black;
-    final accent = Theme.of(context).colorScheme.primary;
     final entry = widget.entry;
     final remaining = Duration(
       milliseconds: ((entry.durationSeconds - entry.positionSeconds) * 1000)
@@ -983,9 +1129,9 @@ class _HistoryCardState extends State<_HistoryCard> {
         alpha: _focused ? (isDark ? 0.09 : 0.07) : (isDark ? 0.045 : 0.035),
       ),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: _focused ? accent : foreground.withValues(alpha: 0.07),
+          color: _focused ? _accent : foreground.withValues(alpha: 0.07),
           width: _focused ? 1.8 : 1,
         ),
       ),
@@ -995,75 +1141,97 @@ class _HistoryCardState extends State<_HistoryCard> {
         hoverColor: foreground.withValues(alpha: 0.04),
         onFocusChange: (focused) => setState(() => _focused = focused),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          child: Column(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      entry.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+              Container(
+                width: 36,
+                height: 36,
+                margin: const EdgeInsets.only(top: 1),
+                decoration: const BoxDecoration(
+                  color: _accent,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.play_arrow_rounded,
+                  size: 19,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            entry.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: foreground.withValues(alpha: 0.9),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 48,
+                          height: 48,
+                          child: IconButton(
+                            tooltip: l10n.historyRemoveTooltip,
+                            padding: EdgeInsets.zero,
+                            iconSize: 15,
+                            icon: Icon(
+                              Icons.close_rounded,
+                              color: foreground.withValues(alpha: 0.4),
+                            ),
+                            onPressed: widget.onRemove,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      entry.durationSeconds > 0
+                          ? '${formatPlayerDuration(entry.position)} / '
+                                '${formatPlayerDuration(Duration(milliseconds: (entry.durationSeconds * 1000).round()))}'
+                          : formatPlayerDuration(entry.position),
                       style: TextStyle(
-                        color: foreground.withValues(alpha: 0.9),
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
+                        color: foreground.withValues(alpha: 0.72),
+                        fontSize: 13,
+                        fontFeatures: const [FontFeature.tabularFigures()],
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  const SizedBox(width: 4),
-                  SizedBox(
-                    width: 48,
-                    height: 48,
-                    child: IconButton(
-                      tooltip: l10n.historyRemoveTooltip,
-                      padding: EdgeInsets.zero,
-                      iconSize: 15,
-                      icon: Icon(
-                        Icons.close_rounded,
-                        color: foreground.withValues(alpha: 0.4),
+                    const SizedBox(height: 7),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: LinearProgressIndicator(
+                        value: entry.progress.clamp(0.0, 1.0),
+                        minHeight: 3,
+                        backgroundColor: foreground.withValues(alpha: 0.1),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          _accent,
+                        ),
                       ),
-                      onPressed: widget.onRemove,
                     ),
-                  ),
-                ],
-              ),
-              Text(
-                entry.durationSeconds > 0
-                    ? '${formatPlayerDuration(entry.position)} / '
-                          '${formatPlayerDuration(Duration(milliseconds: (entry.durationSeconds * 1000).round()))}'
-                    : formatPlayerDuration(entry.position),
-                style: TextStyle(
-                  color: foreground.withValues(alpha: 0.72),
-                  fontSize: 13,
-                  fontFeatures: const [FontFeature.tabularFigures()],
+                    if (entry.durationSeconds > 0 &&
+                        remaining > Duration.zero) ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        l10n.historyRemaining(formatPlayerDuration(remaining)),
+                        style: TextStyle(
+                          color: foreground.withValues(alpha: 0.72),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-              const SizedBox(height: 7),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(2),
-                child: LinearProgressIndicator(
-                  value: entry.progress.clamp(0.0, 1.0),
-                  minHeight: 3,
-                  backgroundColor: foreground.withValues(alpha: 0.1),
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-              ),
-              if (entry.durationSeconds > 0 && remaining > Duration.zero) ...[
-                const SizedBox(height: 5),
-                Text(
-                  l10n.historyRemaining(formatPlayerDuration(remaining)),
-                  style: TextStyle(
-                    color: foreground.withValues(alpha: 0.72),
-                    fontSize: 13,
-                  ),
-                ),
-              ],
             ],
           ),
         ),

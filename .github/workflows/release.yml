@@ -27,7 +27,17 @@ jobs:
         with:
           ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.sha }}
       - id: revision
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          python3 tools/validate_release.py "$RELEASE_TAG"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  verify:
+    needs: revision
+    uses: ./.github/workflows/verify.yml
+    with:
+      ref: ${{ needs.revision.outputs.sha }}
 
   android:
     needs: revision
@@ -52,7 +62,7 @@ jobs:
       ref: ${{ needs.revision.outputs.sha }}
 
   publish:
-    needs: [revision, android, windows, linux, ios]
+    needs: [revision, verify, android, windows, linux, ios]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -69,15 +79,22 @@ jobs:
         run: |
           unzip -o zanzibarr-android.zip -d .
           rm zanzibarr-android.zip
+          sha256sum zanzibarr-android-*.apk zanzibarr-windows-x64.zip \
+            zanzibarr-windows-x64-setup.exe zanzibarr-linux-x64.tar.gz \
+            zanzibarr-linux-x64.deb zanzibarr-ios-unsigned.ipa > SHA256SUMS
           ls -la
 
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
+          draft: true
           body_path: docs/releases/${{ inputs.tag || github.ref_name }}.md
           files: |
             zanzibarr-android-*.apk
             zanzibarr-windows-x64.zip
+            zanzibarr-windows-x64-setup.exe
             zanzibarr-linux-x64.tar.gz
+            zanzibarr-linux-x64.deb
             zanzibarr-ios-unsigned.ipa
+            SHA256SUMS
           fail_on_unmatched_files: true

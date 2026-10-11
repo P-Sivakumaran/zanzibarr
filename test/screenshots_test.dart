@@ -191,13 +191,14 @@ class _FakeStore extends ProviderSettingsStore {
 /// Indexer bölümü de dolu gözüksün diye sahte indexer deposu.
 class _FakeIndexerStore extends IndexerSettingsStore {
   @override
-  Future<IndexerSettings> load() async => const IndexerSettings(
+  Future<List<IndexerProfile>> load() async => const [IndexerProfile(
+    id: '1',
     baseUrl: 'https://indexer.example',
-    apiKey: 'abc123-example-key',
-  );
+    apiKey: 'TESTPASS123',
+  )];
 
   @override
-  Future<void> save(IndexerSettings settings) async {}
+  Future<void> save(List<IndexerProfile> settings) async {}
 }
 
 /// Arama ekranı görseli için gerçekçi sonuç seti (rozetler Rust tarafından
@@ -213,8 +214,7 @@ List<SearchItemDto> _fakeResults() => [
     badges: const ['2160p', 'BluRay', 'HEVC', 'DV', 'HDR10', 'DD+ 5.1'],
     mediaKind: 'movie',
     year: 1999,
-    group: 'hallowed',
-  ),
+    group: 'hallowed', sourceIndexer: 'https://indexer.example'),
   SearchItemDto(
     title:
         'Coming.to.America.1988.2160p.UHD.BluRay.Remux.HDR.DV.HEVC.DTS-HD.MA.5.1-PmP',
@@ -225,8 +225,7 @@ List<SearchItemDto> _fakeResults() => [
         1000,
     badges: const ['2160p', 'Remux', 'HEVC', 'HDR', 'DV', 'DTS-HD MA 5.1'],
     mediaKind: 'movie',
-    year: 1988,
-  ),
+    year: 1988, sourceIndexer: 'https://indexer.example'),
   SearchItemDto(
     title: 'Fight.Club.1999.1080p.BluRay.x264.DTS-ESiR',
     nzbUrl: 'https://indexer.example/getnzb/3',
@@ -236,8 +235,7 @@ List<SearchItemDto> _fakeResults() => [
         1000,
     badges: const ['1080p', 'BluRay', 'x264', 'DTS'],
     mediaKind: 'movie',
-    year: 1999,
-  ),
+    year: 1999, sourceIndexer: 'https://indexer.example'),
 ];
 
 /// Oyuncu chrome'u için örnek parça listesi.
@@ -717,10 +715,10 @@ void main() {
       _screenshotApp(
         SearchScreen(
           store: _FakeIndexerStore(),
-          searchFn: (config, query, limit, offset) async => SearchPageDto(
+          searchFn: (config, query, limit, offset) async => SearchManyResultDto(page: SearchPageDto(
             total: BigInt.from(3),
             items: _fakeResults(),
-          ),
+          ), failedIndexers: const []),
           onDownloaded: (_) {},
         ),
         ThemeMode.dark,
@@ -832,7 +830,7 @@ void main() {
           store: _FakeIndexerStore(),
           searchFn: (config, query, limit, offset) async {
             await Future<void>.delayed(const Duration(milliseconds: 350));
-            return SearchPageDto(total: BigInt.from(3), items: _fakeResults());
+            return SearchManyResultDto(page: SearchPageDto(total: BigInt.from(3), items: _fakeResults()), failedIndexers: const []);
           },
           downloadFn: (config, url, name) async {
             await Future<void>.delayed(const Duration(seconds: 2));
