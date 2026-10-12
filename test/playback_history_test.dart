@@ -48,6 +48,9 @@ void main() {
     double duration = 6000,
     int updatedAt = 1000,
     String? entryKey,
+    String? imdbId,
+    int? season,
+    int? episode,
   }) => PlaybackHistoryEntry(
     nzbPath: path,
     entryKey: entryKey,
@@ -55,6 +58,9 @@ void main() {
     positionSeconds: position,
     durationSeconds: duration,
     updatedAtMs: updatedAt,
+    imdbId: imdbId,
+    season: season,
+    episode: episode,
   );
 
   test('kayıt eklenip okunabiliyor (round-trip)', () async {
@@ -68,6 +74,37 @@ void main() {
     expect(entries.single.nzbPath, '/media/film.nzb');
     expect(entries.single.positionSeconds, 321.5);
     expect(entries.single.progress, closeTo(321.5 / 6000, 0.0001));
+  });
+
+  test('imdbId/sezon/bölüm round-trip ile korunur', () async {
+    final storage = _MemoryPreferenceStorage();
+    final store = PlaybackHistoryStore(storage: storage);
+
+    await store.save(
+      entry(
+        '/media/show.s01e02.nzb',
+        imdbId: 'tt1234567',
+        season: 1,
+        episode: 2,
+      ),
+    );
+
+    final entries = await store.load();
+    expect(entries.single.imdbId, 'tt1234567');
+    expect(entries.single.season, 1);
+    expect(entries.single.episode, 2);
+  });
+
+  test('yapılandırılmamış kayıtlarda kimlik alanları null kalır', () async {
+    final storage = _MemoryPreferenceStorage();
+    final store = PlaybackHistoryStore(storage: storage);
+
+    await store.save(entry('/media/random-file.nzb'));
+
+    final entries = await store.load();
+    expect(entries.single.imdbId, isNull);
+    expect(entries.single.season, isNull);
+    expect(entries.single.episode, isNull);
   });
 
   test(

@@ -508,7 +508,13 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _openPath(String path, {String? entryKey}) async {
+  Future<void> _openPath(
+    String path, {
+    String? entryKey,
+    String? imdbId,
+    int? season,
+    int? episode,
+  }) async {
     if (_openingPath) return;
     _openingPath = true;
     try {
@@ -539,6 +545,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 nzbPath: path,
                 initialEntryKey: entryKey,
                 store: _providerStore,
+                imdbId: imdbId,
+                season: season,
+                episode: episode,
               ),
           opaque: true,
         ),
@@ -684,6 +693,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           onOpen: (entry) => _openPath(
                             entry.nzbPath,
                             entryKey: entry.entryKey,
+                            imdbId: entry.imdbId,
+                            season: entry.season,
+                            episode: entry.episode,
                           ),
                           onRemove: _removeHistoryEntry,
                         ),

@@ -45,6 +45,9 @@ class PlayerScreen extends StatefulWidget {
     this.historyStore,
     this.castService,
     this.initialEntryKey,
+    this.imdbId,
+    this.season,
+    this.episode,
     this.startupTimeout = const Duration(seconds: 45),
     this.streamPreparationTimeout = const Duration(seconds: 90),
   });
@@ -55,6 +58,13 @@ class PlayerScreen extends StatefulWidget {
   /// seçici anahtarı; verilirse çok parçalı NZB'lerde seçici diyalog
   /// atlanır ve doğrudan bu aday oynatılır.
   final String? initialEntryKey;
+
+  /// Yapılandırılmış aramadan geldiyse kalıcı medya kimliği; yalnızca
+  /// izleme geçmişi kaydına eşlik eder, oynatmayı etkilemez. Serbest metin
+  /// aramasından/dosya seçiciden açılan oynatmalarda null kalır.
+  final String? imdbId;
+  final int? season;
+  final int? episode;
 
   /// Testlerde sahte depo enjekte etmek için; null ise gerçek depo kullanılır.
   final ProviderSettingsStore? store;
@@ -244,6 +254,22 @@ class _PlayerScreenState extends State<PlayerScreen>
   // null kalır. Geçmiş kayıtları (nzbPath, entryKey) çiftiyle tutulur ki
   // sezon paketinin bölümleri birbirinin konumunu ezmesin (issue #5).
   String? _resolvedEntryKey;
+
+  // Bu (nzbPath, entryKey) için önceden kaydedilmiş kimlik (varsa);
+  // `widget.imdbId`/`season`/`episode` boşsa (dosya seçiciden/serbest
+  // aramadan yeniden açılış) bu değerler korunur — aksi halde her kayıt
+  // önceki eşleşmeyi siler (code review bulgusu).
+  String? _persistedImdbId;
+  int? _persistedSeason;
+  int? _persistedEpisode;
+
+  // `widget.season`/`episode` arama sonucunun release adından ayrıştırdığı
+  // TAHMİNdir; çok adaylı (sezon paketi) NZB'lerde kullanıcı farklı bir
+  // bölüm seçebilir. Seçici gösterildiyse bu tahmin artık güvenilmez ve
+  // sıfırlanır — imdbId etkilenmez, o gösterinin kimliğidir, bölüme bağlı
+  // değil (code review bulgusu).
+  int? _effectiveSeason;
+  int? _effectiveEpisode;
   // Android çok-sesli sessiz açılış düzeltmesi tek seferlik uygulanır.
   bool _audioReasserted = false;
   // Video sığdırma kipi: false=contain (oran korunur), true=cover (doldur).
@@ -253,6 +279,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _effectiveSeason = widget.season;
+    _effectiveEpisode = widget.episode;
     _player = Player(
       configuration: const PlayerConfiguration(
         title: 'Zanzibarr',
@@ -383,6 +411,12 @@ class _PlayerScreenState extends State<PlayerScreen>
           final entries = await listPlayableEntries(nzbPath: widget.nzbPath);
           if (!mounted) return;
           if (entries.length > 1) {
+            // Birden çok aday arasından seçim yapıldı: arama sonucunun
+            // sezon/bölüm tahmini artık seçilen dosyayla eşleşmeyebilir
+            // (code review bulgusu) — kimliğin bölüm kısmı güvenilmez
+            // olduğu için sıfırlanır.
+            _effectiveSeason = null;
+            _effectiveEpisode = null;
             entryKey = await showPlayableEntryPicker(context, entries);
             if (entryKey == null) {
               // Kullanıcı vazgeçti: oynatıcıyı hiç başlatmadan geri dön.
@@ -674,6 +708,9 @@ class _PlayerScreenState extends State<PlayerScreen>
         mediaTitle: _info?.filename,
       );
       if (entry == null || _disposing) return;
+      _persistedImdbId = entry.imdbId;
+      _persistedSeason = entry.season;
+      _persistedEpisode = entry.episode;
       // Son %3'e ulaşılmış içerik izlenmiş sayılır; kayıt düşülüp baştan
       // başlanır.
       if (entry.isCompleted) {
@@ -707,6 +744,9 @@ class _PlayerScreenState extends State<PlayerScreen>
           positionSeconds: position.inMilliseconds / 1000,
           durationSeconds: duration.inMilliseconds / 1000,
           updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+          imdbId: widget.imdbId ?? _persistedImdbId,
+          season: _effectiveSeason ?? _persistedSeason,
+          episode: _effectiveEpisode ?? _persistedEpisode,
         ),
       );
     } catch (_) {

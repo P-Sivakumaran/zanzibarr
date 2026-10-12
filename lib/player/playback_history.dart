@@ -16,6 +16,9 @@ class PlaybackHistoryEntry {
     required this.durationSeconds,
     required this.updatedAtMs,
     this.entryKey,
+    this.imdbId,
+    this.season,
+    this.episode,
   });
 
   /// Geçmiş kaydının kimliği: NZB'nin dosya yolu (yerel depoda kalır).
@@ -32,6 +35,17 @@ class PlaybackHistoryEntry {
   final double positionSeconds;
   final double durationSeconds;
   final int updatedAtMs;
+
+  /// Yapılandırılmış aramadan (OMDb eşleşmesi) geldiyse IMDb kimliği; aynı
+  /// gösterinin bölümlerini gruplamak için kullanılır. Serbest metin
+  /// aramasından/dosya seçiciden gelen kayıtlarda null kalır — her
+  /// release'in kimliği olmak zorunda değil.
+  final String? imdbId;
+
+  /// Release adından Rust tarafında ayrıştırılan sezon/bölüm; `imdbId` ile
+  /// birlikte "Sıradaki" özelliğinin temelini oluşturur.
+  final int? season;
+  final int? episode;
 
   /// İzleme sona erdiyse (son ~%3) kayıt tutulmaz; baştan başlatılır.
   bool get isCompleted =>
@@ -52,6 +66,9 @@ class PlaybackHistoryEntry {
     'positionSeconds': positionSeconds,
     'durationSeconds': durationSeconds,
     'updatedAtMs': updatedAtMs,
+    'imdbId': ?imdbId,
+    'season': ?season,
+    'episode': ?episode,
   };
 
   static PlaybackHistoryEntry? fromJson(Object? value) {
@@ -67,6 +84,9 @@ class PlaybackHistoryEntry {
       return null;
     }
     final entryKey = value['entryKey'];
+    final imdbId = value['imdbId'];
+    final season = value['season'];
+    final episode = value['episode'];
     return PlaybackHistoryEntry(
       nzbPath: path,
       entryKey: entryKey is String && entryKey.isNotEmpty ? entryKey : null,
@@ -74,6 +94,9 @@ class PlaybackHistoryEntry {
       positionSeconds: position.toDouble(),
       durationSeconds: duration.toDouble(),
       updatedAtMs: updatedAt.toInt(),
+      imdbId: imdbId is String && imdbId.isNotEmpty ? imdbId : null,
+      season: season is num ? season.toInt() : null,
+      episode: episode is num ? episode.toInt() : null,
     );
   }
 
@@ -85,7 +108,10 @@ class PlaybackHistoryEntry {
       title == other.title &&
       positionSeconds == other.positionSeconds &&
       durationSeconds == other.durationSeconds &&
-      updatedAtMs == other.updatedAtMs;
+      updatedAtMs == other.updatedAtMs &&
+      imdbId == other.imdbId &&
+      season == other.season &&
+      episode == other.episode;
 
   @override
   int get hashCode => Object.hash(
@@ -95,6 +121,9 @@ class PlaybackHistoryEntry {
     positionSeconds,
     durationSeconds,
     updatedAtMs,
+    imdbId,
+    season,
+    episode,
   );
 }
 

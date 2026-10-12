@@ -498,7 +498,14 @@ class _SearchScreenState extends State<SearchScreen> {
         onDownloaded(path);
       } else {
         await Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => PlayerScreen(nzbPath: path)),
+          MaterialPageRoute<void>(
+            builder: (_) => PlayerScreen(
+              nzbPath: path,
+              imdbId: _activeSelection?.imdbId,
+              season: item.season ?? _activeSelection?.season,
+              episode: item.episode ?? _activeSelection?.episode,
+            ),
+          ),
         );
       }
     } catch (error) {
