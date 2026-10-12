@@ -308,6 +308,17 @@ class AppLocalizationsTr extends AppLocalizations {
   String get continueWatching => 'İzlemeye devam et';
 
   @override
+  String get upNext => 'Sıradaki';
+
+  @override
+  String upNextEpisode(int season, int episode) {
+    return 'Sezon $season, Bölüm $episode';
+  }
+
+  @override
+  String get upNextFind => 'Bul';
+
+  @override
   String get videoFitCover => 'Ekranı doldur';
 
   @override

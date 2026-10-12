@@ -125,14 +125,21 @@ void main() {
     },
   );
 
-  test('izleme sona erdiyse kayıt tutulmaz', () async {
-    final storage = _MemoryPreferenceStorage();
-    final store = PlaybackHistoryStore(storage: storage);
+  test(
+    'izleme sona erdiyse kayıt tamamlandı olarak tutulur (Sıradaki için)',
+    () async {
+      final storage = _MemoryPreferenceStorage();
+      final store = PlaybackHistoryStore(storage: storage);
 
-    await store.save(entry('/media/film.nzb', position: 5900, duration: 6000));
+      await store.save(
+        entry('/media/film.nzb', position: 5900, duration: 6000),
+      );
 
-    expect(await store.load(), isEmpty);
-  });
+      final entries = await store.load();
+      expect(entries, hasLength(1));
+      expect(entries.single.isCompleted, isTrue);
+    },
+  );
 
   test('liste en güncel 25 kayıtla sınırlı', () async {
     final storage = _MemoryPreferenceStorage();

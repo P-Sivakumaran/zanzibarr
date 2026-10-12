@@ -12,7 +12,9 @@ import 'l10n/app_localizations.dart';
 import 'player/gyuni_player_controls.dart' show formatPlayerDuration;
 import 'player/playback_history.dart';
 import 'player/player_screen.dart';
+import 'player/up_next.dart';
 import 'update/update_service.dart';
+import 'search/release_search_selection.dart';
 import 'search/search_screen.dart';
 import 'settings/indexer_settings.dart';
 import 'settings/provider_settings.dart';
@@ -444,6 +446,14 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _historyFailed = false;
   bool _openingPath = false;
 
+  /// Devam ettirilebilir (tamamlanmamış) kayıtlar — "İzlemeye devam et"
+  /// bölümü artık tamamlanmış kayıtları da içeren [_history]'den bunları
+  /// süzer (tamamlanmış kayıtlar "Sıradaki" hesaplaması için tutuluyor).
+  List<PlaybackHistoryEntry> get _resumableHistory =>
+      _history.where((e) => !e.isCompleted).toList();
+
+  List<UpNextSuggestion> get _upNext => computeUpNext(_history);
+
   @override
   void initState() {
     super.initState();
@@ -581,7 +591,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Indexer ayarları tamamsa arama ekranını açar; eksikse önce bilgilendirip
   /// ayarlar ekranına götürür.
-  Future<void> _openIndexerSearch(BuildContext context) async {
+  Future<void> _openIndexerSearch(
+    BuildContext context, {
+    ReleaseSearchSelection? initialSelection,
+  }) async {
     if (_openingIndexer) return;
     setState(() => _openingIndexer = true);
     try {
@@ -612,6 +625,7 @@ class _HomeScreenState extends State<HomeScreen> {
           SearchScreen(
             store: _indexerStore,
             uiPreferences: widget.uiPreferences,
+            initialSelection: initialSelection,
           ),
         ),
       );
@@ -686,10 +700,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Text(l10n.retry),
                         ),
                       ],
-                      if (_history.isNotEmpty) ...[
+                      if (_resumableHistory.isNotEmpty) ...[
                         const SizedBox(height: 28),
                         _ContinueWatchingSection(
-                          entries: _history,
+                          entries: _resumableHistory,
                           onOpen: (entry) => _openPath(
                             entry.nzbPath,
                             entryKey: entry.entryKey,
@@ -698,6 +712,22 @@ class _HomeScreenState extends State<HomeScreen> {
                             episode: entry.episode,
                           ),
                           onRemove: _removeHistoryEntry,
+                        ),
+                      ],
+                      if (_upNext.isNotEmpty) ...[
+                        const SizedBox(height: 28),
+                        _UpNextSection(
+                          suggestions: _upNext,
+                          onFind: (suggestion) => _openIndexerSearch(
+                            context,
+                            initialSelection: ReleaseSearchSelection(
+                              title: suggestion.title,
+                              kind: 'tv',
+                              imdbId: suggestion.imdbId,
+                              season: suggestion.season,
+                              episode: suggestion.episode,
+                            ),
+                          ),
                         ),
                       ],
                     ],
@@ -1099,6 +1129,94 @@ class _ContinueWatchingSection extends StatelessWidget {
               entry: entry,
               onOpen: () => onOpen(entry),
               onRemove: () => onRemove(entry),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Tamamlanmış bir bölümden sonra bir sonraki bölümü önerir; ağ çağrısı
+/// yapmaz, sadece geçmişteki kayıtlardan çıkarılır (bkz. [computeUpNext]).
+/// "Bul" aramayı otomatik başlatmaz, sadece alanı önceden doldurur.
+class _UpNextSection extends StatelessWidget {
+  const _UpNextSection({required this.suggestions, required this.onFind});
+
+  final List<UpNextSuggestion> suggestions;
+  final ValueChanged<UpNextSuggestion> onFind;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final foreground = isDark ? Colors.white : Colors.black;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 10),
+          child: Text(
+            l10n.upNext,
+            style: TextStyle(
+              color: foreground.withValues(alpha: 0.72),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ),
+        for (final suggestion in suggestions)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Material(
+              color: foreground.withValues(alpha: isDark ? 0.045 : 0.035),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: foreground.withValues(alpha: 0.07)),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            suggestion.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: foreground.withValues(alpha: 0.9),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            l10n.upNextEpisode(
+                              suggestion.season,
+                              suggestion.episode,
+                            ),
+                            style: TextStyle(
+                              color: foreground.withValues(alpha: 0.72),
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: () => onFind(suggestion),
+                      child: Text(l10n.upNextFind),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
       ],

@@ -309,6 +309,17 @@ class AppLocalizationsPt extends AppLocalizations {
   String get continueWatching => 'Continuar a ver';
 
   @override
+  String get upNext => 'Up next';
+
+  @override
+  String upNextEpisode(int season, int episode) {
+    return 'Season $season, Episode $episode';
+  }
+
+  @override
+  String get upNextFind => 'Find';
+
+  @override
   String get videoFitCover => 'Preencher ecrã';
 
   @override

@@ -309,6 +309,17 @@ class AppLocalizationsEs extends AppLocalizations {
   String get continueWatching => 'Seguir viendo';
 
   @override
+  String get upNext => 'Up next';
+
+  @override
+  String upNextEpisode(int season, int episode) {
+    return 'Season $season, Episode $episode';
+  }
+
+  @override
+  String get upNextFind => 'Find';
+
+  @override
   String get videoFitCover => 'Llenar pantalla';
 
   @override

@@ -308,6 +308,17 @@ class AppLocalizationsHi extends AppLocalizations {
   String get continueWatching => 'देखना जारी रखें';
 
   @override
+  String get upNext => 'Up next';
+
+  @override
+  String upNextEpisode(int season, int episode) {
+    return 'Season $season, Episode $episode';
+  }
+
+  @override
+  String get upNextFind => 'Find';
+
+  @override
   String get videoFitCover => 'स्क्रीन भरें';
 
   @override

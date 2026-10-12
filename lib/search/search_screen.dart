@@ -50,6 +50,7 @@ class SearchScreen extends StatefulWidget {
     this.metadataService,
     this.metadataStore,
     this.capsFn,
+    this.initialSelection,
   });
 
   /// Testlerde sahte depo enjekte edebilmek için; null ise gerçek depo kullanılır.
@@ -71,6 +72,10 @@ class SearchScreen extends StatefulWidget {
   final MetadataService? metadataService;
   final MetadataSettingsStore? metadataStore;
   final NewznabCapsFn? capsFn;
+
+  /// "Sıradaki" kartından açıldığında alan önceden doldurulur; kullanıcı
+  /// aramayı kendisi başlatana kadar otomatik arama yapılmaz.
+  final ReleaseSearchSelection? initialSelection;
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -166,6 +171,13 @@ class _SearchScreenState extends State<SearchScreen> {
         }
       }),
     );
+    final initial = widget.initialSelection;
+    if (initial != null) {
+      _settingSelection = true;
+      _queryController.text = initial.fallbackQuery;
+      _settingSelection = false;
+      _selection = initial;
+    }
     _loadSettings();
   }
 

@@ -143,6 +143,15 @@
   "off": "Off",
   "subtitleDecreaseTooltip": "Decrease subtitle size",
   "continueWatching": "Continue watching",
+  "upNext": "Up next",
+  "upNextEpisode": "Season {season}, Episode {episode}",
+  "@upNextEpisode": {
+    "placeholders": {
+      "season": { "type": "int" },
+      "episode": { "type": "int" }
+    }
+  },
+  "upNextFind": "Find",
   "videoFitCover": "Fill screen",
   "videoFitContain": "Fit to screen",
   "updateAvailable": "Update available",

@@ -200,7 +200,12 @@ class PlaybackHistoryStore {
     return null;
   });
 
-  /// Kaydı ekler veya günceller; tamamlanmış içerik listeden düşer.
+  /// Kaydı ekler veya günceller.
+  ///
+  /// Tamamlanmış kayıt da tutulur (silinmez): "Sıradaki" özelliği hangi
+  /// bölümün izlendiğini bilmek için bu kayda ihtiyaç duyar. Aynı NZB
+  /// yeniden açıldığında tamamlanmış kaydı silip baştan başlatan asıl yer
+  /// [PlayerScreen._resumeFromHistory]'dir — burada silmek o akışı bozar.
   ///
   /// Legacy records are replaced only when they describe the same video.
   Future<void> save(PlaybackHistoryEntry entry) => _serialized(() async {
@@ -221,7 +226,7 @@ class PlaybackHistoryStore {
                   e.entryKey == null &&
                   e.title == entry.title)),
     );
-    if (!entry.isCompleted) entries.insert(0, entry);
+    entries.insert(0, entry);
     if (entries.length > _maxEntries) {
       entries.removeRange(_maxEntries, entries.length);
     }

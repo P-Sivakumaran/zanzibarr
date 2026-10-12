@@ -662,6 +662,24 @@ abstract class AppLocalizations {
   /// **'Continue watching'**
   String get continueWatching;
 
+  /// No description provided for @upNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Up next'**
+  String get upNext;
+
+  /// No description provided for @upNextEpisode.
+  ///
+  /// In en, this message translates to:
+  /// **'Season {season}, Episode {episode}'**
+  String upNextEpisode(int season, int episode);
+
+  /// No description provided for @upNextFind.
+  ///
+  /// In en, this message translates to:
+  /// **'Find'**
+  String get upNextFind;
+
   /// No description provided for @videoFitCover.
   ///
   /// In en, this message translates to:

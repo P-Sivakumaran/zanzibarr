@@ -303,6 +303,17 @@ class AppLocalizationsKo extends AppLocalizations {
   String get continueWatching => '이어보기';
 
   @override
+  String get upNext => 'Up next';
+
+  @override
+  String upNextEpisode(int season, int episode) {
+    return 'Season $season, Episode $episode';
+  }
+
+  @override
+  String get upNextFind => 'Find';
+
+  @override
   String get videoFitCover => '화면 채우기';
 
   @override
