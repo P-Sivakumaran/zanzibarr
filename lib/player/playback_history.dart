@@ -19,6 +19,8 @@ class PlaybackHistoryEntry {
     this.imdbId,
     this.season,
     this.episode,
+    this.sourceId,
+    this.nzbUrl,
   });
 
   /// Geçmiş kaydının kimliği: NZB'nin dosya yolu (yerel depoda kalır).
@@ -47,6 +49,16 @@ class PlaybackHistoryEntry {
   final int? season;
   final int? episode;
 
+  /// Aramadan geldiyse indirmenin kaynağı: hangi indexer profilinden
+  /// (`sourceId`) ve hangi URL'den (`nzbUrl`) indirildiği. `nzbPath` geçici
+  /// önbellek dizinine işaret eder ve sistem temizliğinde ya da yeniden
+  /// başlatma sonrası sessizce kaybolabilir; bu ikisi varsa devam ederken
+  /// dosya yoksa aynı NZB yeniden indirilebilir (Faz 4 — resume durability).
+  /// Dosya seçiciden açılan oynatmalarda null kalır (indirilecek bir kaynak
+  /// yok, yeniden indirme de söz konusu değil).
+  final String? sourceId;
+  final String? nzbUrl;
+
   /// İzleme sona erdiyse (son ~%3) kayıt tutulmaz; baştan başlatılır.
   bool get isCompleted =>
       durationSeconds > 0 && positionSeconds >= durationSeconds * 0.97;
@@ -69,6 +81,8 @@ class PlaybackHistoryEntry {
     'imdbId': ?imdbId,
     'season': ?season,
     'episode': ?episode,
+    'sourceId': ?sourceId,
+    'nzbUrl': ?nzbUrl,
   };
 
   static PlaybackHistoryEntry? fromJson(Object? value) {
@@ -87,6 +101,8 @@ class PlaybackHistoryEntry {
     final imdbId = value['imdbId'];
     final season = value['season'];
     final episode = value['episode'];
+    final sourceId = value['sourceId'];
+    final nzbUrl = value['nzbUrl'];
     return PlaybackHistoryEntry(
       nzbPath: path,
       entryKey: entryKey is String && entryKey.isNotEmpty ? entryKey : null,
@@ -97,6 +113,8 @@ class PlaybackHistoryEntry {
       imdbId: imdbId is String && imdbId.isNotEmpty ? imdbId : null,
       season: season is num ? season.toInt() : null,
       episode: episode is num ? episode.toInt() : null,
+      sourceId: sourceId is String && sourceId.isNotEmpty ? sourceId : null,
+      nzbUrl: nzbUrl is String && nzbUrl.isNotEmpty ? nzbUrl : null,
     );
   }
 
@@ -111,7 +129,9 @@ class PlaybackHistoryEntry {
       updatedAtMs == other.updatedAtMs &&
       imdbId == other.imdbId &&
       season == other.season &&
-      episode == other.episode;
+      episode == other.episode &&
+      sourceId == other.sourceId &&
+      nzbUrl == other.nzbUrl;
 
   @override
   int get hashCode => Object.hash(
@@ -124,6 +144,8 @@ class PlaybackHistoryEntry {
     imdbId,
     season,
     episode,
+    sourceId,
+    nzbUrl,
   );
 }
 

@@ -215,6 +215,9 @@ void main() {
           providerStore: provider,
           historyStore: _HistoryStore(),
           updateService: _NoUpdates(),
+          // Bu test ayar tamamlama akışını doğrular, Faz 4'ün dosya varlık
+          // kontrolünü değil — kurgu yolu gerçek dosya sisteminde yok.
+          fileExistsFn: (_) async => true,
           playerBuilder: (path, key) {
             openedPath = path;
             openedKey = key;

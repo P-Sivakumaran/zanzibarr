@@ -895,6 +895,18 @@ class AppLocalizationsHi extends AppLocalizations {
   String get historyRemoved => 'Removed from continue watching';
 
   @override
+  String get historyFileMissing =>
+      'This file is no longer available and can\'t be re-downloaded.';
+
+  @override
+  String get historyFileMissingIndexerGone =>
+      'This file is no longer available; its original indexer isn\'t configured anymore.';
+
+  @override
+  String get historyFileMissingRedownloadFailed =>
+      'This file is no longer available and could not be re-downloaded.';
+
+  @override
   String get technicalDetailsLabel => 'Technical details';
 
   @override

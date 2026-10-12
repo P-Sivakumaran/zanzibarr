@@ -534,6 +534,8 @@ class _SearchScreenState extends State<SearchScreen> {
               imdbId: _activeSelection?.imdbId,
               season: item.season ?? _activeSelection?.season,
               episode: item.episode ?? _activeSelection?.episode,
+              sourceId: config.id,
+              nzbUrl: item.nzbUrl,
             ),
           ),
         );

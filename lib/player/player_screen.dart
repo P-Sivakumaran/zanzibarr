@@ -48,6 +48,8 @@ class PlayerScreen extends StatefulWidget {
     this.imdbId,
     this.season,
     this.episode,
+    this.sourceId,
+    this.nzbUrl,
     this.startupTimeout = const Duration(seconds: 45),
     this.streamPreparationTimeout = const Duration(seconds: 90),
   });
@@ -65,6 +67,12 @@ class PlayerScreen extends StatefulWidget {
   final String? imdbId;
   final int? season;
   final int? episode;
+
+  /// Aramadan geldiyse indirmenin kaynağı; `nzbPath`'teki geçici dosya
+  /// kaybolursa aynı NZB'nin yeniden indirilebilmesi için izleme geçmişine
+  /// eşlik eder (Faz 4). Dosya seçiciden açılan oynatmalarda null kalır.
+  final String? sourceId;
+  final String? nzbUrl;
 
   /// Testlerde sahte depo enjekte etmek için; null ise gerçek depo kullanılır.
   final ProviderSettingsStore? store;
@@ -262,6 +270,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   String? _persistedImdbId;
   int? _persistedSeason;
   int? _persistedEpisode;
+  String? _persistedSourceId;
+  String? _persistedNzbUrl;
 
   // `widget.season`/`episode` arama sonucunun release adından ayrıştırdığı
   // TAHMİNdir; çok adaylı (sezon paketi) NZB'lerde kullanıcı farklı bir
@@ -711,6 +721,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       _persistedImdbId = entry.imdbId;
       _persistedSeason = entry.season;
       _persistedEpisode = entry.episode;
+      _persistedSourceId = entry.sourceId;
+      _persistedNzbUrl = entry.nzbUrl;
       // Son %3'e ulaşılmış içerik izlenmiş sayılır; kayıt düşülüp baştan
       // başlanır.
       if (entry.isCompleted) {
@@ -747,6 +759,8 @@ class _PlayerScreenState extends State<PlayerScreen>
           imdbId: widget.imdbId ?? _persistedImdbId,
           season: _effectiveSeason ?? _persistedSeason,
           episode: _effectiveEpisode ?? _persistedEpisode,
+          sourceId: widget.sourceId ?? _persistedSourceId,
+          nzbUrl: widget.nzbUrl ?? _persistedNzbUrl,
         ),
       );
     } catch (_) {

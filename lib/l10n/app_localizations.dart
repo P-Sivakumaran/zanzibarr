@@ -1670,6 +1670,24 @@ abstract class AppLocalizations {
   /// **'Removed from continue watching'**
   String get historyRemoved;
 
+  /// No description provided for @historyFileMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'This file is no longer available and can\'t be re-downloaded.'**
+  String get historyFileMissing;
+
+  /// No description provided for @historyFileMissingIndexerGone.
+  ///
+  /// In en, this message translates to:
+  /// **'This file is no longer available; its original indexer isn\'t configured anymore.'**
+  String get historyFileMissingIndexerGone;
+
+  /// No description provided for @historyFileMissingRedownloadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'This file is no longer available and could not be re-downloaded.'**
+  String get historyFileMissingRedownloadFailed;
+
   /// No description provided for @technicalDetailsLabel.
   ///
   /// In en, this message translates to:

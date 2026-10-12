@@ -894,6 +894,18 @@ class AppLocalizationsTr extends AppLocalizations {
   String get historyRemoved => 'İzleme geçmişinden kaldırıldı';
 
   @override
+  String get historyFileMissing =>
+      'Bu dosya artık yok ve yeniden indirilemiyor.';
+
+  @override
+  String get historyFileMissingIndexerGone =>
+      'Bu dosya artık yok; orijinal indexer artık yapılandırılı değil.';
+
+  @override
+  String get historyFileMissingRedownloadFailed =>
+      'Bu dosya artık yok ve yeniden indirilemedi.';
+
+  @override
   String get technicalDetailsLabel => 'Teknik ayrıntılar';
 
   @override

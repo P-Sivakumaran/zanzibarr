@@ -7,6 +7,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'l10n/app_localizations.dart';
 import 'player/gyuni_player_controls.dart' show formatPlayerDuration;
@@ -17,12 +18,17 @@ import 'player/watchlist.dart';
 import 'update/update_service.dart';
 import 'search/release_search_selection.dart';
 import 'search/search_screen.dart';
+import 'src/rust/api/search.dart' show newznabDownloadNzb, IndexerConfigDto;
 import 'settings/indexer_settings.dart';
 import 'settings/provider_settings.dart';
 import 'settings/settings_screen.dart';
 import 'settings/ui_preferences.dart';
 import 'src/rust/frb_generated.dart';
 import 'ui/app_background.dart';
+
+/// Continue Watching kartındaki geçici dosya yeniden indirilemediğinde
+/// hangi mesajın gösterileceğini seçmek için (bkz. `_redownloadForEntry`).
+enum _RedownloadError { noSource, indexerGone, downloadFailed }
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -414,6 +420,8 @@ class HomeScreen extends StatefulWidget {
     this.indexerStore,
     this.watchlistStore,
     this.playerBuilder,
+    this.downloadFn,
+    this.fileExistsFn,
   });
 
   final UiPreferencesController? uiPreferences;
@@ -429,6 +437,14 @@ class HomeScreen extends StatefulWidget {
 
   /// Route factory allows flow tests to avoid starting the native player.
   final Widget Function(String path, String? entryKey)? playerBuilder;
+
+  /// Continue Watching'teki kayıp dosyayı yeniden indirmek için; null ise
+  /// FRB `newznabDownloadNzb` kullanılır (Faz 4 — resume durability).
+  final NewznabDownloadFn? downloadFn;
+
+  /// Testlerde gerçek dosya sistemine dokunmadan "dosya var mı?" sorusunu
+  /// sahte yanıtlamak için; null ise gerçek `File.exists()` kullanılır.
+  final Future<bool> Function(String path)? fileExistsFn;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -447,6 +463,10 @@ class _HomeScreenState extends State<HomeScreen> {
       widget.indexerStore ?? IndexerSettingsStore();
   late final WatchlistStore _watchlistStore =
       widget.watchlistStore ?? WatchlistStore();
+  late final NewznabDownloadFn _downloadFn =
+      widget.downloadFn ?? _defaultDownload;
+  late final Future<bool> Function(String path) _fileExistsFn =
+      widget.fileExistsFn ?? ((path) => File(path).exists());
   List<PlaybackHistoryEntry> _history = const [];
   bool _historyFailed = false;
   bool _openingPath = false;
@@ -586,12 +606,112 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Continue Watching kartına dokununca: `nzbPath` geçici önbellek
+  /// dizinindedir ve sistem temizliği/yeniden başlatma arasında sessizce
+  /// kaybolabilir (Faz 4 — resume durability). Dosya yoksa ve kayıt aramadan
+  /// geldiyse (sourceId/nzbUrl mevcutsa) aynı NZB aynı indexer'dan yeniden
+  /// indirilir; yoksa kullanıcıya açıkça bildirilir.
+  Future<void> _resumeHistoryEntry(
+    BuildContext context,
+    PlaybackHistoryEntry entry,
+  ) async {
+    var path = entry.nzbPath;
+    if (!await _fileExistsFn(path)) {
+      final result = await _redownloadForEntry(entry);
+      if (!context.mounted) return;
+      if (result.errorKey != null) {
+        final l10n = AppLocalizations.of(context);
+        final message = switch (result.errorKey!) {
+          _RedownloadError.noSource => l10n.historyFileMissing,
+          _RedownloadError.indexerGone => l10n.historyFileMissingIndexerGone,
+          _RedownloadError.downloadFailed =>
+            l10n.historyFileMissingRedownloadFailed,
+        };
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+        return;
+      }
+      path = result.path!;
+    }
+    if (!context.mounted) return;
+    await _openPath(
+      path,
+      entryKey: entry.entryKey,
+      imdbId: entry.imdbId,
+      season: entry.season,
+      episode: entry.episode,
+      sourceId: entry.sourceId,
+      nzbUrl: entry.nzbUrl,
+    );
+  }
+
+  Future<({String? path, _RedownloadError? errorKey})> _redownloadForEntry(
+    PlaybackHistoryEntry entry,
+  ) async {
+    final sourceId = entry.sourceId;
+    final nzbUrl = entry.nzbUrl;
+    if (sourceId == null || nzbUrl == null) {
+      return (path: null, errorKey: _RedownloadError.noSource);
+    }
+    List<IndexerProfile> profiles;
+    try {
+      profiles = await _indexerStore.load();
+    } catch (_) {
+      profiles = const [];
+    }
+    IndexerProfile? profile;
+    for (final p in profiles) {
+      if (p.id == sourceId && p.enabled && p.isComplete) {
+        profile = p;
+        break;
+      }
+    }
+    if (profile == null) {
+      return (path: null, errorKey: _RedownloadError.indexerGone);
+    }
+    try {
+      final newPath = await _downloadFn(
+        IndexerConfigDto(
+          id: profile.id,
+          baseUrl: profile.baseUrl,
+          apiKey: profile.apiKey,
+          nickname: profile.displayName,
+        ),
+        nzbUrl,
+        entry.title,
+      );
+      // Eski yol artık kimliksiz bir hayalet kayıt olurdu; oynatıcı yeni
+      // yolda kendi kaydını zaten oluşturacak.
+      await _historyStore.remove(entry.nzbPath, entryKey: entry.entryKey);
+      return (path: newPath, errorKey: null);
+    } catch (_) {
+      return (path: null, errorKey: _RedownloadError.downloadFailed);
+    }
+  }
+
+  static Future<String> _defaultDownload(
+    IndexerConfigDto config,
+    String nzbUrl,
+    String suggestedName,
+  ) async {
+    final cacheDir = await getTemporaryDirectory();
+    return newznabDownloadNzb(
+      config: config,
+      nzbUrl: nzbUrl,
+      suggestedName: suggestedName,
+      downloadDir: cacheDir.path,
+    );
+  }
+
   Future<void> _openPath(
     String path, {
     String? entryKey,
     String? imdbId,
     int? season,
     int? episode,
+    String? sourceId,
+    String? nzbUrl,
   }) async {
     if (_openingPath) return;
     _openingPath = true;
@@ -626,6 +746,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 imdbId: imdbId,
                 season: season,
                 episode: episode,
+                sourceId: sourceId,
+                nzbUrl: nzbUrl,
               ),
           opaque: true,
         ),
@@ -788,13 +910,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(height: 28),
                         _ContinueWatchingSection(
                           entries: _resumableHistory,
-                          onOpen: (entry) => _openPath(
-                            entry.nzbPath,
-                            entryKey: entry.entryKey,
-                            imdbId: entry.imdbId,
-                            season: entry.season,
-                            episode: entry.episode,
-                          ),
+                          onOpen: (entry) =>
+                              _resumeHistoryEntry(context, entry),
                           onRemove: _removeHistoryEntry,
                         ),
                       ],
