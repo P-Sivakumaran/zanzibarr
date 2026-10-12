@@ -8,6 +8,7 @@ import '../metadata/metadata_screen.dart';
 import '../metadata/metadata_service.dart';
 import '../ui/error_feedback.dart';
 import '../player/player_screen.dart';
+import '../player/watchlist.dart';
 import '../settings/indexer_settings.dart';
 import '../settings/settings_screen.dart';
 import '../settings/ui_preferences.dart';
@@ -51,6 +52,8 @@ class SearchScreen extends StatefulWidget {
     this.metadataStore,
     this.capsFn,
     this.initialSelection,
+    this.autoSearchInitialSelection = false,
+    this.watchlistStore,
   });
 
   /// Testlerde sahte depo enjekte edebilmek için; null ise gerçek depo kullanılır.
@@ -76,6 +79,17 @@ class SearchScreen extends StatefulWidget {
   /// "Sıradaki" kartından açıldığında alan önceden doldurulur; kullanıcı
   /// aramayı kendisi başlatana kadar otomatik arama yapılmaz.
   final ReleaseSearchSelection? initialSelection;
+
+  /// Takip listesindeki "Yeni bölüm var mı?" eylemi gibi zaten kullanıcı
+  /// tetiklemesi olan durumlarda, [initialSelection] ayarlarla birlikte
+  /// yüklenir yüklenmez aramayı da başlatır (Sıradaki'nin aksine — oradaki
+  /// öneri pasif göründüğü için otomatik aramaz, bu eylem ise zaten açık
+  /// bir "şimdi kontrol et" isteğidir).
+  final bool autoSearchInitialSelection;
+
+  /// Metadata ekranındaki "Takip et" düğmesine iletilir; null ise gerçek
+  /// depo kullanılır.
+  final WatchlistStore? watchlistStore;
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -178,7 +192,10 @@ class _SearchScreenState extends State<SearchScreen> {
       _settingSelection = false;
       _selection = initial;
     }
-    _loadSettings();
+    final autoSearch = initial != null && widget.autoSearchInitialSelection;
+    _loadSettings().then((_) {
+      if (mounted && autoSearch) _search();
+    });
   }
 
   @override
@@ -387,6 +404,7 @@ class _SearchScreenState extends State<SearchScreen> {
         builder: (_) => MetadataScreen(
           service: _metadataService,
           store: _metadataStore,
+          watchlistStore: widget.watchlistStore,
           initialQuery: hint ?? _queryController.text.trim(),
         ),
       ),

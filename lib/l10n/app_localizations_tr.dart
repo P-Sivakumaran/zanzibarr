@@ -319,6 +319,25 @@ class AppLocalizationsTr extends AppLocalizations {
   String get upNextFind => 'Bul';
 
   @override
+  String get trackShow => 'Bu diziyi takip et';
+
+  @override
+  String get untrackShow => 'Takibi bırak';
+
+  @override
+  String get watchlistTitle => 'Takip edilen diziler';
+
+  @override
+  String get watchlistCheckNow => 'Yeni bölüm var mı?';
+
+  @override
+  String get watchlistRemoveTooltip => 'Takibi bırak';
+
+  @override
+  String get watchlistNewEpisodesHint =>
+      'Bir süredir kontrol edilmedi — şimdi bakılsın mı?';
+
+  @override
   String get videoFitCover => 'Ekranı doldur';
 
   @override

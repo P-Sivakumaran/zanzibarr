@@ -680,6 +680,42 @@ abstract class AppLocalizations {
   /// **'Find'**
   String get upNextFind;
 
+  /// No description provided for @trackShow.
+  ///
+  /// In en, this message translates to:
+  /// **'Track this show'**
+  String get trackShow;
+
+  /// No description provided for @untrackShow.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop tracking'**
+  String get untrackShow;
+
+  /// No description provided for @watchlistTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Tracked shows'**
+  String get watchlistTitle;
+
+  /// No description provided for @watchlistCheckNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Check for new episodes'**
+  String get watchlistCheckNow;
+
+  /// No description provided for @watchlistRemoveTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop tracking'**
+  String get watchlistRemoveTooltip;
+
+  /// No description provided for @watchlistNewEpisodesHint.
+  ///
+  /// In en, this message translates to:
+  /// **'It\'s been a while — check now?'**
+  String get watchlistNewEpisodesHint;
+
   /// No description provided for @videoFitCover.
   ///
   /// In en, this message translates to:

@@ -13,6 +13,7 @@ import 'player/gyuni_player_controls.dart' show formatPlayerDuration;
 import 'player/playback_history.dart';
 import 'player/player_screen.dart';
 import 'player/up_next.dart';
+import 'player/watchlist.dart';
 import 'update/update_service.dart';
 import 'search/release_search_selection.dart';
 import 'search/search_screen.dart';
@@ -411,6 +412,7 @@ class HomeScreen extends StatefulWidget {
     this.updateService,
     this.providerStore,
     this.indexerStore,
+    this.watchlistStore,
     this.playerBuilder,
   });
 
@@ -423,6 +425,7 @@ class HomeScreen extends StatefulWidget {
   final UpdateService? updateService;
   final ProviderSettingsStore? providerStore;
   final IndexerSettingsStore? indexerStore;
+  final WatchlistStore? watchlistStore;
 
   /// Route factory allows flow tests to avoid starting the native player.
   final Widget Function(String path, String? entryKey)? playerBuilder;
@@ -442,9 +445,12 @@ class _HomeScreenState extends State<HomeScreen> {
       widget.providerStore ?? ProviderSettingsStore();
   late final IndexerSettingsStore _indexerStore =
       widget.indexerStore ?? IndexerSettingsStore();
+  late final WatchlistStore _watchlistStore =
+      widget.watchlistStore ?? WatchlistStore();
   List<PlaybackHistoryEntry> _history = const [];
   bool _historyFailed = false;
   bool _openingPath = false;
+  List<WatchlistEntry> _watchlist = const [];
 
   /// Devam ettirilebilir (tamamlanmamış) kayıtlar — "İzlemeye devam et"
   /// bölümü artık tamamlanmış kayıtları da içeren [_history]'den bunları
@@ -458,8 +464,47 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadHistory();
+    _loadWatchlist();
     // Açılışta yeni sürüm kontrolü; bulunursa diyalog gösterilir.
     unawaited(_checkForUpdate());
+  }
+
+  Future<void> _loadWatchlist() async {
+    List<WatchlistEntry> entries;
+    try {
+      entries = await _watchlistStore.load();
+    } catch (_) {
+      return;
+    }
+    if (mounted) setState(() => _watchlist = entries);
+  }
+
+  Future<void> _untrackShow(WatchlistEntry entry) async {
+    await _watchlistStore.untrack(entry.imdbId);
+    await _loadWatchlist();
+  }
+
+  /// "Yeni bölüm var mı?" — kullanıcının kendi tetiklediği tek seferlik bir
+  /// arama; arkada otomatik/periyodik bir tarama yoktur (bkz. plan Faz 3).
+  Future<void> _checkForNewEpisodes(
+    BuildContext context,
+    WatchlistEntry entry,
+  ) async {
+    final next = nextUnwatchedEpisode(entry, _history);
+    await _watchlistStore.markChecked(entry.imdbId);
+    await _loadWatchlist();
+    if (!context.mounted) return;
+    await _openIndexerSearch(
+      context,
+      initialSelection: ReleaseSearchSelection(
+        title: entry.title,
+        kind: 'tv',
+        imdbId: entry.imdbId,
+        season: next.season,
+        episode: next.episode,
+      ),
+      autoSearch: true,
+    );
   }
 
   Future<void> _checkForUpdate() async {
@@ -594,6 +639,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openIndexerSearch(
     BuildContext context, {
     ReleaseSearchSelection? initialSelection,
+    bool autoSearch = false,
   }) async {
     if (_openingIndexer) return;
     setState(() => _openingIndexer = true);
@@ -626,9 +672,12 @@ class _HomeScreenState extends State<HomeScreen> {
             store: _indexerStore,
             uiPreferences: widget.uiPreferences,
             initialSelection: initialSelection,
+            autoSearchInitialSelection: autoSearch,
+            watchlistStore: _watchlistStore,
           ),
         ),
       );
+      await _loadWatchlist();
     } finally {
       if (mounted) setState(() => _openingIndexer = false);
     }
@@ -728,6 +777,15 @@ class _HomeScreenState extends State<HomeScreen> {
                               episode: suggestion.episode,
                             ),
                           ),
+                        ),
+                      ],
+                      if (_watchlist.isNotEmpty) ...[
+                        const SizedBox(height: 28),
+                        _WatchlistSection(
+                          entries: _watchlist,
+                          onCheckNow: (entry) =>
+                              _checkForNewEpisodes(context, entry),
+                          onRemove: _untrackShow,
                         ),
                       ],
                     ],
@@ -1213,6 +1271,129 @@ class _UpNextSection extends StatelessWidget {
                     TextButton(
                       onPressed: () => onFind(suggestion),
                       child: Text(l10n.upNextFind),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Takip edilen diziler: her biri için tek seferlik "Yeni bölüm var mı?"
+/// taraması (arkada otomatik tarama yoktur) ve takibi bırakma düğmesi.
+class _WatchlistSection extends StatelessWidget {
+  const _WatchlistSection({
+    required this.entries,
+    required this.onCheckNow,
+    required this.onRemove,
+  });
+
+  final List<WatchlistEntry> entries;
+  final ValueChanged<WatchlistEntry> onCheckNow;
+  final ValueChanged<WatchlistEntry> onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final foreground = isDark ? Colors.white : Colors.black;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 10),
+          child: Text(
+            l10n.watchlistTitle,
+            style: TextStyle(
+              color: foreground.withValues(alpha: 0.72),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ),
+        for (final entry in entries)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Material(
+              color: foreground.withValues(alpha: isDark ? 0.045 : 0.035),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: foreground.withValues(alpha: 0.07)),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  entry.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: foreground.withValues(alpha: 0.9),
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              if (needsCheckReminder(entry))
+                                Container(
+                                  width: 7,
+                                  height: 7,
+                                  margin: const EdgeInsets.only(left: 6),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFFF453A),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          if (needsCheckReminder(entry))
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                l10n.watchlistNewEpisodesHint,
+                                style: TextStyle(
+                                  color: foreground.withValues(alpha: 0.72),
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 40,
+                      height: 40,
+                      child: IconButton(
+                        tooltip: l10n.watchlistRemoveTooltip,
+                        padding: EdgeInsets.zero,
+                        iconSize: 15,
+                        icon: Icon(
+                          Icons.close_rounded,
+                          color: foreground.withValues(alpha: 0.4),
+                        ),
+                        onPressed: () => onRemove(entry),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => onCheckNow(entry),
+                      child: Text(l10n.watchlistCheckNow),
                     ),
                   ],
                 ),

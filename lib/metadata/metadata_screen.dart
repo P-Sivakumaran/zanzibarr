@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/app_localizations.dart';
+import '../player/watchlist.dart';
 import '../search/release_search_selection.dart';
 import '../search/structured_search_dialog.dart';
 import '../tv_focus.dart';
@@ -25,10 +26,12 @@ class MetadataScreen extends StatefulWidget {
     super.key,
     required this.service,
     required this.store,
+    this.watchlistStore,
     this.initialQuery = '',
   });
   final MetadataService service;
   final MetadataSettingsStore store;
+  final WatchlistStore? watchlistStore;
   final String initialQuery;
   @override
   State<MetadataScreen> createState() => _MetadataScreenState();
@@ -154,8 +157,12 @@ class _MetadataScreenState extends State<MetadataScreen> {
   Future<void> _choose(MediaTitle title) async {
     final media = await showDialog<MediaTitle>(
       context: context,
-      builder: (_) =>
-          _TitleDetails(title: title, service: widget.service, apiKey: _key),
+      builder: (_) => _TitleDetails(
+        title: title,
+        service: widget.service,
+        apiKey: _key,
+        watchlistStore: widget.watchlistStore ?? WatchlistStore(),
+      ),
     );
     if (media == null || !mounted) return;
     final selection = await showStructuredSearchDialog(
@@ -586,10 +593,12 @@ class _TitleDetails extends StatefulWidget {
     required this.title,
     required this.service,
     required this.apiKey,
+    required this.watchlistStore,
   });
   final MediaTitle title;
   final MetadataService service;
   final String apiKey;
+  final WatchlistStore watchlistStore;
   @override
   State<_TitleDetails> createState() => _TitleDetailsState();
 }
@@ -599,6 +608,36 @@ class _TitleDetailsState extends State<_TitleDetails> {
     widget.apiKey,
     widget.title.imdbId,
   );
+  bool _tracked = false;
+  bool _trackedLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTracked();
+  }
+
+  Future<void> _loadTracked() async {
+    final tracked = await widget.watchlistStore.isTracked(
+      widget.title.imdbId,
+    );
+    if (mounted) {
+      setState(() {
+        _tracked = tracked;
+        _trackedLoaded = true;
+      });
+    }
+  }
+
+  Future<void> _toggleTrack(MediaTitle media) async {
+    if (_tracked) {
+      await widget.watchlistStore.untrack(media.imdbId);
+    } else {
+      await widget.watchlistStore.track(media.imdbId, media.title);
+    }
+    if (mounted) setState(() => _tracked = !_tracked);
+  }
+
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
@@ -669,6 +708,16 @@ class _TitleDetailsState extends State<_TitleDetails> {
             ),
           ),
           actions: [
+            if (media.kind == 'series')
+              TextButton.icon(
+                onPressed: _trackedLoaded ? () => _toggleTrack(media) : null,
+                icon: Icon(
+                  _tracked
+                      ? Icons.bookmark_rounded
+                      : Icons.bookmark_add_outlined,
+                ),
+                label: Text(_tracked ? l.untrackShow : l.trackShow),
+              ),
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: Text(MaterialLocalizations.of(context).closeButtonLabel),

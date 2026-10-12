@@ -321,6 +321,24 @@ class AppLocalizationsIt extends AppLocalizations {
   String get upNextFind => 'Find';
 
   @override
+  String get trackShow => 'Track this show';
+
+  @override
+  String get untrackShow => 'Stop tracking';
+
+  @override
+  String get watchlistTitle => 'Tracked shows';
+
+  @override
+  String get watchlistCheckNow => 'Check for new episodes';
+
+  @override
+  String get watchlistRemoveTooltip => 'Stop tracking';
+
+  @override
+  String get watchlistNewEpisodesHint => 'It\'s been a while — check now?';
+
+  @override
   String get videoFitCover => 'Riempi schermo';
 
   @override

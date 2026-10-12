@@ -152,6 +152,12 @@
     }
   },
   "upNextFind": "Find",
+  "trackShow": "Track this show",
+  "untrackShow": "Stop tracking",
+  "watchlistTitle": "Tracked shows",
+  "watchlistCheckNow": "Check for new episodes",
+  "watchlistRemoveTooltip": "Stop tracking",
+  "watchlistNewEpisodesHint": "It's been a while — check now?",
   "videoFitCover": "Fill screen",
   "videoFitContain": "Fit to screen",
   "updateAvailable": "Update available",
