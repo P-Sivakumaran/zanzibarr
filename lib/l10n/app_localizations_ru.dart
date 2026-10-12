@@ -895,6 +895,25 @@ class AppLocalizationsRu extends AppLocalizations {
       'This item could not be removed. Try again.';
 
   @override
+  String get historyUpdateFailed =>
+      'This item could not be updated. Try again.';
+
+  @override
+  String get historyMarkWatchedTooltip => 'Mark as watched';
+
+  @override
+  String get historyMarkUnwatchedTooltip => 'Mark as unwatched';
+
+  @override
+  String get favoriteAddTooltip => 'Add to favorites';
+
+  @override
+  String get favoriteRemoveTooltip => 'Remove from favorites';
+
+  @override
+  String get favoritesTitle => 'Favorites';
+
+  @override
   String get historyRemoved => 'Removed from continue watching';
 
   @override

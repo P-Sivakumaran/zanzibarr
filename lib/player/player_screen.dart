@@ -272,6 +272,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   int? _persistedEpisode;
   String? _persistedSourceId;
   String? _persistedNzbUrl;
+  bool _persistedFavorite = false;
 
   // `widget.season`/`episode` arama sonucunun release adından ayrıştırdığı
   // TAHMİNdir; çok adaylı (sezon paketi) NZB'lerde kullanıcı farklı bir
@@ -723,13 +724,18 @@ class _PlayerScreenState extends State<PlayerScreen>
       _persistedEpisode = entry.episode;
       _persistedSourceId = entry.sourceId;
       _persistedNzbUrl = entry.nzbUrl;
-      // Son %3'e ulaşılmış içerik izlenmiş sayılır; kayıt düşülüp baştan
-      // başlanır.
+      _persistedFavorite = entry.favorite;
+      // Son %3'e ulaşılmış içerik izlenmiş sayılır; baştan başlanır. Favori
+      // işaretliyse kayıt silinmez — "tekrar izlemek istiyorum" yeniden
+      // açılışta kaybolmamalı (Faz 5); otomatik kayıt zamanla konumu
+      // güncelleyecektir.
       if (entry.isCompleted) {
-        await _historyStore.remove(
-          widget.nzbPath,
-          entryKey: _resolvedEntryKey,
-        );
+        if (!entry.favorite) {
+          await _historyStore.remove(
+            widget.nzbPath,
+            entryKey: _resolvedEntryKey,
+          );
+        }
         return;
       }
       final target = entry.position;
@@ -761,6 +767,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           episode: _effectiveEpisode ?? _persistedEpisode,
           sourceId: widget.sourceId ?? _persistedSourceId,
           nzbUrl: widget.nzbUrl ?? _persistedNzbUrl,
+          favorite: _persistedFavorite,
         ),
       );
     } catch (_) {

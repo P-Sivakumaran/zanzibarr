@@ -482,6 +482,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<UpNextSuggestion> get _upNext => computeUpNext(_history);
 
+  /// Favoriler ilerlemeden bağımsızdır; tamamlanmış kayıtlar da burada
+  /// kalır (Faz 5).
+  List<PlaybackHistoryEntry> get _favoriteHistory =>
+      _history.where((e) => e.favorite).toList();
+
   @override
   void initState() {
     super.initState();
@@ -584,6 +589,46 @@ class _HomeScreenState extends State<HomeScreen> {
         _historyFailed = false;
       });
     }
+  }
+
+  Future<void> _toggleFavorite(PlaybackHistoryEntry entry) async {
+    try {
+      await _historyStore.setFavorite(
+        entry.nzbPath,
+        entryKey: entry.entryKey,
+        favorite: !entry.favorite,
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).historyUpdateFailed),
+          ),
+        );
+      }
+      return;
+    }
+    await _loadHistory();
+  }
+
+  Future<void> _toggleWatched(PlaybackHistoryEntry entry) async {
+    try {
+      await _historyStore.setCompleted(
+        entry.nzbPath,
+        entryKey: entry.entryKey,
+        completed: !entry.isCompleted,
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).historyUpdateFailed),
+          ),
+        );
+      }
+      return;
+    }
+    await _loadHistory();
   }
 
   Future<void> _removeHistoryEntry(PlaybackHistoryEntry entry) async {
@@ -930,6 +975,19 @@ class _HomeScreenState extends State<HomeScreen> {
                           onOpen: (entry) =>
                               _resumeHistoryEntry(context, entry),
                           onRemove: _removeHistoryEntry,
+                          onToggleFavorite: _toggleFavorite,
+                          onToggleWatched: _toggleWatched,
+                        ),
+                      ],
+                      if (_favoriteHistory.isNotEmpty) ...[
+                        const SizedBox(height: 28),
+                        _FavoritesSection(
+                          entries: _favoriteHistory,
+                          onOpen: (entry) =>
+                              _resumeHistoryEntry(context, entry),
+                          onRemove: _removeHistoryEntry,
+                          onToggleFavorite: _toggleFavorite,
+                          onToggleWatched: _toggleWatched,
                         ),
                       ],
                       if (_upNext.isNotEmpty) ...[
@@ -1323,11 +1381,15 @@ class _ContinueWatchingSection extends StatelessWidget {
     required this.entries,
     required this.onOpen,
     required this.onRemove,
+    required this.onToggleFavorite,
+    required this.onToggleWatched,
   });
 
   final List<PlaybackHistoryEntry> entries;
   final ValueChanged<PlaybackHistoryEntry> onOpen;
   final ValueChanged<PlaybackHistoryEntry> onRemove;
+  final ValueChanged<PlaybackHistoryEntry> onToggleFavorite;
+  final ValueChanged<PlaybackHistoryEntry> onToggleWatched;
 
   @override
   Widget build(BuildContext context) {
@@ -1356,6 +1418,62 @@ class _ContinueWatchingSection extends StatelessWidget {
               entry: entry,
               onOpen: () => onOpen(entry),
               onRemove: () => onRemove(entry),
+              onToggleFavorite: () => onToggleFavorite(entry),
+              onToggleWatched: () => onToggleWatched(entry),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// İlerlemeden bağımsız elle işaretlenen favoriler ("tekrar izlemek
+/// istiyorum" — Faz 5); tamamlanmış kayıtlar da burada kalır, bütçe
+/// aşımında silinecek adaylar listesine girmezler (bkz. [PlaybackHistoryStore.save]).
+class _FavoritesSection extends StatelessWidget {
+  const _FavoritesSection({
+    required this.entries,
+    required this.onOpen,
+    required this.onRemove,
+    required this.onToggleFavorite,
+    required this.onToggleWatched,
+  });
+
+  final List<PlaybackHistoryEntry> entries;
+  final ValueChanged<PlaybackHistoryEntry> onOpen;
+  final ValueChanged<PlaybackHistoryEntry> onRemove;
+  final ValueChanged<PlaybackHistoryEntry> onToggleFavorite;
+  final ValueChanged<PlaybackHistoryEntry> onToggleWatched;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final foreground = isDark ? Colors.white : Colors.black;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 10),
+          child: Text(
+            l10n.favoritesTitle,
+            style: TextStyle(
+              color: foreground.withValues(alpha: 0.72),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ),
+        for (final entry in entries)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _HistoryCard(
+              entry: entry,
+              onOpen: () => onOpen(entry),
+              onRemove: () => onRemove(entry),
+              onToggleFavorite: () => onToggleFavorite(entry),
+              onToggleWatched: () => onToggleWatched(entry),
             ),
           ),
       ],
@@ -1579,11 +1697,15 @@ class _HistoryCard extends StatefulWidget {
     required this.entry,
     required this.onOpen,
     required this.onRemove,
+    required this.onToggleFavorite,
+    required this.onToggleWatched,
   });
 
   final PlaybackHistoryEntry entry;
   final VoidCallback onOpen;
   final VoidCallback onRemove;
+  final VoidCallback onToggleFavorite;
+  final VoidCallback onToggleWatched;
 
   @override
   State<_HistoryCard> createState() => _HistoryCardState();
@@ -1658,10 +1780,49 @@ class _HistoryCardState extends State<_HistoryCard> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 4),
+                        if (entry.durationSeconds > 0)
+                          SizedBox(
+                            width: 40,
+                            height: 40,
+                            child: IconButton(
+                              tooltip: entry.isCompleted
+                                  ? l10n.historyMarkUnwatchedTooltip
+                                  : l10n.historyMarkWatchedTooltip,
+                              padding: EdgeInsets.zero,
+                              iconSize: 15,
+                              icon: Icon(
+                                entry.isCompleted
+                                    ? Icons.replay_rounded
+                                    : Icons.done_rounded,
+                                color: foreground.withValues(alpha: 0.4),
+                              ),
+                              onPressed: widget.onToggleWatched,
+                            ),
+                          ),
                         SizedBox(
-                          width: 48,
-                          height: 48,
+                          width: 40,
+                          height: 40,
+                          child: IconButton(
+                            tooltip: entry.favorite
+                                ? l10n.favoriteRemoveTooltip
+                                : l10n.favoriteAddTooltip,
+                            padding: EdgeInsets.zero,
+                            iconSize: 15,
+                            icon: Icon(
+                              entry.favorite
+                                  ? Icons.star_rounded
+                                  : Icons.star_border_rounded,
+                              color: entry.favorite
+                                  ? _accent
+                                  : foreground.withValues(alpha: 0.4),
+                            ),
+                            onPressed: widget.onToggleFavorite,
+                          ),
+                        ),
+                        SizedBox(
+                          width: 40,
+                          height: 40,
                           child: IconButton(
                             tooltip: l10n.historyRemoveTooltip,
                             padding: EdgeInsets.zero,

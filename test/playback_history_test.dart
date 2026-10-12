@@ -51,6 +51,7 @@ void main() {
     String? imdbId,
     int? season,
     int? episode,
+    bool favorite = false,
   }) => PlaybackHistoryEntry(
     nzbPath: path,
     entryKey: entryKey,
@@ -61,6 +62,7 @@ void main() {
     imdbId: imdbId,
     season: season,
     episode: episode,
+    favorite: favorite,
   );
 
   test('kayıt eklenip okunabiliyor (round-trip)', () async {
@@ -187,6 +189,88 @@ void main() {
         (e) => e.nzbPath == '/cache/recovered.nzb',
       );
       expect(migrated.positionSeconds, 111);
+    },
+  );
+
+  test('setFavorite işareti değiştirir, diğer alanlar korunur', () async {
+    final store = PlaybackHistoryStore(storage: _MemoryPreferenceStorage());
+    await store.save(entry('/media/film.nzb', position: 42));
+
+    await store.setFavorite('/media/film.nzb', favorite: true);
+    var entries = await store.load();
+    expect(entries.single.favorite, isTrue);
+    expect(entries.single.positionSeconds, 42);
+
+    await store.setFavorite('/media/film.nzb', favorite: false);
+    entries = await store.load();
+    expect(entries.single.favorite, isFalse);
+  });
+
+  test(
+    'setCompleted(true) konumu süreye eşitler, süre bilinmiyorsa no-op',
+    () async {
+      final store = PlaybackHistoryStore(storage: _MemoryPreferenceStorage());
+      await store.save(entry('/media/film.nzb', position: 10, duration: 6000));
+
+      await store.setCompleted('/media/film.nzb', completed: true);
+      final entries = await store.load();
+      expect(entries.single.isCompleted, isTrue);
+      expect(entries.single.positionSeconds, 6000);
+    },
+  );
+
+  test('setCompleted(false) baştan başlatır', () async {
+    final store = PlaybackHistoryStore(storage: _MemoryPreferenceStorage());
+    await store.save(entry('/media/film.nzb', position: 5900, duration: 6000));
+
+    await store.setCompleted('/media/film.nzb', completed: false);
+    final entries = await store.load();
+    expect(entries.single.isCompleted, isFalse);
+    expect(entries.single.positionSeconds, 0);
+  });
+
+  test('setCompleted süre sıfırsa tamamlandı yapamaz', () async {
+    final store = PlaybackHistoryStore(storage: _MemoryPreferenceStorage());
+    await store.save(entry('/media/film.nzb', position: 0, duration: 0));
+
+    await store.setCompleted('/media/film.nzb', completed: true);
+    final entries = await store.load();
+    expect(entries.single.isCompleted, isFalse);
+  });
+
+  test(
+    'favori işaretli tamamlanmış kayıtlar bütçe aşımında silinmez',
+    () async {
+      final storage = _MemoryPreferenceStorage();
+      final store = PlaybackHistoryStore(storage: storage);
+
+      await store.save(
+        entry(
+          '/media/favorite.nzb',
+          position: 5900,
+          duration: 6000,
+          updatedAt: 0,
+          favorite: true,
+        ),
+      );
+      for (var i = 1; i <= 25; i++) {
+        await store.save(
+          entry(
+            '/media/completed-$i.nzb',
+            position: 5900,
+            duration: 6000,
+            updatedAt: i,
+          ),
+        );
+      }
+
+      final entries = await store.load();
+      expect(entries, hasLength(25));
+      expect(
+        entries.any((e) => e.nzbPath == '/media/favorite.nzb'),
+        isTrue,
+        reason: 'favorited entry must survive eviction ahead of others',
+      );
     },
   );
 

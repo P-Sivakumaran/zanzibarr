@@ -21,6 +21,7 @@ class PlaybackHistoryEntry {
     this.episode,
     this.sourceId,
     this.nzbUrl,
+    this.favorite = false,
   });
 
   /// Geçmiş kaydının kimliği: NZB'nin dosya yolu (yerel depoda kalır).
@@ -59,6 +60,12 @@ class PlaybackHistoryEntry {
   final String? sourceId;
   final String? nzbUrl;
 
+  /// İzleme ilerlemesinden bağımsız elle işaretlenen favori ("tekrar
+  /// izlemek istiyorum" — Faz 5). Favori kayıtlar bütçe aşıldığında
+  /// tamamlanmış kayıtlar arasından silinecek adaylar listesine girmez
+  /// (bkz. [PlaybackHistoryStore.save]).
+  final bool favorite;
+
   /// İzleme sona erdiyse (son ~%3) kayıt tutulmaz; baştan başlatılır.
   bool get isCompleted =>
       durationSeconds > 0 && positionSeconds >= durationSeconds * 0.97;
@@ -83,6 +90,7 @@ class PlaybackHistoryEntry {
     'episode': ?episode,
     'sourceId': ?sourceId,
     'nzbUrl': ?nzbUrl,
+    'favorite': favorite,
   };
 
   static PlaybackHistoryEntry? fromJson(Object? value) {
@@ -103,6 +111,7 @@ class PlaybackHistoryEntry {
     final episode = value['episode'];
     final sourceId = value['sourceId'];
     final nzbUrl = value['nzbUrl'];
+    final favorite = value['favorite'];
     return PlaybackHistoryEntry(
       nzbPath: path,
       entryKey: entryKey is String && entryKey.isNotEmpty ? entryKey : null,
@@ -115,6 +124,7 @@ class PlaybackHistoryEntry {
       episode: episode is num ? episode.toInt() : null,
       sourceId: sourceId is String && sourceId.isNotEmpty ? sourceId : null,
       nzbUrl: nzbUrl is String && nzbUrl.isNotEmpty ? nzbUrl : null,
+      favorite: favorite == true,
     );
   }
 
@@ -131,7 +141,8 @@ class PlaybackHistoryEntry {
       season == other.season &&
       episode == other.episode &&
       sourceId == other.sourceId &&
-      nzbUrl == other.nzbUrl;
+      nzbUrl == other.nzbUrl &&
+      favorite == other.favorite;
 
   @override
   int get hashCode => Object.hash(
@@ -146,6 +157,7 @@ class PlaybackHistoryEntry {
     episode,
     sourceId,
     nzbUrl,
+    favorite,
   );
 }
 
@@ -253,10 +265,12 @@ class PlaybackHistoryStore {
     // devam edenlerle paylaşıyor; sınır aşılırsa önce en eski tamamlanmış
     // kayıtlar düşer, devam edilebilir (resume) konumlar korunur (code
     // review bulgusu — aksi halde çok bölüm tamamlamak eski bir filmin
-    // yarım kalan konumunu sessizce silebilirdi).
+    // yarım kalan konumunu sessizce silebilirdi). Favori işaretli kayıtlar
+    // bu ilk turda aday değildir — "tekrar izlemek istiyorum" ilerlemeden
+    // bağımsız kalmalı (Faz 5).
     var excess = entries.length - _maxEntries;
     for (var i = entries.length - 1; i >= 0 && excess > 0; i--) {
-      if (entries[i].isCompleted) {
+      if (entries[i].isCompleted && !entries[i].favorite) {
         entries.removeAt(i);
         excess--;
       }
@@ -306,6 +320,71 @@ class PlaybackHistoryStore {
       episode: old.episode,
       sourceId: old.sourceId,
       nzbUrl: old.nzbUrl,
+      favorite: old.favorite,
+    );
+    await _write(entries);
+  });
+
+  /// Favori işaretini aynı listede yerinde değiştirir; konum/süre dahil
+  /// her şey korunur, uzunluk değişmediği için kapasite kırpması devreye
+  /// girmez (Faz 5).
+  Future<void> setFavorite(
+    String nzbPath, {
+    String? entryKey,
+    required bool favorite,
+  }) => _serialized(() async {
+    final entries = List.of(await _load());
+    final index = entries.indexWhere(
+      (e) => e.nzbPath == nzbPath && e.entryKey == entryKey,
+    );
+    if (index < 0) return;
+    final old = entries[index];
+    entries[index] = PlaybackHistoryEntry(
+      nzbPath: old.nzbPath,
+      entryKey: old.entryKey,
+      title: old.title,
+      positionSeconds: old.positionSeconds,
+      durationSeconds: old.durationSeconds,
+      updatedAtMs: old.updatedAtMs,
+      imdbId: old.imdbId,
+      season: old.season,
+      episode: old.episode,
+      sourceId: old.sourceId,
+      nzbUrl: old.nzbUrl,
+      favorite: favorite,
+    );
+    await _write(entries);
+  });
+
+  /// İzleme ilerlemesini fiilen oynatmadan zorlar: tamamlandı işaretlenirse
+  /// konum süreye eşitlenir, tamamlanmamış işaretlenirse baştan başlatılır
+  /// (Faz 5 — "mark watched/unwatched"). Süre bilinmiyorsa (hiç oynatılmamış
+  /// bir kayıt) tamamlandı olarak işaretlemek anlamsızdır; no-op.
+  Future<void> setCompleted(
+    String nzbPath, {
+    String? entryKey,
+    required bool completed,
+  }) => _serialized(() async {
+    final entries = List.of(await _load());
+    final index = entries.indexWhere(
+      (e) => e.nzbPath == nzbPath && e.entryKey == entryKey,
+    );
+    if (index < 0) return;
+    final old = entries[index];
+    if (completed && old.durationSeconds <= 0) return;
+    entries[index] = PlaybackHistoryEntry(
+      nzbPath: old.nzbPath,
+      entryKey: old.entryKey,
+      title: old.title,
+      positionSeconds: completed ? old.durationSeconds : 0,
+      durationSeconds: old.durationSeconds,
+      updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+      imdbId: old.imdbId,
+      season: old.season,
+      episode: old.episode,
+      sourceId: old.sourceId,
+      nzbUrl: old.nzbUrl,
+      favorite: old.favorite,
     );
     await _write(entries);
   });

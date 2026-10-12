@@ -891,6 +891,24 @@ class AppLocalizationsTr extends AppLocalizations {
   String get historyRemoveFailed => 'Bu öğe kaldırılamadı. Yeniden deneyin.';
 
   @override
+  String get historyUpdateFailed => 'Bu öğe güncellenemedi. Yeniden deneyin.';
+
+  @override
+  String get historyMarkWatchedTooltip => 'İzlendi olarak işaretle';
+
+  @override
+  String get historyMarkUnwatchedTooltip => 'İzlenmedi olarak işaretle';
+
+  @override
+  String get favoriteAddTooltip => 'Favorilere ekle';
+
+  @override
+  String get favoriteRemoveTooltip => 'Favorilerden kaldır';
+
+  @override
+  String get favoritesTitle => 'Favoriler';
+
+  @override
   String get historyRemoved => 'İzleme geçmişinden kaldırıldı';
 
   @override

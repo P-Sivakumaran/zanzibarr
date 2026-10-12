@@ -1664,6 +1664,42 @@ abstract class AppLocalizations {
   /// **'This item could not be removed. Try again.'**
   String get historyRemoveFailed;
 
+  /// No description provided for @historyUpdateFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'This item could not be updated. Try again.'**
+  String get historyUpdateFailed;
+
+  /// No description provided for @historyMarkWatchedTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark as watched'**
+  String get historyMarkWatchedTooltip;
+
+  /// No description provided for @historyMarkUnwatchedTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark as unwatched'**
+  String get historyMarkUnwatchedTooltip;
+
+  /// No description provided for @favoriteAddTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to favorites'**
+  String get favoriteAddTooltip;
+
+  /// No description provided for @favoriteRemoveTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from favorites'**
+  String get favoriteRemoveTooltip;
+
+  /// No description provided for @favoritesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Favorites'**
+  String get favoritesTitle;
+
   /// No description provided for @historyRemoved.
   ///
   /// In en, this message translates to:
