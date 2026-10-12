@@ -227,8 +227,20 @@ class PlaybackHistoryStore {
                   e.title == entry.title)),
     );
     entries.insert(0, entry);
-    if (entries.length > _maxEntries) {
-      entries.removeRange(_maxEntries, entries.length);
+    // Tamamlanmış kayıtlar da artık tutulduğu için aynı 25'lik bütçeyi
+    // devam edenlerle paylaşıyor; sınır aşılırsa önce en eski tamamlanmış
+    // kayıtlar düşer, devam edilebilir (resume) konumlar korunur (code
+    // review bulgusu — aksi halde çok bölüm tamamlamak eski bir filmin
+    // yarım kalan konumunu sessizce silebilirdi).
+    var excess = entries.length - _maxEntries;
+    for (var i = entries.length - 1; i >= 0 && excess > 0; i--) {
+      if (entries[i].isCompleted) {
+        entries.removeAt(i);
+        excess--;
+      }
+    }
+    if (excess > 0) {
+      entries.removeRange(entries.length - excess, entries.length);
     }
     await _write(entries);
   });

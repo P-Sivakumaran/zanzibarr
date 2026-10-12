@@ -141,6 +141,39 @@ void main() {
     },
   );
 
+  test(
+    'bütçe aşılınca önce en eski tamamlanmış kayıt düşer, devam edilebilir kayıt korunur',
+    () async {
+      final storage = _MemoryPreferenceStorage();
+      final store = PlaybackHistoryStore(storage: storage);
+
+      await store.save(entry('/media/resume.nzb', updatedAt: 0));
+      for (var i = 1; i <= 25; i++) {
+        await store.save(
+          entry(
+            '/media/completed-$i.nzb',
+            position: 5900,
+            duration: 6000,
+            updatedAt: i,
+          ),
+        );
+      }
+
+      final entries = await store.load();
+      expect(entries, hasLength(25));
+      expect(
+        entries.any((e) => e.nzbPath == '/media/resume.nzb'),
+        isTrue,
+        reason: 'resumable entry must survive the trim',
+      );
+      expect(
+        entries.any((e) => e.nzbPath == '/media/completed-1.nzb'),
+        isFalse,
+        reason: 'oldest completed entry should be evicted first',
+      );
+    },
+  );
+
   test('liste en güncel 25 kayıtla sınırlı', () async {
     final storage = _MemoryPreferenceStorage();
     final store = PlaybackHistoryStore(storage: storage);

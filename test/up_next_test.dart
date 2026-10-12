@@ -54,6 +54,45 @@ void main() {
     expect(suggestions, isEmpty);
   });
 
+  test(
+    'bölüm numarası ayrıştırılamayan devam eden paket kaydı da öneriyi bastırır',
+    () {
+      final suggestions = computeUpNext([
+        _entry(
+          path: '/s1e1.nzb',
+          imdbId: 'tt1',
+          season: 1,
+          episode: 1,
+          completed: true,
+        ),
+        PlaybackHistoryEntry(
+          nzbPath: '/season-pack.nzb',
+          title: 'show.season1.pack.mkv',
+          positionSeconds: 100,
+          durationSeconds: 6000,
+          updatedAtMs: 2,
+          imdbId: 'tt1',
+        ),
+      ]);
+
+      expect(suggestions, isEmpty);
+    },
+  );
+
+  test('önerilen başlık dosya adından temizlenir', () {
+    final suggestions = computeUpNext([
+      _entry(
+        path: '/s1e1.nzb',
+        imdbId: 'tt1',
+        season: 1,
+        episode: 1,
+        title: 'Show.Name.S01E01.1080p.WEB.x264-GROUP.mkv',
+      ),
+    ]);
+
+    expect(suggestions.single.title, 'Show Name');
+  });
+
   test('imdbId veya sezon/bölüm olmayan kayıtlar yok sayılır', () {
     final suggestions = computeUpNext([
       const PlaybackHistoryEntry(
