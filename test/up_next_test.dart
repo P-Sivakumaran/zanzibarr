@@ -93,6 +93,20 @@ void main() {
     expect(suggestions.single.title, 'Show Name');
   });
 
+  test('başlıktaki yıl benzeri sayı yanlışlıkla kesilmez', () {
+    final suggestions = computeUpNext([
+      _entry(
+        path: '/s1e1.nzb',
+        imdbId: 'tt1',
+        season: 1,
+        episode: 1,
+        title: 'Space.1999.S01E01.1080p.mkv',
+      ),
+    ]);
+
+    expect(suggestions.single.title, 'Space 1999');
+  });
+
   test('imdbId veya sezon/bölüm olmayan kayıtlar yok sayılır', () {
     final suggestions = computeUpNext([
       const PlaybackHistoryEntry(

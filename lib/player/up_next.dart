@@ -1,4 +1,3 @@
-import '../search/release_search_selection.dart' show releaseTitleHint;
 import 'playback_history.dart';
 
 /// Tamamlanmış bir bölümden türetilen "sıradaki bölüm" önerisi.
@@ -58,7 +57,7 @@ List<UpNextSuggestion> computeUpNext(List<PlaybackHistoryEntry> history) {
         // grup etiketi dahil); bir sonraki bölüm sorgusuna olduğu gibi
         // eklenirse aramayı izlenmiş bölümün tam dosya adına kilitler
         // (code review bulgusu) — temiz gösteri adı çıkarılır.
-        title: releaseTitleHint(latest.title),
+        title: _showTitleFromFilename(latest.title),
         imdbId: group.key,
         season: latest.season!,
         episode: latest.episode! + 1,
@@ -69,4 +68,21 @@ List<UpNextSuggestion> computeUpNext(List<PlaybackHistoryEntry> history) {
 
   suggestions.sort((a, b) => b.lastWatchedAtMs.compareTo(a.lastWatchedAtMs));
   return suggestions;
+}
+
+/// Dosya adından gösteri adını çıkarır; yalnızca `SxxEyy`/`Sxx` sınırında
+/// keser. `release_search_selection.dart`'taki `releaseTitleHint` bir yıl
+/// deseninde de keser — filmler için doğru olan bu davranış, adında yıl
+/// benzeri bir sayı geçen bir dizide (ör. "Space.1999.S01E01.mkv") başlığı
+/// yanlışlıkla kısaltır (code review bulgusu); burada zaten TV olduğu
+/// bilindiğinden (sezon/bölüm numarası var) o belirsizlik yok.
+String _showTitleFromFilename(String filename) {
+  final boundary = RegExp(
+    r'(?:[ ._\-])S\d{1,3}(?:E\d{1,3})?(?:[ ._\-]|$)',
+    caseSensitive: false,
+  ).firstMatch(filename);
+  final raw = boundary == null
+      ? filename
+      : filename.substring(0, boundary.start);
+  return raw.replaceAll(RegExp(r'[._]+'), ' ').trim();
 }
