@@ -472,6 +472,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _openingPath = false;
   List<WatchlistEntry> _watchlist = const [];
   bool _watchlistFailed = false;
+  bool _resumingEntry = false;
 
   /// Devam ettirilebilir (tamamlanmamış) kayıtlar — "İzlemeye devam et"
   /// bölümü artık tamamlanmış kayıtları da içeren [_history]'den bunları
@@ -615,35 +616,45 @@ class _HomeScreenState extends State<HomeScreen> {
     BuildContext context,
     PlaybackHistoryEntry entry,
   ) async {
-    var path = entry.nzbPath;
-    if (!await _fileExistsFn(path)) {
-      final result = await _redownloadForEntry(entry);
-      if (!context.mounted) return;
-      if (result.errorKey != null) {
-        final l10n = AppLocalizations.of(context);
-        final message = switch (result.errorKey!) {
-          _RedownloadError.noSource => l10n.historyFileMissing,
-          _RedownloadError.indexerGone => l10n.historyFileMissingIndexerGone,
-          _RedownloadError.downloadFailed =>
-            l10n.historyFileMissingRedownloadFailed,
-        };
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(message)));
-        return;
+    // Art arda dokunma, kurtarma bitmeden ikinci bir indirmeyi tetiklemesin
+    // (code review bulgusu — `_openPath`'in kendi kilidi yalnızca navigasyon
+    // anından sonrasını korur, kurtarma adımını değil).
+    if (_resumingEntry) return;
+    _resumingEntry = true;
+    try {
+      var path = entry.nzbPath;
+      if (!await _fileExistsFn(path)) {
+        final result = await _redownloadForEntry(entry);
+        if (!context.mounted) return;
+        if (result.errorKey != null) {
+          final l10n = AppLocalizations.of(context);
+          final message = switch (result.errorKey!) {
+            _RedownloadError.noSource => l10n.historyFileMissing,
+            _RedownloadError.indexerGone =>
+              l10n.historyFileMissingIndexerGone,
+            _RedownloadError.downloadFailed =>
+              l10n.historyFileMissingRedownloadFailed,
+          };
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(message)));
+          return;
+        }
+        path = result.path!;
       }
-      path = result.path!;
+      if (!context.mounted) return;
+      await _openPath(
+        path,
+        entryKey: entry.entryKey,
+        imdbId: entry.imdbId,
+        season: entry.season,
+        episode: entry.episode,
+        sourceId: entry.sourceId,
+        nzbUrl: entry.nzbUrl,
+      );
+    } finally {
+      _resumingEntry = false;
     }
-    if (!context.mounted) return;
-    await _openPath(
-      path,
-      entryKey: entry.entryKey,
-      imdbId: entry.imdbId,
-      season: entry.season,
-      episode: entry.episode,
-      sourceId: entry.sourceId,
-      nzbUrl: entry.nzbUrl,
-    );
   }
 
   Future<({String? path, _RedownloadError? errorKey})> _redownloadForEntry(
@@ -681,8 +692,28 @@ class _HomeScreenState extends State<HomeScreen> {
         nzbUrl,
         entry.title,
       );
-      // Eski yol artık kimliksiz bir hayalet kayıt olurdu; oynatıcı yeni
-      // yolda kendi kaydını zaten oluşturacak.
+      // Kaydedilmiş konum yeni yola taşınır — aksi halde kurtarma "başarılı"
+      // olur ama video baştan başlar (code review bulgusu: PlayerScreen
+      // `_resumeFromHistory`'de kaydı (nzbPath, entryKey) ile arar, yeni
+      // indirilen yol eskisiyle eşleşmez). Önce yeni kayıt yazılır, sonra
+      // eskisi silinir — sırası tersine çevrilirse ara bir kesintide
+      // (ayar ekranına yönlenip geri dönmeme, oynatıcı başlatma hatası vb.)
+      // konum hiçbir yerde kalmaz.
+      await _historyStore.save(
+        PlaybackHistoryEntry(
+          nzbPath: newPath,
+          entryKey: entry.entryKey,
+          title: entry.title,
+          positionSeconds: entry.positionSeconds,
+          durationSeconds: entry.durationSeconds,
+          updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+          imdbId: entry.imdbId,
+          season: entry.season,
+          episode: entry.episode,
+          sourceId: entry.sourceId,
+          nzbUrl: entry.nzbUrl,
+        ),
+      );
       await _historyStore.remove(entry.nzbPath, entryKey: entry.entryKey);
       return (path: newPath, errorKey: null);
     } catch (_) {

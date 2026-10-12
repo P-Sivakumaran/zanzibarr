@@ -44,6 +44,14 @@ class _HistoryStore extends PlaybackHistoryStore {
       (entry) => entry.nzbPath == path && entry.entryKey == entryKey,
     );
   }
+
+  @override
+  Future<void> save(PlaybackHistoryEntry entry) async {
+    entries.removeWhere(
+      (e) => e.nzbPath == entry.nzbPath && e.entryKey == entry.entryKey,
+    );
+    entries.insert(0, entry);
+  }
 }
 
 const _trackedProfile = IndexerProfile(
@@ -142,6 +150,46 @@ void main() {
         isFalse,
         reason: 'stale ghost entry at the old path must be cleaned up',
       );
+      final migrated = history.entries.singleWhere(
+        (e) => e.nzbPath == '/cache/fresh.nzb',
+      );
+      expect(
+        migrated.positionSeconds,
+        _withSource.positionSeconds,
+        reason: 'recovery must not discard the saved resume position',
+      );
+    },
+  );
+
+  testWidgets(
+    'art arda dokunma kurtarma bitmeden ikinci indirmeyi tetiklemez',
+    (tester) async {
+      var downloadCalls = 0;
+      await tester.pumpWidget(
+        _app(
+          HomeScreen(
+            historyStore: _HistoryStore([_withSource]),
+            indexerStore: _IndexerStore([_trackedProfile]),
+            providerStore: _ProviderStore(),
+            updateService: _NoUpdates(),
+            fileExistsFn: (_) async => false,
+            downloadFn: (config, nzbUrl, suggestedName) async {
+              downloadCalls++;
+              await Future<void>.delayed(const Duration(milliseconds: 50));
+              return '/cache/fresh.nzb';
+            },
+            playerBuilder: (path, key) =>
+                const Scaffold(body: Text('Playback started')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Show.S01E01.mkv'));
+      await tester.tap(find.text('Show.S01E01.mkv'));
+      await tester.tap(find.text('Show.S01E01.mkv'));
+      await tester.pumpAndSettle();
+
+      expect(downloadCalls, 1);
     },
   );
 
