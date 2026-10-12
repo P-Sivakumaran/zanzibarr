@@ -96,7 +96,21 @@ class WatchlistStore {
 
   static const storageKey = 'zanzibarr.watchlist.v1';
 
-  Future<List<WatchlistEntry>> load() async {
+  // Takip/takibi bırakma düğmesine art arda basılması gibi örtüşen
+  // okuma-değiştirme-yazma çağrılarını sıralar; aksi halde ikisi de eski
+  // listeyi okur ve biri diğerinin değişikliğini geri yazarak kaybeder
+  // (code review bulgusu — bkz. PlaybackHistoryStore'daki aynı desen).
+  static Future<void> _pending = Future<void>.value();
+
+  Future<T> _serialized<T>(Future<T> Function() operation) {
+    final result = _pending.then((_) => operation());
+    _pending = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return result;
+  }
+
+  Future<List<WatchlistEntry>> load() => _serialized(_load);
+
+  Future<List<WatchlistEntry>> _load() async {
     final encoded = await _storage.read(storageKey);
     if (encoded == null || encoded.isEmpty) return const [];
     try {
@@ -111,10 +125,10 @@ class WatchlistStore {
   }
 
   Future<bool> isTracked(String imdbId) async =>
-      (await load()).any((e) => e.imdbId == imdbId);
+      (await _serialized(_load)).any((e) => e.imdbId == imdbId);
 
-  Future<void> track(String imdbId, String title) async {
-    final entries = List.of(await load());
+  Future<void> track(String imdbId, String title) => _serialized(() async {
+    final entries = List.of(await _load());
     if (entries.any((e) => e.imdbId == imdbId)) return;
     entries.insert(
       0,
@@ -125,23 +139,23 @@ class WatchlistStore {
       ),
     );
     await _write(entries);
-  }
+  });
 
-  Future<void> untrack(String imdbId) async {
-    final entries = List.of(await load());
+  Future<void> untrack(String imdbId) => _serialized(() async {
+    final entries = List.of(await _load());
     entries.removeWhere((e) => e.imdbId == imdbId);
     await _write(entries);
-  }
+  });
 
-  Future<void> markChecked(String imdbId) async {
-    final entries = List.of(await load());
+  Future<void> markChecked(String imdbId) => _serialized(() async {
+    final entries = List.of(await _load());
     final index = entries.indexWhere((e) => e.imdbId == imdbId);
     if (index < 0) return;
     entries[index] = entries[index].checkedAt(
       DateTime.now().millisecondsSinceEpoch,
     );
     await _write(entries);
-  }
+  });
 
   Future<void> _write(List<WatchlistEntry> entries) => _storage.write(
     storageKey,

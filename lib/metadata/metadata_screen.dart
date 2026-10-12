@@ -610,6 +610,8 @@ class _TitleDetailsState extends State<_TitleDetails> {
   );
   bool _tracked = false;
   bool _trackedLoaded = false;
+  bool _trackedLoadFailed = false;
+  bool _trackBusy = false;
 
   @override
   void initState() {
@@ -618,24 +620,51 @@ class _TitleDetailsState extends State<_TitleDetails> {
   }
 
   Future<void> _loadTracked() async {
-    final tracked = await widget.watchlistStore.isTracked(
-      widget.title.imdbId,
-    );
-    if (mounted) {
-      setState(() {
-        _tracked = tracked;
-        _trackedLoaded = true;
-      });
+    setState(() {
+      _trackedLoaded = false;
+      _trackedLoadFailed = false;
+    });
+    try {
+      final tracked = await widget.watchlistStore.isTracked(
+        widget.title.imdbId,
+      );
+      if (mounted) {
+        setState(() {
+          _tracked = tracked;
+          _trackedLoaded = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _trackedLoadFailed = true);
     }
   }
 
+  /// Hedef duruma göre yazar — aktif `_tracked`'ı tersine çevirmez (code
+  /// review bulgusu: art arda basınca her çağrı eski değeri tersine çevirip
+  /// birbirini ezebiliyordu, bir noktada düğme gerçek durumla uyuşmaz hale
+  /// geliyordu).
   Future<void> _toggleTrack(MediaTitle media) async {
-    if (_tracked) {
-      await widget.watchlistStore.untrack(media.imdbId);
-    } else {
-      await widget.watchlistStore.track(media.imdbId, media.title);
+    if (_trackBusy) return;
+    final target = !_tracked;
+    setState(() => _trackBusy = true);
+    try {
+      if (target) {
+        await widget.watchlistStore.track(media.imdbId, media.title);
+      } else {
+        await widget.watchlistStore.untrack(media.imdbId);
+      }
+      if (mounted) setState(() => _tracked = target);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).watchlistUpdateFailed),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _trackBusy = false);
     }
-    if (mounted) setState(() => _tracked = !_tracked);
   }
 
   @override
@@ -709,15 +738,24 @@ class _TitleDetailsState extends State<_TitleDetails> {
           ),
           actions: [
             if (media.kind == 'series')
-              TextButton.icon(
-                onPressed: _trackedLoaded ? () => _toggleTrack(media) : null,
-                icon: Icon(
-                  _tracked
-                      ? Icons.bookmark_rounded
-                      : Icons.bookmark_add_outlined,
+              if (_trackedLoadFailed)
+                TextButton.icon(
+                  onPressed: _loadTracked,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: Text(l.retry),
+                )
+              else
+                TextButton.icon(
+                  onPressed: (_trackedLoaded && !_trackBusy)
+                      ? () => _toggleTrack(media)
+                      : null,
+                  icon: Icon(
+                    _tracked
+                        ? Icons.bookmark_rounded
+                        : Icons.bookmark_add_outlined,
+                  ),
+                  label: Text(_tracked ? l.untrackShow : l.trackShow),
                 ),
-                label: Text(_tracked ? l.untrackShow : l.trackShow),
-              ),
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: Text(MaterialLocalizations.of(context).closeButtonLabel),

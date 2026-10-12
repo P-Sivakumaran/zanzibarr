@@ -338,6 +338,16 @@ class AppLocalizationsTr extends AppLocalizations {
       'Bir süredir kontrol edilmedi — şimdi bakılsın mı?';
 
   @override
+  String get watchlistLoadFailed => 'Takip edilen diziler yüklenemedi.';
+
+  @override
+  String get watchlistRemoveFailed => 'Bu dizinin takibi bırakılamadı.';
+
+  @override
+  String get watchlistUpdateFailed =>
+      'Bu dizi için takip durumu güncellenemedi.';
+
+  @override
   String get videoFitCover => 'Ekranı doldur';
 
   @override

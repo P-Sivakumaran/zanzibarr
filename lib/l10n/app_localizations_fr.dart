@@ -340,6 +340,16 @@ class AppLocalizationsFr extends AppLocalizations {
   String get watchlistNewEpisodesHint => 'It\'s been a while — check now?';
 
   @override
+  String get watchlistLoadFailed => 'Couldn\'t load tracked shows.';
+
+  @override
+  String get watchlistRemoveFailed => 'Couldn\'t stop tracking this show.';
+
+  @override
+  String get watchlistUpdateFailed =>
+      'Couldn\'t update tracking for this show.';
+
+  @override
   String get videoFitCover => 'Remplir l’écran';
 
   @override

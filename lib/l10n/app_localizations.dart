@@ -716,6 +716,24 @@ abstract class AppLocalizations {
   /// **'It\'s been a while — check now?'**
   String get watchlistNewEpisodesHint;
 
+  /// No description provided for @watchlistLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load tracked shows.'**
+  String get watchlistLoadFailed;
+
+  /// No description provided for @watchlistRemoveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t stop tracking this show.'**
+  String get watchlistRemoveFailed;
+
+  /// No description provided for @watchlistUpdateFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update tracking for this show.'**
+  String get watchlistUpdateFailed;
+
   /// No description provided for @videoFitCover.
   ///
   /// In en, this message translates to:

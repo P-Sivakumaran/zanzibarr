@@ -451,6 +451,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _historyFailed = false;
   bool _openingPath = false;
   List<WatchlistEntry> _watchlist = const [];
+  bool _watchlistFailed = false;
 
   /// Devam ettirilebilir (tamamlanmamış) kayıtlar — "İzlemeye devam et"
   /// bölümü artık tamamlanmış kayıtları da içeren [_history]'den bunları
@@ -474,13 +475,30 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       entries = await _watchlistStore.load();
     } catch (_) {
+      if (mounted) setState(() => _watchlistFailed = true);
       return;
     }
-    if (mounted) setState(() => _watchlist = entries);
+    if (mounted) {
+      setState(() {
+        _watchlist = entries;
+        _watchlistFailed = false;
+      });
+    }
   }
 
   Future<void> _untrackShow(WatchlistEntry entry) async {
-    await _watchlistStore.untrack(entry.imdbId);
+    try {
+      await _watchlistStore.untrack(entry.imdbId);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).watchlistRemoveFailed),
+          ),
+        );
+      }
+      return;
+    }
     await _loadWatchlist();
   }
 
@@ -491,8 +509,13 @@ class _HomeScreenState extends State<HomeScreen> {
     WatchlistEntry entry,
   ) async {
     final next = nextUnwatchedEpisode(entry, _history);
-    await _watchlistStore.markChecked(entry.imdbId);
-    await _loadWatchlist();
+    try {
+      await _watchlistStore.markChecked(entry.imdbId);
+      await _loadWatchlist();
+    } catch (_) {
+      // Kontrol zamanı damgası sadece hatırlatma rozeti içindir; yazma
+      // başarısız olsa da kullanıcının asıl isteği olan arama engellenmez.
+    }
     if (!context.mounted) return;
     await _openIndexerSearch(
       context,
@@ -677,6 +700,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       );
+      // İndirilip oynatılan bölüm izleme geçmişine işlenmiş olabilir;
+      // yüklenmezse "Yeni bölüm var mı?" aynı bölümü tekrar önerebilir
+      // (code review bulgusu).
+      await _loadHistory();
       await _loadWatchlist();
     } finally {
       if (mounted) setState(() => _openingIndexer = false);
@@ -746,6 +773,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         Text(l10n.historyLoadFailed),
                         TextButton(
                           onPressed: _loadHistory,
+                          child: Text(l10n.retry),
+                        ),
+                      ],
+                      if (_watchlistFailed) ...[
+                        const SizedBox(height: 20),
+                        Text(l10n.watchlistLoadFailed),
+                        TextButton(
+                          onPressed: _loadWatchlist,
                           child: Text(l10n.retry),
                         ),
                       ],
