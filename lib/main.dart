@@ -487,6 +487,13 @@ class _HomeScreenState extends State<HomeScreen> {
   List<PlaybackHistoryEntry> get _favoriteHistory =>
       _history.where((e) => e.favorite).toList();
 
+  /// Favori olmayan ama izlendi işaretlenmiş kayıtlar: izlendi/izlenmedi
+  /// düzeltmesi dosyayı yeniden oynatmadan erişilebilir olmalı — favori
+  /// değillerse Continue Watching'den çıktıktan sonra hiçbir bölümde
+  /// görünmezlerdi (code review bulgusu).
+  List<PlaybackHistoryEntry> get _recentlyWatchedHistory =>
+      _history.where((e) => e.isCompleted && !e.favorite).toList();
+
   @override
   void initState() {
     super.initState();
@@ -990,6 +997,17 @@ class _HomeScreenState extends State<HomeScreen> {
                           onToggleWatched: _toggleWatched,
                         ),
                       ],
+                      if (_recentlyWatchedHistory.isNotEmpty) ...[
+                        const SizedBox(height: 28),
+                        _RecentlyWatchedSection(
+                          entries: _recentlyWatchedHistory,
+                          onOpen: (entry) =>
+                              _resumeHistoryEntry(context, entry),
+                          onRemove: _removeHistoryEntry,
+                          onToggleFavorite: _toggleFavorite,
+                          onToggleWatched: _toggleWatched,
+                        ),
+                      ],
                       if (_upNext.isNotEmpty) ...[
                         const SizedBox(height: 28),
                         _UpNextSection(
@@ -1481,6 +1499,61 @@ class _FavoritesSection extends StatelessWidget {
   }
 }
 
+/// Favori olmayan ama izlendi işaretlenmiş (ya da gerçekten bitirilmiş)
+/// kayıtlar için erişilebilir bir ev — aksi halde Continue Watching'den
+/// çıktıktan sonra hiçbir yerde görünmez, düzeltmek için dosyayı yeniden
+/// oynatmak gerekirdi (code review bulgusu — Faz 5).
+class _RecentlyWatchedSection extends StatelessWidget {
+  const _RecentlyWatchedSection({
+    required this.entries,
+    required this.onOpen,
+    required this.onRemove,
+    required this.onToggleFavorite,
+    required this.onToggleWatched,
+  });
+
+  final List<PlaybackHistoryEntry> entries;
+  final ValueChanged<PlaybackHistoryEntry> onOpen;
+  final ValueChanged<PlaybackHistoryEntry> onRemove;
+  final ValueChanged<PlaybackHistoryEntry> onToggleFavorite;
+  final ValueChanged<PlaybackHistoryEntry> onToggleWatched;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final foreground = isDark ? Colors.white : Colors.black;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 10),
+          child: Text(
+            l10n.recentlyWatchedTitle,
+            style: TextStyle(
+              color: foreground.withValues(alpha: 0.72),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ),
+        for (final entry in entries)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _HistoryCard(
+              entry: entry,
+              onOpen: () => onOpen(entry),
+              onRemove: () => onRemove(entry),
+              onToggleFavorite: () => onToggleFavorite(entry),
+              onToggleWatched: () => onToggleWatched(entry),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 /// Tamamlanmış bir bölümden sonra bir sonraki bölümü önerir; ağ çağrısı
 /// yapmaz, sadece geçmişteki kayıtlardan çıkarılır (bkz. [computeUpNext]).
 /// "Bul" aramayı otomatik başlatmaz, sadece alanı önceden doldurur.
@@ -1783,8 +1856,8 @@ class _HistoryCardState extends State<_HistoryCard> {
                         const SizedBox(width: 4),
                         if (entry.durationSeconds > 0)
                           SizedBox(
-                            width: 40,
-                            height: 40,
+                            width: 48,
+                            height: 48,
                             child: IconButton(
                               tooltip: entry.isCompleted
                                   ? l10n.historyMarkUnwatchedTooltip
@@ -1801,8 +1874,8 @@ class _HistoryCardState extends State<_HistoryCard> {
                             ),
                           ),
                         SizedBox(
-                          width: 40,
-                          height: 40,
+                          width: 48,
+                          height: 48,
                           child: IconButton(
                             tooltip: entry.favorite
                                 ? l10n.favoriteRemoveTooltip
@@ -1821,8 +1894,8 @@ class _HistoryCardState extends State<_HistoryCard> {
                           ),
                         ),
                         SizedBox(
-                          width: 40,
-                          height: 40,
+                          width: 48,
+                          height: 48,
                           child: IconButton(
                             tooltip: l10n.historyRemoveTooltip,
                             padding: EdgeInsets.zero,

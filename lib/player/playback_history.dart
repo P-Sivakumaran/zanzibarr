@@ -225,6 +225,15 @@ class PlaybackHistoryStore {
           positionSeconds: legacy.positionSeconds,
           durationSeconds: legacy.durationSeconds,
           updatedAtMs: legacy.updatedAtMs,
+          imdbId: legacy.imdbId,
+          season: legacy.season,
+          episode: legacy.episode,
+          sourceId: legacy.sourceId,
+          nzbUrl: legacy.nzbUrl,
+          // Favori işareti paket kaydından taşınmazsa, bölüm anahtarı
+          // çözülür çözülmez (ilk eşleşen video açılır açılmaz) sessizce
+          // kaybolurdu (code review bulgusu).
+          favorite: legacy.favorite,
         );
         entries[index] = migrated;
         await _write(entries);
@@ -269,12 +278,28 @@ class PlaybackHistoryStore {
     // bu ilk turda aday değildir — "tekrar izlemek istiyorum" ilerlemeden
     // bağımsız kalmalı (Faz 5).
     var excess = entries.length - _maxEntries;
+    // 1. tur: en eski tamamlanmış, favori olmayan kayıtlar düşer.
     for (var i = entries.length - 1; i >= 0 && excess > 0; i--) {
       if (entries[i].isCompleted && !entries[i].favorite) {
         entries.removeAt(i);
         excess--;
       }
     }
+    // 2. tur (yedek): yeterli tamamlanmış aday yoksa, en eski devam eden
+    // (favori olmayan) kayıtlar düşer. Favoriler burada da korunur — aksi
+    // halde eski bir favori, 24 devam eden kayıt arasında sessizce silinirdi
+    // (code review bulgusu: önceki haliyle bu yedek tur doğrudan en eskiyi
+    // düşürüyordu, favori olup olmadığına bakmadan).
+    if (excess > 0) {
+      for (var i = entries.length - 1; i >= 0 && excess > 0; i--) {
+        if (!entries[i].favorite) {
+          entries.removeAt(i);
+          excess--;
+        }
+      }
+    }
+    // Son çare: her şey favoriyse (tüm bütçe favorilerle dolmuşsa) en eski
+    // kayıt(lar) düşer — sınırsız depolamaya izin verilmez.
     if (excess > 0) {
       entries.removeRange(entries.length - excess, entries.length);
     }

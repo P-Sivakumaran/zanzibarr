@@ -914,6 +914,9 @@ class AppLocalizationsEs extends AppLocalizations {
   String get favoritesTitle => 'Favorites';
 
   @override
+  String get recentlyWatchedTitle => 'Recently watched';
+
+  @override
   String get historyRemoved => 'Removed from continue watching';
 
   @override

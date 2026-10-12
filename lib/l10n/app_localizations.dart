@@ -1700,6 +1700,12 @@ abstract class AppLocalizations {
   /// **'Favorites'**
   String get favoritesTitle;
 
+  /// No description provided for @recentlyWatchedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Recently watched'**
+  String get recentlyWatchedTitle;
+
   /// No description provided for @historyRemoved.
   ///
   /// In en, this message translates to:

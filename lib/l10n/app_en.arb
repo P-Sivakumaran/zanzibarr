@@ -433,6 +433,7 @@
   "favoriteAddTooltip": "Add to favorites",
   "favoriteRemoveTooltip": "Remove from favorites",
   "favoritesTitle": "Favorites",
+  "recentlyWatchedTitle": "Recently watched",
   "historyRemoved": "Removed from continue watching",
   "historyFileMissing": "This file is no longer available and can't be re-downloaded.",
   "historyFileMissingIndexerGone": "This file is no longer available; its original indexer isn't configured anymore.",

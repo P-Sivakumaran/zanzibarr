@@ -909,6 +909,9 @@ class AppLocalizationsTr extends AppLocalizations {
   String get favoritesTitle => 'Favoriler';
 
   @override
+  String get recentlyWatchedTitle => 'Son izlenenler';
+
+  @override
   String get historyRemoved => 'İzleme geçmişinden kaldırıldı';
 
   @override

@@ -275,6 +275,59 @@ void main() {
   );
 
   test(
+    'favori işaretli devam eden kayıt da yedek turda silinmez',
+    () async {
+      // Codex review (commit 2edee1a) bulgusu: tamamlanmış aday yoksa
+      // (hepsi devam ediyor) yedek tur doğrudan en eskiyi silip favoriyi
+      // de düşürüyordu.
+      final storage = _MemoryPreferenceStorage();
+      final store = PlaybackHistoryStore(storage: storage);
+
+      await store.save(
+        entry('/media/favorite.nzb', updatedAt: 0, favorite: true),
+      );
+      for (var i = 1; i <= 24; i++) {
+        await store.save(entry('/media/unfinished-$i.nzb', updatedAt: i));
+      }
+      expect(await store.load(), hasLength(25));
+
+      await store.save(entry('/media/new-unfinished.nzb', updatedAt: 100));
+
+      final entries = await store.load();
+      expect(entries, hasLength(25));
+      expect(
+        entries.any((e) => e.nzbPath == '/media/favorite.nzb'),
+        isTrue,
+        reason:
+            'favorited entry must survive the fallback eviction pass too',
+      );
+    },
+  );
+
+  test('entryFor paket geçişinde favori işaretini korur', () async {
+    final store = PlaybackHistoryStore(storage: _MemoryPreferenceStorage());
+    await store.save(
+      PlaybackHistoryEntry(
+        nzbPath: '/pack.nzb',
+        title: 'episode01.mkv',
+        positionSeconds: 1234,
+        durationSeconds: 6000,
+        updatedAtMs: 1000,
+        favorite: true,
+      ),
+    );
+
+    final migrated = await store.entryFor(
+      '/pack.nzb',
+      entryKey: 'rar:e01',
+      mediaTitle: 'episode01.mkv',
+    );
+
+    expect(migrated?.favorite, isTrue);
+    expect((await store.load()).single.favorite, isTrue);
+  });
+
+  test(
     'bütçe aşılınca önce en eski tamamlanmış kayıt düşer, devam edilebilir kayıt korunur',
     () async {
       final storage = _MemoryPreferenceStorage();

@@ -290,6 +290,7 @@
   "favoriteAddTooltip": "Favorilere ekle",
   "favoriteRemoveTooltip": "Favorilerden kaldır",
   "favoritesTitle": "Favoriler",
+  "recentlyWatchedTitle": "Son izlenenler",
   "historyRemoved": "İzleme geçmişinden kaldırıldı",
   "historyFileMissing": "Bu dosya artık yok ve yeniden indirilemiyor.",
   "historyFileMissingIndexerGone": "Bu dosya artık yok; orijinal indexer artık yapılandırılı değil.",
