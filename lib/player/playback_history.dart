@@ -276,6 +276,40 @@ class PlaybackHistoryStore {
         await _write(entries);
       });
 
+  /// Bir kaydın kimliğini ([oldPath]/`entryKey`) aynı listede yerinde
+  /// değiştirir — konum/süre dahil her şey korunur. Geçici önbellek dosyası
+  /// kaybolup aynı NZB yeniden indirildiğinde kullanılır (Faz 4). `save` +
+  /// `remove` ayrı çağrıldığında liste 25 kayıtla doluyken geçici 26.
+  /// kayıt kapasite kırpmasını tetikleyip BAŞKA bir videonun kaydını
+  /// düşürebiliyordu (code review bulgusu) — burada uzunluk hiç değişmediği
+  /// için kırpma devreye girmez.
+  Future<void> migratePath({
+    required String oldPath,
+    String? entryKey,
+    required String newPath,
+  }) => _serialized(() async {
+    final entries = List.of(await _load());
+    final index = entries.indexWhere(
+      (e) => e.nzbPath == oldPath && e.entryKey == entryKey,
+    );
+    if (index < 0) return;
+    final old = entries[index];
+    entries[index] = PlaybackHistoryEntry(
+      nzbPath: newPath,
+      entryKey: old.entryKey,
+      title: old.title,
+      positionSeconds: old.positionSeconds,
+      durationSeconds: old.durationSeconds,
+      updatedAtMs: old.updatedAtMs,
+      imdbId: old.imdbId,
+      season: old.season,
+      episode: old.episode,
+      sourceId: old.sourceId,
+      nzbUrl: old.nzbUrl,
+    );
+    await _write(entries);
+  });
+
   Future<void> _write(List<PlaybackHistoryEntry> entries) => _storage.write(
     storageKey,
     jsonEncode(<String, Object>{

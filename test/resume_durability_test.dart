@@ -52,6 +52,32 @@ class _HistoryStore extends PlaybackHistoryStore {
     );
     entries.insert(0, entry);
   }
+
+  @override
+  Future<void> migratePath({
+    required String oldPath,
+    String? entryKey,
+    required String newPath,
+  }) async {
+    final index = entries.indexWhere(
+      (e) => e.nzbPath == oldPath && e.entryKey == entryKey,
+    );
+    if (index < 0) return;
+    final old = entries[index];
+    entries[index] = PlaybackHistoryEntry(
+      nzbPath: newPath,
+      entryKey: old.entryKey,
+      title: old.title,
+      positionSeconds: old.positionSeconds,
+      durationSeconds: old.durationSeconds,
+      updatedAtMs: old.updatedAtMs,
+      imdbId: old.imdbId,
+      season: old.season,
+      episode: old.episode,
+      sourceId: old.sourceId,
+      nzbUrl: old.nzbUrl,
+    );
+  }
 }
 
 const _trackedProfile = IndexerProfile(

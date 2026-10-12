@@ -141,6 +141,55 @@ void main() {
     },
   );
 
+  test('migratePath konumu koruyarak yeni yola taşır', () async {
+    final store = PlaybackHistoryStore(storage: _MemoryPreferenceStorage());
+    await store.save(
+      entry('/cache/old.nzb', position: 456, entryKey: 'rar:e01'),
+    );
+
+    await store.migratePath(
+      oldPath: '/cache/old.nzb',
+      entryKey: 'rar:e01',
+      newPath: '/cache/new.nzb',
+    );
+
+    final entries = await store.load();
+    expect(entries, hasLength(1));
+    expect(entries.single.nzbPath, '/cache/new.nzb');
+    expect(entries.single.entryKey, 'rar:e01');
+    expect(entries.single.positionSeconds, 456);
+  });
+
+  test(
+    'migratePath liste doluyken de başka bir kaydı düşürmez',
+    () async {
+      final storage = _MemoryPreferenceStorage();
+      final store = PlaybackHistoryStore(storage: storage);
+
+      await store.save(entry('/cache/vanished.nzb', position: 111));
+      for (var i = 1; i < 25; i++) {
+        await store.save(entry('/media/other-$i.nzb', updatedAt: i));
+      }
+      expect(await store.load(), hasLength(25));
+
+      await store.migratePath(
+        oldPath: '/cache/vanished.nzb',
+        newPath: '/cache/recovered.nzb',
+      );
+
+      final entries = await store.load();
+      expect(
+        entries,
+        hasLength(25),
+        reason: 'in-place migration must not trigger capacity eviction',
+      );
+      final migrated = entries.singleWhere(
+        (e) => e.nzbPath == '/cache/recovered.nzb',
+      );
+      expect(migrated.positionSeconds, 111);
+    },
+  );
+
   test(
     'bütçe aşılınca önce en eski tamamlanmış kayıt düşer, devam edilebilir kayıt korunur',
     () async {

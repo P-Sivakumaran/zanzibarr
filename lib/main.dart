@@ -692,29 +692,15 @@ class _HomeScreenState extends State<HomeScreen> {
         nzbUrl,
         entry.title,
       );
-      // Kaydedilmiş konum yeni yola taşınır — aksi halde kurtarma "başarılı"
-      // olur ama video baştan başlar (code review bulgusu: PlayerScreen
-      // `_resumeFromHistory`'de kaydı (nzbPath, entryKey) ile arar, yeni
-      // indirilen yol eskisiyle eşleşmez). Önce yeni kayıt yazılır, sonra
-      // eskisi silinir — sırası tersine çevrilirse ara bir kesintide
-      // (ayar ekranına yönlenip geri dönmeme, oynatıcı başlatma hatası vb.)
-      // konum hiçbir yerde kalmaz.
-      await _historyStore.save(
-        PlaybackHistoryEntry(
-          nzbPath: newPath,
-          entryKey: entry.entryKey,
-          title: entry.title,
-          positionSeconds: entry.positionSeconds,
-          durationSeconds: entry.durationSeconds,
-          updatedAtMs: DateTime.now().millisecondsSinceEpoch,
-          imdbId: entry.imdbId,
-          season: entry.season,
-          episode: entry.episode,
-          sourceId: entry.sourceId,
-          nzbUrl: entry.nzbUrl,
-        ),
+      // Kaydedilmiş konum yeni yola taşınır — tek atomik işlem, kapasite
+      // kırpmasını tetiklemez (code review bulgusu: ayrı save+remove,
+      // liste doluyken geçici 26. kayıt yüzünden BAŞKA bir videonun
+      // kaydını düşürebiliyordu).
+      await _historyStore.migratePath(
+        oldPath: entry.nzbPath,
+        entryKey: entry.entryKey,
+        newPath: newPath,
       );
-      await _historyStore.remove(entry.nzbPath, entryKey: entry.entryKey);
       return (path: newPath, errorKey: null);
     } catch (_) {
       return (path: null, errorKey: _RedownloadError.downloadFailed);
