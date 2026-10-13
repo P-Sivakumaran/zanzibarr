@@ -75,10 +75,12 @@
   /* ── hero ────────────────────────────── */
   header { text-align: center; padding: 88px 0 40px; }
   .hero-logo {
-    width: 108px; height: 108px; border-radius: 26px;
+    width: 176px; height: 176px; border-radius: 26px;
     box-shadow: 0 18px 50px rgba(255, 69, 58, 0.25);
   }
   h1 { font-size: clamp(40px, 6vw, 64px); letter-spacing: -1.5px; margin-top: 26px; }
+  .brand-wordmark { width: 150px; height: auto; display: block; }
+  .hero-wordmark { width: min(560px, 100%); height: auto; display: block; margin: 0 auto; }
   .tagline {
     font-size: clamp(17px, 2.4vw, 22px);
     color: var(--text-dim);
@@ -207,7 +209,7 @@
   <nav>
     <div class="wrap nav-inner">
       <img class="logo" src="assets/zanzibarr-logo.png" alt="zanzibarr logo">
-      <span class="brand">zanzibarr</span>
+      <img class="brand-wordmark" src="assets/zanzibarr-wordmark.svg" alt="zanzibarr">
       <div class="nav-links">
         <a href="#features">Features</a>
         <a href="#download">Download</a>
@@ -220,7 +222,7 @@
 
   <header class="wrap">
     <img class="hero-logo" src="assets/zanzibarr-logo.png" alt="zanzibarr">
-    <h1>zanzibarr</h1>
+    <h1><img class="hero-wordmark" src="assets/zanzibarr-wordmark.svg" alt="zanzibarr"></h1>
     <p class="tagline">Stream anything from Usenet. <strong>Own nothing. Wait for nothing.</strong><br>
       Point it at any <code>.nzb</code> and the video starts in seconds — no download queue, no waiting, no disk space sacrificed.</p>
     <div class="hero-ctas">

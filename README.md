@@ -2,7 +2,7 @@
   <img src="docs/assets/zanzibarr-logo.png" alt="zanzibarr sunset and sailboat play-button logo" width="192" height="192">
 </p>
 
-<h1 align="center">zanzibarr</h1>
+<h1 align="center"><img src="docs/assets/zanzibarr-wordmark.svg" alt="zanzibarr" width="560"></h1>
 
 <p align="center"><strong>Your Usenet player. Open an NZB. Start watching. Seek freely.</strong></p>
 
