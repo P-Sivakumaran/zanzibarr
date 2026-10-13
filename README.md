@@ -1,167 +1,158 @@
 <p align="center">
-  <img src="assets/zanzibarr-logo.png" alt="zanzibarr" width="128" height="128">
+  <img src="docs/assets/zanzibarr-logo.png" alt="zanzibarr sunset and sailboat play-button logo" width="192" height="192">
 </p>
 
 <h1 align="center">zanzibarr</h1>
 
+<p align="center"><strong>Your Usenet player. Open an NZB. Start watching. Seek freely.</strong></p>
+
+<p align="center">A native Flutter player with a Rust streaming engine, integrated indexer search,<br>archive support and a library that remembers where you left off.</p>
+
 <p align="center">
-  <strong>Stream anything from Usenet. Own nothing. Wait for nothing.</strong>
+  <a href="https://github.com/P-Sivakumaran/zanzibarr/actions/workflows/verify.yml"><img src="https://github.com/P-Sivakumaran/zanzibarr/actions/workflows/verify.yml/badge.svg" alt="Verification"></a>
+  <a href="https://github.com/P-Sivakumaran/zanzibarr/releases"><img src="https://img.shields.io/github/v/release/P-Sivakumaran/zanzibarr?label=published%20release" alt="Latest published fork release"></a>
+  <img src="https://img.shields.io/badge/built%20with-Flutter%20%2B%20Rust-ff654f" alt="Built with Flutter and Rust">
+  <a href="https://github.com/P-Sivakumaran/zanzibarr/stargazers"><img src="https://img.shields.io/github/stars/P-Sivakumaran/zanzibarr?style=flat&label=stars" alt="GitHub stars"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/envermeister/zanzibarr/actions/workflows/windows-build.yml"><img src="https://github.com/envermeister/zanzibarr/actions/workflows/windows-build.yml/badge.svg" alt="Windows build"></a>
-  <a href="https://github.com/envermeister/zanzibarr/actions/workflows/android-build.yml"><img src="https://github.com/envermeister/zanzibarr/actions/workflows/android-build.yml/badge.svg" alt="Android build"></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20%C2%B7%20Windows%20%C2%B7%20Android%20%C2%B7%20Android%20TV-blue" alt="platforms">
-  <img src="https://img.shields.io/badge/tests-250%20Rust%20%2B%20166%20Flutter-brightgreen" alt="tests">
-  <a href="https://buymeacoffee.com/envermeister"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support%20zanzibarr-FFDD00?logo=buy-me-a-coffee&logoColor=black" alt="Support on Buy Me a Coffee"></a>
-  <a href="https://ko-fi.com/envermeister"><img src="https://img.shields.io/badge/Ko--fi-support%20zanzibarr-F16061?logo=ko-fi&logoColor=white" alt="Support on Ko-fi"></a>
+  <a href="#get-started">Get started</a> · <a href="#features">Features</a> ·
+  <a href="#platforms-and-release-status">Platforms</a> ·
+  <a href="#build-from-source">Build</a> · <a href="#contribute">Contribute</a>
 </p>
 
----
+zanzibarr plays video from Usenet without waiting for the entire release to
+download. Open an NZB or find a release through your indexers, then watch through
+a seekable local stream. The engine fetches and decodes segments on demand;
+archive handling and repair can use temporary disk space.
 
-zanzibarr turns Usenet into your personal streaming library. Point it at any `.nzb` and the video starts playing in seconds — **no download queue, no waiting for the full file, no disk space sacrificed**. Scrub to the final scene of a 4K remux before the first act would have finished downloading. It feels like magic; it's really just a very disciplined engine.
+This is **Prashanth's fork of [envermeister/zanzibarr](https://github.com/envermeister/zanzibarr)**,
+focused on multi-indexer search, optional metadata, library management and
+repeatable packaging. You supply your own Usenet provider account and NZB sources.
 
-## Screenshots
+## Features
 
-<p align="center">
-  <img src="docs/screenshots/demo.gif" alt="zanzibarr demo" width="720">
-</p>
+| Feature | What you can do |
+|---|---|
+| **On-demand streaming** | Start before a full download completes and seek through byte-range requests backed by decoded yEnc offsets. |
+| **Multi-indexer search** | Configure Newznab-compatible sources, inspect release details and use structured movie/episode searches. |
+| **Optional metadata** | Look up titles and available ratings with your own OMDb key. Search and playback work without it. |
+| **Continue watching** | Resume titles, recover expired temporary NZBs from their original source, and keep favorites independent of watch progress. |
+| **Show tracking** | Track shows, request new-episode checks and open suggested next-episode searches. Checks are user-triggered. |
+| **Archive playback** | Handle supported RAR4/RAR5 and split 7z releases, including supported compressed/encrypted paths. Some paths use temporary storage. |
+| **PAR2 recovery** | Trigger repair from a playback error and resume using repaired data when enough recovery blocks are available. |
+| **Playback controls** | Select audio/subtitle tracks, adjust speed and sync, choose picture presets, and crop with Smart Canvas. |
+| **HDR and Dolby Vision paths** | Use supported decode and tone-mapping paths; results depend on your device, platform and media libraries. |
+| **Desktop and TV interfaces** | Dark/light themes, localized interfaces and Android TV focus navigation. New fork copy can fall back to English. |
 
-<p align="center">
-  <img src="docs/screenshots/home_dark.png" alt="Home — dark" width="720">
-</p>
+Archive compatibility is not universal; a reported RAR4 parsing issue remains
+under investigation. Device playback, casting and accessibility checks for the
+latest candidate are still pending. See the [release notes](docs/releases/v1.10.md).
 
-<p align="center">
-  <img src="docs/screenshots/player_controls.png" alt="Player" width="720">
-</p>
+## Get started
 
-<details>
-  <summary>More screenshots</summary>
-  <p align="center"><img src="docs/screenshots/search.png" alt="Indexer search" width="720"></p>
-  <p align="center"><img src="docs/screenshots/advanced_settings.png" alt="Video & audio settings" width="720"></p>
-  <p align="center"><img src="docs/screenshots/smart_canvas.png" alt="Smart Canvas" width="720"></p>
-  <p align="center"><img src="docs/screenshots/settings.png" alt="Settings" width="720"></p>
-  <p align="center"><img src="docs/screenshots/home_light.png" alt="Home — light" width="720"></p>
-</details>
+1. Check the [fork releases](https://github.com/P-Sivakumaran/zanzibarr/releases)
+   for an available package. Use only assets actually attached to a published release.
+2. Open **Settings** and enter your provider's NNTP host, port and credentials.
+   Application credentials use the operating system's secure storage.
+3. Open an `.nzb` file and select the media to play. Optionally add your indexers
+   to search from inside the app.
 
-## Why zanzibarr is different
+**Windows:** use the setup `.exe` for a per-user installation, or extract the
+entire portable `.zip` and run `zanzibarr.exe` alongside its DLLs and `data` folder.
+The executable is not a standalone single-file application.
 
-**Play instantly, never download**
-The Rust engine maps every seek position to the exact Usenet segments that hold it, fetches only those, decodes yEnc on the fly and serves the result through a lazy, range-aware local stream. Pause the player and the network goes quiet. Close the app and nothing is left behind on your disk.
+## Platforms and release status
 
-**Find it and play it — without leaving the app**
-Hook up any Newznab-compatible indexer and the home screen becomes your launchpad: capability discovery, release names parsed into quality badges (2160p · HEVC · DV · HDR10+ · TrueHD · Atmos · group), and a single tap streams the NZB straight into the player. No browser round-trips, no download manager, no queue.
+The current local candidate is **1.10.0+11**. A local build does not imply a
+published GitHub release or validation on every platform.
 
-**Seek like it's a local file**
-Byte offsets are resolved from the decoded yEnc `begin/end` positions of every segment — never guessed from article sizes. The result is frame-accurate seeking across thousands of segments, even mid-segment, even on 100+ GB releases.
+| Platform | Packaging and current requirements |
+|---|---|
+| **Windows x64** | Setup and portable ZIP built locally. Unsigned. Fresh-user/VM installation and live playback checks remain pending. |
+| **Ubuntu 24.04 x64** | CI packaging for `.deb` and `.tar.gz`; requires system GTK, libmpv and secret service. Fork CI validation remains pending. |
+| **Android / Android TV** | CI packaging for universal and ABI APKs; requires persistent release-signing secrets and device checks. |
+| **iOS** | CI packaging for an unsigned IPA; signing/provisioning and device validation are separate requirements. |
+| **macOS arm64** | Requires a Mac, compatible media frameworks and signing/notarization work. No current fork package is claimed. |
+| **Web** | Unsupported: the engine depends on native networking and libraries. |
 
-**It opens the archives others won't**
-Straight video NZBs, multi-volume **RAR5** sets, legacy **RAR4** volumes and split **7z** releases — **LZMA/LZMA2-compressed** and **AES-256 encrypted** sets included — are reassembled into a single virtual, seekable file entirely in memory. Nothing is extracted to disk. **Compressed RAR** (method > STORE, `-hp` encrypted included) plays too: the compressed set is spooled to a temporary directory and decoded ahead by a vendored libunrar, so the decoded prefix is seekable instantly and the rest streams in as it decodes — temporary disk is reclaimed when you close the player.
-
-**Scratches don't stop the show**
-Missing or corrupt Usenet segments no longer kill the movie: hit **Repair with PAR2** on the error screen and the engine verifies every slice of the recovery set, rebuilds the damaged ones with Reed-Solomon (byte-exact against par2cmdline) and serves them from a local overlay. Playback resumes exactly where it failed.
-
-**A picture pipeline that respects your content**
-- Dynamic range selector that adapts to the file: **SDR · HDR · HDR10 · Dolby Vision** — modes the content doesn't carry stay visibly disabled, so you always know exactly what you're watching.
-- Dolby Vision handled honestly: **Profile 5** is reshaped on the GPU via libplacebo — on macOS via Vulkan → Metal, on Android via a custom mpv 0.41 + FFmpeg 8.1.2 + libplacebo build with an 8-bit reshape path that survives drivers lacking 16-bit linear sampling (Samsung Xclipse) as well as Adreno. HDR10-based profiles ride the natural decoder path — no pink-and-green fakeouts, and the player shows live engine status when a device can't run the correction.
-- BT.2390 tone mapping with per-frame peak detection for clean SDR conversion.
-- Custom libmpv 0.41 + full FFmpeg 8.1 build: **TrueHD / Atmos, DTS-HD MA**, AV1 and everything else your releases actually use.
-- Video presets (Natural / Cinema / Vivid), GPU scaling quality, and audio presets (Balanced / Dialogue / Night) — one tap, no filter graphs.
-- Hardware or software decoding, your call.
-
-**Smart Canvas**
-Letterboxed rip? Draw your own crop with draggable handles, preview the aspect ratio live, and apply it on the GPU surface without touching hardware decode.
-
-**A player that gets out of the way**
-Auto-hiding controls, double-click to seek ±10 s, click-to-pause, frame stepping, speed control, audio sync nudge, volume slider, Picture-in-Picture, and external audio/subtitle loading alongside the embedded tracks.
-
-**Speaks your language**
-14 fully localized interfaces: English, Türkçe, Español, Deutsch, Français, Português, Italiano, Русский, 中文, 日本語, 한국어, हिन्दी, العربية and فارسی — with proper RTL layout. Dark and light themes, of course.
-
-**Built for the couch and the desk**
-Native apps for **macOS**, **Windows**, **Android** and **Android TV** (leanback launcher, remote-friendly focus, hardware decode). One codebase, no Electron, no compromises.
-
-**Your credentials stay yours**
-Your Usenet login lives exclusively in the operating system's secure keychain — never in files, never in logs, never on a server. zanzibarr is fully on-device: no accounts, no telemetry, no cloud.
+Read the [v1.10 notes](docs/releases/v1.10.md) and [release runbook](docs/RELEASING.md)
+for verification results. Published assets are the source of truth for downloads;
+upstream releases are separate from this fork.
 
 ## How it works
 
-```
- .nzb ──▶ NZB parser ──▶ segment map (yEnc begin/end)
-                              │
-                 NNTP pool (TLS, pipelined)
-                              │
-              fetch → yEnc decode → CRC32 verify
-                              │
-        archive layer (RAR5 / 7z STORE·AES → virtual file)
-                              │
-              localhost HTTP server (Range requests)
-                              │
-                     libmpv / media_kit
+```text
+NZB file / indexer search
+          |
+Rust: NNTP pool -> yEnc decode + CRC checks -> archive / repair layer
+          |
+Local HTTP stream with byte-range support
+          |
+Flutter UI + media_kit / libmpv
 ```
 
-Everything heavy — parsing, decoding, archive surgery, NNTP networking — is Rust (`flutter_rust_bridge` under the hood). Everything you touch is Flutter. The engine only ever downloads the slices you actually watch.
+Rust handles networking, decoding, archives and streaming. Flutter provides the
+interface through `flutter_rust_bridge`. Seeking uses decoded segment positions,
+rather than treating encoded NZB byte counts as video offsets.
 
-## Getting started
+Playback runs locally. Provider, indexer, optional OMDb and update requests
+connect to their respective services; casting also serves a token-gated stream
+on your local network. No zanzibarr account is required.
 
-This fork prepares v1.9 with multi-indexer search, optional OMDb metadata and
-Windows/Linux installer packaging. See [release notes](docs/releases/v1.9.md)
-and the [build and release runbook](docs/RELEASING.md) for candidate status,
-platform requirements and signing limitations.
+## Build from source
 
-1. Grab a published build from the [fork releases](https://github.com/P-Sivakumaran/zanzibarr/releases) (Windows setup `.exe` or portable `.zip`, Ubuntu 24.04 `.deb`, Linux `.tar.gz`, Android `.apk`). Use only artifacts actually present on that release; draft candidates are not published builds.
-2. Open the settings gear and add your Usenet provider's NNTP host, port, username and password. They're stored in the OS keychain.
-3. Drop in any `.nzb` from your favorite indexer and press play.
+Use **Flutter 3.44.6**, its bundled Dart SDK, Rust and native build tools for your
+target. Windows requires Visual Studio's C++ desktop tools. Linux instructions:
+[BUILDING.linux.md](docs/BUILDING.linux.md).
 
-You need your own Usenet provider account and NZB sources — zanzibarr is the player, not the library.
-
-## Building from source
-
-Requirements: Flutter (stable), Rust toolchain, and for macOS the Xcode command line tools.
-
-```bash
-git clone https://github.com/envermeister/zanzibarr.git
+```sh
+git clone https://github.com/P-Sivakumaran/zanzibarr.git
 cd zanzibarr
 flutter pub get
 flutter gen-l10n
-flutter run            # macOS / Windows / Linux desktop
-flutter run -d android # Android device / TV box
+flutter run -d windows
 ```
 
-Run the test suites:
+Replace the device with your supported target (`flutter devices` lists available
+devices). Build a Windows release with `flutter build windows --release`.
+Run verification from the repository root:
 
-```bash
-flutter test           # Flutter side
-cargo test             # inside rust/ — engine side
+```sh
+cargo test --locked --manifest-path rust/Cargo.toml
+cargo clippy --locked --manifest-path rust/Cargo.toml --all-targets -- -D warnings
+flutter analyze --no-pub lib test
+cargo build --locked --manifest-path rust/Cargo.toml
+flutter test --no-pub
+git diff --check
 ```
 
-CI produces the Windows `.zip`, macOS `.zip`, Linux `.tar.gz`, Android `.apk` and iOS (unsigned `.ipa`) artifacts on demand (see `.github/workflows/`).
+The host Rust build provides the native library used by bridge tests. If parallel
+socket tests encounter resource errors on Windows, rerun Rust tests with
+`-- --test-threads=1` and record both results. Installer commands, checksums and
+signing requirements are in [RELEASING.md](docs/RELEASING.md).
 
-The **Linux** build links against the system libmpv — install the runtime first (`sudo apt install libmpv2` on Ubuntu/Debian; DV tone-mapping needs a libplacebo-enabled build, which Ubuntu 24.04 ships). Detailed notes: [`docs/BUILDING.linux.md`](docs/BUILDING.linux.md).
+## Contribute
 
-## Roadmap
+Useful contributions include reproducible archive failures, playback reports,
+platform testing, accessibility feedback and focused fixes. Include your OS,
+app version, reproduction steps and sanitized diagnostics in a pull request.
+Remove credentials, private URLs and copyrighted media from shared material.
 
-- [x] Streaming playback with true seek (STORE releases)
-- [x] Multi-volume RAR5 & split 7z (STORE, AES-256) as virtual files
-- [x] HDR / HDR10 / Dolby Vision mode selection & tone mapping
-- [x] Android TV, 14 languages, dark & light themes
-- [x] Newznab indexer search (browse & play without leaving the app)
-- [x] Compressed 7z (LZMA/LZMA2, solid) stream-seek & RAR4 STORE sets
-- [x] PAR2 engine: packet parsing, slice health check, Reed-Solomon repair (verified byte-exact against par2cmdline)
-- [x] PAR2 repair wired into playback (user-triggered from the player error screen; repaired slices served from a local overlay)
-- [x] Compressed RAR stream-seek (vendored libunrar; decode-ahead onto a temp spool with range-serving)
-- [x] Linux build (system libmpv, Ubuntu 24.04 verified)
-- [x] iOS build (unsigned `.ipa` via CI; sideload with AltStore/Sideloadly — TestFlight needs a paid developer account setup)
-- [x] Chromecast & AirPlay casting (token-gated LAN streaming straight from the engine)
-- [x] Obfuscated NZB sets (content-sniffed RAR volume ordering for hash-named posts)
-- [x] Subtitle font picker (bundled Noto Sans/Serif/Mono, remembered per title)
-- [x] Android TV D-pad navigation overhaul (settings & search fully remote-driven)
-- [x] Multi-file NZB picker — choose the episode inside season packs (direct videos, RAR/7z & obfuscated sets)
+Start with [AGENTS.md](AGENTS.md) for engineering rules and verification.
+For questions while Issues is disabled, use contact options on the
+[maintainer's GitHub profile](https://github.com/P-Sivakumaran).
 
-## Support the project
+**If zanzibarr is useful to you, give the repository a star.** It helps other
+Usenet users discover the project. Testing a candidate and sharing actionable
+feedback also helps move releases forward.
 
-zanzibarr is free and open source, built in spare time. If it saved you a download queue, you can buy the next coffee that funds the engine on [Buy Me a Coffee](https://buymeacoffee.com/envermeister) or [Ko-fi](https://ko-fi.com/envermeister). One-off or monthly — both keep the commits coming.
+## Credits
 
-## A note on responsibility
+Created upstream by [envermeister](https://github.com/envermeister/zanzibarr),
+with this fork maintained by [Prashanth Sivakumaran](https://github.com/P-Sivakumaran).
+Built on Flutter, Rust, flutter_rust_bridge, media_kit/libmpv and the archive and
+repair libraries credited in the source and packaged notices. Preserve those
+notices when redistributing builds.
 
-zanzibarr is a neutral playback engine. You are responsible for the content you access and for complying with the laws of your jurisdiction and the terms of your Usenet provider.
+Use content you are entitled to access and follow your provider's terms.
