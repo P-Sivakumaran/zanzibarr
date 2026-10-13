@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../player/media_preferences.dart';
+import 'windows_update.dart';
 
 /// GitHub Releases üzerinden yayımlanan bir sürümün bilgisi.
 class ReleaseInfo {
@@ -87,14 +88,19 @@ class ReleaseInfo {
 
 /// Güncelleme kontrolü ve indirme/kurulum akışı.
 ///
-/// Android'de APK indirilip sistem paket yükleyicisiyle kurulur; diğer
-/// platformlarda release sayfası tarayıcıda açılır (iOS sideload zorunlu).
+/// Android opens the package installer; Windows verifies and opens Setup.
+/// Other platforms open the release page.
 class UpdateService {
-  UpdateService({http.Client? client, PlayerPreferenceStorage? storage})
-    : _client = client ?? http.Client(),
-      _storage = storage ?? FlutterSecurePlayerPreferenceStorage();
+  UpdateService({
+    http.Client? client,
+    PlayerPreferenceStorage? storage,
+    this.windowsInstaller,
+  }) : _client = client ?? http.Client(),
+       _storage = storage ?? FlutterSecurePlayerPreferenceStorage();
 
   final http.Client _client;
+  final WindowsUpdateInstaller? windowsInstaller;
+  bool _installing = false;
   final PlayerPreferenceStorage _storage;
 
   static const releasesApiUrl =
@@ -109,19 +115,22 @@ class UpdateService {
   }
 
   /// Yeni sürüm varsa ve kullanıcı onu atlamadıysa bilgisini döndürür.
-  Future<ReleaseInfo?> checkForUpdate() async {
+  Future<ReleaseInfo?> checkForUpdate({bool ignoreSkipped = false}) async {
     final current = await currentVersion();
     final response = await _client
         .get(Uri.parse(releasesApiUrl))
         .timeout(const Duration(seconds: 15));
-    if (response.statusCode != 200) return null;
+    if (response.statusCode == 404) return null;
+    if (response.statusCode != 200) {
+      throw StateError('Update check failed: HTTP ${response.statusCode}');
+    }
     final latest = ReleaseInfo.fromJson(jsonDecode(response.body));
     if (latest == null) return null;
     if (ReleaseInfo.compareVersions(latest.version, current) <= 0) {
       return null;
     }
     final skipped = await _storage.read(_skippedVersionKey);
-    if (skipped == latest.version) return null;
+    if (!ignoreSkipped && skipped == latest.version) return null;
     return latest;
   }
 
@@ -132,7 +141,7 @@ class UpdateService {
   String? assetUrlForCurrentPlatform(ReleaseInfo release) {
     const byPlatform = {
       'android': 'zanzibarr-android-universal.apk',
-      'windows': 'zanzibarr-windows-x64.zip',
+      'windows': WindowsUpdateInstaller.installerName,
       'macos': 'zanzibarr-macos-arm64.zip',
       'linux': 'zanzibarr-linux-x64.tar.gz',
       'ios': 'zanzibarr-ios-unsigned.ipa',
@@ -149,7 +158,9 @@ class UpdateService {
     return name == null ? null : release.assets[name];
   }
 
-  bool get canAutoInstall => defaultTargetPlatform == TargetPlatform.android;
+  bool get canAutoInstall =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.windows;
 
   /// Güncellemeyi indirir ve (Android) kurulum ekranını açar. Masaüstü ve
   /// iOS'ta release sayfasını tarayıcıda açar.
@@ -159,6 +170,28 @@ class UpdateService {
     ReleaseInfo release, {
     ValueChanged<double>? onProgress,
   }) async {
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      if (_installing) throw StateError('An update is already downloading');
+      final installer = release.assets[WindowsUpdateInstaller.installerName];
+      final checksums = release.assets['SHA256SUMS'];
+      if (installer == null || checksums == null) {
+        throw StateError(
+          'This release does not include a Windows installer and checksums',
+        );
+      }
+      _installing = true;
+      try {
+        await (windowsInstaller ?? WindowsUpdateInstaller(client: _client))
+            .install(
+              installerUrl: installer,
+              checksumsUrl: checksums,
+              onProgress: onProgress,
+            );
+      } finally {
+        _installing = false;
+      }
+      return;
+    }
     final url = assetUrlForCurrentPlatform(release) ?? release.pageUrl;
     if (!canAutoInstall || !url.endsWith('.apk')) {
       await launchUrl(Uri.parse(release.pageUrl));

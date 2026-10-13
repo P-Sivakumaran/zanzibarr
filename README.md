@@ -26,7 +26,7 @@ download. Open an NZB or find a release through your indexers, then watch throug
 a seekable local stream. The engine fetches and decodes segments on demand;
 archive handling and repair can use temporary disk space.
 
-This is **Prashanth's fork of [envermeister/zanzibarr](https://github.com/envermeister/zanzibarr)**,
+This is **Treewizard's fork of [envermeister/zanzibarr](https://github.com/envermeister/zanzibarr)**,
 focused on multi-indexer search, optional metadata, library management and
 repeatable packaging. You supply your own Usenet provider account and NZB sources.
 
@@ -61,6 +61,12 @@ latest candidate are still pending. See the [release notes](docs/releases/v1.10.
 **Windows:** use the setup `.exe` for a per-user installation, or extract the
 entire portable `.zip` and run `zanzibarr.exe` alongside its DLLs and `data` folder.
 The executable is not a standalone single-file application.
+
+**Updates:** open **Settings → Check for updates**. When a newer published
+release is available, Windows **Update now** downloads and verifies the installer,
+then opens Setup to upgrade the app. Builds made before this button was added
+need one manual upgrade. Your settings and history are retained; portable users
+are offered a per-user installation.
 
 ## Platforms and release status
 
@@ -150,7 +156,7 @@ feedback also helps move releases forward.
 ## Credits
 
 Created upstream by [envermeister](https://github.com/envermeister/zanzibarr),
-with this fork maintained by [Prashanth Sivakumaran](https://github.com/P-Sivakumaran).
+with this fork maintained by [Treewizard](https://github.com/P-Sivakumaran).
 Built on Flutter, Rust, flutter_rust_bridge, media_kit/libmpv and the archive and
 repair libraries credited in the source and packaged notices. Preserve those
 notices when redistributing builds.

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -563,20 +564,49 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _checkForUpdate() async {
+  bool _checkingForUpdate = false;
+
+  Future<void> _checkForUpdate({bool manual = false}) async {
+    if (_checkingForUpdate) return;
+    _checkingForUpdate = true;
     try {
-      final latest = await _updateService.checkForUpdate();
-      if (!mounted || latest == null) return;
-      await _showUpdateDialog(latest);
+      final latest = await _updateService.checkForUpdate(ignoreSkipped: manual);
+      if (!mounted) return;
+      if (latest != null) {
+        await _showUpdateDialog(latest);
+      } else if (manual) {
+        await _showUpdateStatus('No newer published release is available.');
+      }
     } catch (_) {
-      // Güncelleme kontrolü (ağ hatası vb.) uygulama açılışını engellemez.
+      if (mounted && manual) {
+        await _showUpdateStatus(
+          'Could not check for updates. Please try again.',
+        );
+      }
+    } finally {
+      _checkingForUpdate = false;
     }
   }
+
+  Future<void> _showUpdateStatus(String message) => showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Software updates'),
+      content: Text(message),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('OK'),
+        ),
+      ],
+    ),
+  );
 
   Future<void> _showUpdateDialog(ReleaseInfo release) async {
     final l10n = AppLocalizations.of(context);
     await showDialog<void>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) =>
           _UpdateDialog(release: release, service: _updateService, l10n: l10n),
     );
@@ -682,8 +712,7 @@ class _HomeScreenState extends State<HomeScreen> {
           final l10n = AppLocalizations.of(context);
           final message = switch (result.errorKey!) {
             _RedownloadError.noSource => l10n.historyFileMissing,
-            _RedownloadError.indexerGone =>
-              l10n.historyFileMissingIndexerGone,
+            _RedownloadError.indexerGone => l10n.historyFileMissingIndexerGone,
             _RedownloadError.downloadFailed =>
               l10n.historyFileMissingRedownloadFailed,
           };
@@ -902,9 +931,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openSettings(BuildContext context) {
-    Navigator.of(
-      context,
-    ).push(_fadeRoute(SettingsScreen(uiPreferences: widget.uiPreferences)));
+    Navigator.of(context).push(
+      _fadeRoute(
+        SettingsScreen(
+          uiPreferences: widget.uiPreferences,
+          onCheckForUpdates: () => _checkForUpdate(manual: true),
+        ),
+      ),
+    );
   }
 
   @override
@@ -1269,7 +1303,9 @@ class _OpenMediaCardState extends State<_OpenMediaCard> {
       color: widget.primary
           ? _accent.withValues(alpha: _focused ? 1 : 0.94)
           : foreground.withValues(
-              alpha: _focused ? (isDark ? 0.1 : 0.08) : (isDark ? 0.055 : 0.045),
+              alpha: _focused
+                  ? (isDark ? 0.1 : 0.08)
+                  : (isDark ? 0.055 : 0.045),
             ),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
@@ -1284,7 +1320,9 @@ class _OpenMediaCardState extends State<_OpenMediaCard> {
       child: InkWell(
         onTap: widget.busy ? null : widget.onPressed,
         hoverColor: foreground.withValues(alpha: widget.primary ? 0.08 : 0.045),
-        focusColor: widget.primary ? Colors.white.withValues(alpha: 0.12) : null,
+        focusColor: widget.primary
+            ? Colors.white.withValues(alpha: 0.12)
+            : null,
         autofocus: widget.autofocus,
         onFocusChange: (focused) => setState(() => _focused = focused),
         child: Padding(
@@ -1295,7 +1333,9 @@ class _OpenMediaCardState extends State<_OpenMediaCard> {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: foreground.withValues(alpha: widget.primary ? 0.18 : 0.08),
+                  color: foreground.withValues(
+                    alpha: widget.primary ? 0.18 : 0.08,
+                  ),
                   borderRadius: BorderRadius.circular(11),
                 ),
                 child: widget.busy
@@ -2003,9 +2043,21 @@ class _UpdateDialogState extends State<_UpdateDialog> {
       content: SizedBox(
         width: 420,
         child: SingleChildScrollView(
-          child: Text(
-            release.notes.trim(),
-            style: const TextStyle(fontSize: 12.5, height: 1.45),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (defaultTargetPlatform == TargetPlatform.windows) ...[
+                const Text(
+                  'Update now downloads and verifies the Windows installer. Setup will ask to close the app before upgrading. Your settings and history are kept. Portable users: this installs a per-user copy.',
+                ),
+                const SizedBox(height: 16),
+              ],
+              Text(
+                release.notes.trim(),
+                style: const TextStyle(fontSize: 12.5, height: 1.45),
+              ),
+            ],
           ),
         ),
       ),

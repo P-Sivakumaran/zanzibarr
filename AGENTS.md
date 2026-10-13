@@ -1,6 +1,6 @@
 # AGENTS.md - Zanzibarr fork
 
-Canonical working instructions for agents collaborating with Prashanth on
+Canonical working instructions for agents collaborating with Treewizard on
 `P-Sivakumaran/zanzibarr`. Read this before editing. Current user instructions
 take precedence. Historical upstream notes are context, not authorization or
 current owner preferences.
@@ -212,11 +212,12 @@ workarounds; details remain in the historical archive.
 
 ## 7. Current state and blockers - last verified 2026-10-13
 
-- Latest local Windows candidate is **1.10.0+11**, based on checkout
-  `f12d5981b37e370a9bc593b66601869607a7b89e` with uncommitted version/docs.
+- Latest local Windows candidate is **1.10.0+11**. The latest update-button
+  work adds manual checks and verified Windows installer downloads. Public
+  maintainer branding uses **Treewizard**; account URLs and mem0 IDs stay unchanged.
   Rebuilt setup/ZIP and verified hashes and portable components. Full serial
   Rust gate: 266 passed (initial parallel run had two socket-resource failures);
-  Flutter: 259 passed, 8 screenshot skips. Clippy, analysis and host build passed.
+  Flutter: 266 passed, 8 screenshot skips. Clippy, analysis and host build passed.
   Installer lifecycle smoke refused an existing installation registration;
   preserve it and use a fresh user/VM. Signing, playback and publication remain
   unverified. See `docs/releases/v1.10.md`. The v1.9 evidence below is historical;
@@ -280,7 +281,7 @@ upstream release history. Preserve unresolved engineering lessons.
 - [Archived agent context](docs/history/AGENTS_LEGACY_2026-10-12.md)
 
 **2026-10-12 - Fork workflow rewrite:** English communication and commits;
-Prashanth's Windows/fork environment; proportionate verification; review,
+Treewizard's Windows/fork environment; proportionate verification; review,
 packaging, CI and release practices; explicit evidence and access blockers.
 Preserved technical invariants and archived the old guide intact. Updated
 `CLAUDE.md` to reference this canonical file. Documentation checks only;

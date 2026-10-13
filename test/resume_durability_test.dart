@@ -9,7 +9,7 @@ import 'package:zanzibarr/update/update_service.dart';
 
 class _NoUpdates extends UpdateService {
   @override
-  Future<ReleaseInfo?> checkForUpdate() async => null;
+  Future<ReleaseInfo?> checkForUpdate({bool ignoreSkipped = false}) async => null;
 }
 
 class _ProviderStore extends ProviderSettingsStore {

@@ -50,7 +50,7 @@ class _IndexerStore extends IndexerSettingsStore {
 
 class _NoUpdates extends UpdateService {
   @override
-  Future<ReleaseInfo?> checkForUpdate() async => null;
+  Future<ReleaseInfo?> checkForUpdate({bool ignoreSkipped = false}) async => null;
 }
 
 class _HistoryStore extends PlaybackHistoryStore {

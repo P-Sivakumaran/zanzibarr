@@ -33,7 +33,7 @@ Map<String, Object> _releaseJson({
   String body = 'notlar',
 }) => {
   'tag_name': tag,
-  'html_url': 'https://github.com/envermeister/zanzibarr/releases/tag/$tag',
+  'html_url': 'https://github.com/P-Sivakumaran/zanzibarr/releases/tag/$tag',
   'body': body,
   'assets': [
     {
@@ -160,12 +160,12 @@ void main() {
       expect(await service.checkForUpdate(), isNull);
     });
 
-    test('HTTP hatası sessizce null döner', () async {
+    test('HTTP failure is distinguishable from no available update', () async {
       final service = UpdateService(
         client: _clientWith({'error': 'boom'}, status: 500),
         storage: _MemoryPreferenceStorage(),
       );
-      expect(await service.checkForUpdate(), isNull);
+      await expectLater(service.checkForUpdate(), throwsStateError);
     });
 
     test('bozuk JSON sessizce null döner', () async {
@@ -174,6 +174,18 @@ void main() {
         storage: _MemoryPreferenceStorage(),
       );
       expect(await service.checkForUpdate(), isNull);
+    });
+    test('manual checks rediscover a skipped release', () async {
+      final storage = _MemoryPreferenceStorage()
+        ..values['zanzibarr.update.skipped_version'] = '9.9.9';
+      final service = UpdateService(
+        client: _clientWith(_releaseJson(tag: 'v9.9.9')),
+        storage: storage,
+      );
+      expect(
+        (await service.checkForUpdate(ignoreSkipped: true))?.version,
+        '9.9.9',
+      );
     });
   });
 }

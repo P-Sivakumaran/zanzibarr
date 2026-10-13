@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 Read the root [AGENTS.md](AGENTS.md) before working on this repository. It is the
-canonical guide for Prashanth's fork, including English communication and commit
+canonical guide for Treewizard's fork, including English communication and commit
 messages, engineering rules, verification, packaging, CI and release practices.
 
 Follow its handoff protocol. Use proportionate verification: documentation-only

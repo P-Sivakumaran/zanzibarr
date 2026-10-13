@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zanzibarr/settings/provider_settings.dart';
@@ -17,6 +19,31 @@ class _FakeStore extends ProviderSettingsStore {
 }
 
 void main() {
+  testWidgets(
+    'manual update button disables duplicate checks until completion',
+    (tester) async {
+      final done = Completer<void>();
+      var calls = 0;
+      await tester.pumpWithL10n(
+        SettingsScreen(
+          store: _FakeStore(),
+          onCheckForUpdates: () {
+            calls++;
+            return done.future;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Check for updates'));
+      await tester.pump();
+      expect(find.text('Checking for updates…'), findsOneWidget);
+      await tester.tap(find.text('Checking for updates…'));
+      expect(calls, 1);
+      done.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Check for updates'), findsOneWidget);
+    },
+  );
   testWidgets('Ayarlar formu doldurulup depoya kaydediliyor', (tester) async {
     final store = _FakeStore();
     await tester.pumpWithL10n(SettingsScreen(store: store));

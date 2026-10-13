@@ -42,6 +42,26 @@ checks repeated installation, hidden process responsiveness, and uninstall.
 It refuses to overwrite an existing installer registration. It does not assess
 rendered UI or playback, and it stops only the process it created.
 
+## In-app Windows updates
+
+Settings includes **Check for updates**. Startup checks respect skipped versions;
+manual checks can show them again. Windows **Update now** downloads
+`zanzibarr-windows-x64-setup.exe`, verifies it against the same release's
+`SHA256SUMS`, then opens the interactive installer. Setup asks to close running
+applications before replacing files; its final page offers to launch the app.
+Settings and history remain in their existing storage. Portable users are told
+that this flow installs a per-user copy.
+
+Both assets must be attached to a published stable release on this fork.
+Downloads accept only this fork's GitHub release asset URLs, have size/time
+limits, and never launch after a checksum failure. SHA-256 verifies consistency
+with the release manifest; it does not replace publisher signing. The current
+installer is unsigned. No new stable release has been published for this work.
+
+Before promotion, verify an actual old-to-new installation on a clean user/VM,
+including settings/history retention, locked-file closure and post-install
+launch. Existing builds without this button require one manual upgrade first.
+
 ## Other platforms
 
 Linux CI pins Ubuntu 24.04 and produces a portable archive and Debian package.

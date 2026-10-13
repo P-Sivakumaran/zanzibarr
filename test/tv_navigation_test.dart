@@ -48,7 +48,7 @@ class _FakeIndexerStore extends IndexerSettingsStore {
 
 class _NullUpdateService extends UpdateService {
   @override
-  Future<ReleaseInfo?> checkForUpdate() async => null;
+  Future<ReleaseInfo?> checkForUpdate({bool ignoreSkipped = false}) async => null;
 }
 
 class _MemoryPreferenceStorage implements PlayerPreferenceStorage {

@@ -34,6 +34,7 @@ class SettingsScreen extends StatefulWidget {
     this.providerCheckFn,
     this.initialSection,
     this.finishOnSave = false,
+    this.onCheckForUpdates,
   });
 
   /// Testlerde sahte depo enjekte edebilmek için; null ise gerçek depo kullanılır.
@@ -51,6 +52,7 @@ class SettingsScreen extends StatefulWidget {
   final ProviderCheckFn? providerCheckFn;
   final SettingsSection? initialSection;
   final bool finishOnSave;
+  final Future<void> Function()? onCheckForUpdates;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -97,6 +99,18 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _allowPop = false;
   bool _confirmingLeave = false;
   bool _testingProvider = false;
+  bool _checkingUpdates = false;
+
+  Future<void> _checkForUpdates() async {
+    if (_checkingUpdates) return;
+    setState(() => _checkingUpdates = true);
+    try {
+      await widget.onCheckForUpdates?.call();
+    } finally {
+      if (mounted) setState(() => _checkingUpdates = false);
+    }
+  }
+
   List<IndexerProfile> _profiles = [];
   bool _profilesLoading = true;
   bool _profilesLoadFailed = false;
@@ -635,6 +649,21 @@ class _SettingsScreenState extends State<SettingsScreen>
                         child: ListView(
                           padding: const EdgeInsets.fromLTRB(24, 18, 24, 32),
                           children: [
+                            if (widget.initialSection == null &&
+                                widget.onCheckForUpdates != null) ...[
+                              OutlinedButton.icon(
+                                onPressed: _checkingUpdates
+                                    ? null
+                                    : _checkForUpdates,
+                                icon: const Icon(Icons.system_update_alt),
+                                label: Text(
+                                  _checkingUpdates
+                                      ? 'Checking for updates…'
+                                      : 'Check for updates',
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                            ],
                             if (widget.initialSection == null)
                               if (widget.uiPreferences case final prefs?) ...[
                                 Text(
