@@ -1,0 +1,139 @@
+# Zanzibarr integrations
+
+Available in the 1.15 candidate under **Settings → MCP & AI**. This labelled
+app-bar action appears in full, indexer and provider settings. **Sign in with
+ChatGPT** is at the top of Integrations; MCP controls follow below. Everything
+is optional and local MCP access is off by default.
+New integration copy is English in all locales; the screen discloses this.
+
+## Assistants controlling Zanzibarr
+
+Enable local MCP access while the app is open. It listens only on
+http://127.0.0.1:18472/mcp and requires its generated bearer token. Copy the
+endpoint and secret token separately from Integrations. Rotating the token
+revokes the old token. Closing Zanzibarr stops the endpoint.
+
+| Tool | Permission / behavior |
+|---|---|
+| library_list | Read media titles, IDs and progress; no local paths or source URLs |
+| playback_status | Read current playing/position/duration state |
+| search_releases | Separate opt-in; enabled indexers only, 25 requested results per source; no download |
+| playback_pause / playback_resume / playback_seek | Separate opt-in; ready local player only |
+
+No tool installs software, reads credentials, opens arbitrary files, downloads
+NZBs or starts new media. Cast playback control is rejected. Tool permissions
+are rechecked on every invocation. Casting/media listeners remain independent.
+
+For an HTTP MCP client, source the bearer token from an environment variable.
+Codex configuration:
+
+    [mcp_servers.zanzibarr]
+    url = "http://127.0.0.1:18472/mcp"
+    bearer_token_env_var = "ZANZIBARR_MCP_TOKEN"
+
+Claude Code project MCP configuration:
+
+    {
+      "mcpServers": {
+        "zanzibarr": {
+          "type": "http",
+          "url": "http://127.0.0.1:18472/mcp",
+          "headers": {"Authorization": "Bearer ${ZANZIBARR_MCP_TOKEN}"}
+        }
+      }
+    }
+
+Supply the variable through a secret store or masked prompt when launching the
+client. Do not put the real token in commands, logs or ordinary configuration
+files. These examples contain placeholders, not credentials. Your assistant
+retains its own AI account sign-in; MCP does not transfer that account.
+
+Clients requiring stdio can run **tools/zanzibarr_mcp_bridge.py** with Python
+3.10+. The Windows package includes it under integrations/. Give the bridge
+ZANZIBARR_MCP_TOKEN through the environment; optional ZANZIBARR_MCP_PORT
+changes the local port. It writes only MCP responses to stdout and never puts
+the access token in process arguments. Python is not bundled or installed by
+Zanzibarr. Direct HTTP clients do not need the bridge.
+
+## External MCP connections
+
+Add a named HTTPS endpoint (loopback HTTP is allowed) and optional bearer token.
+Settings and tokens are stored in OS secure storage. URL credentials, query
+strings and redirects are rejected. Open a connection to discover tools,
+inspect its schema, supply JSON arguments and explicitly run a selected tool.
+This can send data or change the remote service: choose trusted servers.
+Output is untrusted provider content and is never executed. Connections do not
+poll in the background. Requests have deadlines and body/catalog limits.
+
+The initial client supports Streamable HTTP JSON and SSE responses with protocol
+versions 2025-11-25, 2025-06-18 and 2025-03-26. Interactive elicitation, resumable
+SSE, remote OAuth and stdio child-server hosting are not implemented. Servers
+requiring those capabilities need a compatible adapter or client.
+
+## Provider plugins
+
+Plugins are external MCP services rather than native libraries loaded into the
+player. Mark a connection **Use as a metadata provider plugin**. Title lookup
+then offers OMDb and your configured providers. Choosing a plugin sends queries
+and IMDb IDs to that plugin and does not require an OMDb key.
+
+Initial metadata contract:
+
+- metadata_search arguments: query (string), kind (movie or series), page (int).
+  Return Search (array of at most 100 entries) and hasMore (bool).
+- metadata_details argument: imdbId. Return a title object or {"found":false}.
+- Return objects in MCP structuredContent or JSON in a text content block.
+- Title fields: imdbID, Title, Year, Type (movie or series), optional Plot, Genre,
+  Runtime and Ratings. Ratings entries use Source and Value; supported sources
+  follow the existing metadata UI. The UI labels the plugin as the supplier.
+- Details must preserve the requested IMDb identity. Invalid responses fail
+  visibly rather than substituting a different title or provider.
+
+Example fictional provider response:
+
+    {"Search":[{"imdbID":"tt0133093","Title":"The Matrix","Year":"1999","Type":"movie"}],"hasMore":false}
+
+Other tools can be called in the tool browser. Subtitle-provider hooks,
+downloadable plugin bundles and a marketplace are not included.
+
+## Claude and Gemini film chat
+
+Choose **Claude and Gemini AI connections** at the top of Integrations. This
+opens secure API-key setup for both providers and Google desktop OAuth setup
+for Gemini. [Setup instructions](AI_CONNECTIONS.md). Chat is under Discover
+films and reuses the existing playlists. These API options use provider API
+quota; they do not import subscription credentials.
+
+## Subscription accounts
+
+**Codex:** enter the path to an up-to-date official Codex executable and choose
+Sign in with ChatGPT through Codex. App-server owns OAuth, refresh, cancellation,
+sign-out and keyring storage. A separate Codex home lives under Zanzibarr's
+application-support directory. Zanzibarr requests keyring credential storage and
+never reads or exports auth.json or account tokens. Leaving Integrations stops
+the account-management child process. **Home → Discover films** uses this same
+Zanzibarr profile for in-app film chat and playlists. External Codex clients
+keep their own account configuration. See [film chat setup](FILM_CHAT.md).
+
+**Claude:** use Claude Code/Desktop's own subscription sign-in and connect over
+MCP. Anthropic does not permit third-party products to offer Claude.ai
+subscription login or intermediate those credentials. An in-app Claude inference
+integration requires an API key or supported cloud provider. This candidate
+adds in-app Claude API inference with a user-provided API key;
+it does not import Claude subscription tokens.
+
+Official references checked 2026-10-16:
+
+- [MCP transports](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
+- [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp)
+- [Codex app-server accounts](https://learn.chatgpt.com/docs/app-server)
+- [Claude Code MCP configuration](https://code.claude.com/docs/en/mcp)
+- [Anthropic credential guidance](https://code.claude.com/docs/en/legal-and-compliance#authentication-and-credential-use)
+
+Local tests cover protocol boundaries, permission revocation, failed storage,
+metadata identity and managed-auth events. A signed-out handshake passed with
+Codex CLI 0.162.1. The Windows diagnostic app reached browser sign-in. The connected Codex profile
+and one real film recommendation were subsequently verified. Claude/Gemini live
+account access and inference remain unverified.
+Live provider compatibility and physical playback/remote behavior remain to be
+checked. See dated integration verification notes for the gate and build.

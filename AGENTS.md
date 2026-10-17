@@ -73,6 +73,7 @@ do not describe every path as download-free or entirely in memory.
 | Providers, indexer profiles, preferences | `lib/settings/` |
 | Multi-indexer / structured search | `lib/search/`, `rust/src/api/search.rs`, `rust/src/engine/newznab.rs` |
 | Optional OMDb lookup / ratings | `lib/metadata/` |
+| MCP, provider plugins, Codex account connection | `lib/integrations/`, `docs/INTEGRATIONS.md` |
 | Casting | `lib/cast/`, `rust/src/engine/server.rs` |
 | Updates / localization | `lib/update/update_service.dart`, `lib/l10n/` |
 | Native API / generated bridge | `rust/src/api/`, `lib/src/rust/`, `rust/src/frb_generated.rs` |
@@ -210,9 +211,49 @@ recorded dyld/LINKEDIT issue. Upstream also recorded an Xcode `lipo` multi-arch
 verification workaround. Reproduce on the actual Mac before applying/removing
 workarounds; details remain in the historical archive.
 
-## 7. Current state and blockers - last verified 2026-10-13
+## 7. Current state and blockers - last verified 2026-10-17
 
-- Latest local Windows candidate is **1.10.0+11**. The latest update-button
+- Latest local Windows candidate is **1.14.0+15**, adding Claude API-key chat
+  and Gemini API-key/registered Google Desktop OAuth chat. AI connections opens
+  from film chat or MCP & AI. Credentials use secure storage; Google supports
+  PKCE, refresh and cancellation. Stale startup results cannot undo provider
+  changes. Fresh full gate: 266 Rust and 312 Flutter passed, 8 screenshot skips;
+  Clippy, analysis and native build passed. Windows setup/ZIP built; hashes,
+  ZIP integrity, libraries and bundled guides verified. Unsigned, not installed
+  or published. Installed version is 1.13.0+14; its Codex connection failure
+  remains unresolved although a real Dart login-start/cancel probe passed.
+  Live Claude/Gemini inference and Google consent await user credentials/client
+  registration. Native 1.14 UI, clean-user installation and playback remain
+  unverified. See [setup](docs/AI_CONNECTIONS.md) and
+  [verification](docs/AI_CONNECTIONS_VERIFICATION_2026-10-17.md).
+
+- Previous local Windows candidate was **1.13.0+14**, with a labelled **MCP & AI**
+  entry in all Settings routes and a sign-in shortcut at the top of Integrations.
+  D-pad Up to Back and Right to MCP & AI are covered by regression tests.
+  Fresh full gate: 266 Rust and 300 Flutter tests passed, 8 screenshot skips;
+  Clippy, analysis and native build passed. Windows setup/ZIP built and hashes,
+  ZIP integrity and components verified. Unsigned, not installed or published.
+  Installed 1.12.0+13 was inspected: the Search gear hid Integrations; full
+  Settings exposed it. The app was left on its existing Codex login controls.
+  Live OAuth/inference and native 1.13 login remain unverified. See
+  [connection verification](docs/CONNECTIONS_VERIFICATION_2026-10-17.md).
+
+- The **1.12.0+13** candidate introduced in-app Codex film chat, recommendations,
+  saved ordered playlists and release-search handoff. Its gate passed 266 Rust
+  and 297 Flutter tests (8 screenshot skips). Signed-out Codex 0.162.1 accepted
+  the ephemeral thread configuration without inference. See [film chat setup](docs/FILM_CHAT.md) and [verification](docs/FILM_CHAT_VERIFICATION_2026-10-17.md).
+
+- Previous local Windows candidate was **1.11.0+12**, with opt-in MCP control,
+  external MCP tools, metadata-provider plugins and Codex managed account sign-in.
+  Rust: 266 tests; Flutter: 287 tests and 8 screenshot skips; Clippy, analysis,
+  host build, Windows release build and packaging passed. Three stdio bridge
+  tests and a signed-out Codex 0.162.1 handshake passed. Hashes/ZIP verified.
+  Installer is unsigned and not published or installed; the installed copy is
+  1.10.0+11. Live OAuth/providers, inference and physical playback remain unverified.
+  No embedded chat UI or Claude subscription token import. See
+  [integration verification](docs/INTEGRATIONS_VERIFICATION_2026-10-16.md).
+
+- Previous local Windows candidate was **1.10.0+11**. The latest update-button
   work adds manual checks and verified Windows installer downloads. Public
   maintainer branding uses **Treewizard**; account URLs and mem0 IDs stay unchanged.
   Rebuilt setup/ZIP and verified hashes and portable components. Full serial
@@ -271,6 +312,8 @@ upstream release history. Preserve unresolved engineering lessons.
 
 ## 9. References and history
 
+- [v1.11 integrations candidate](docs/releases/v1.11.md)
+
 - [v1.9 release notes](docs/releases/v1.9.md)
 - [Release runbook](docs/RELEASING.md)
 - [Android signing](docs/ANDROID_SIGNING.md)
@@ -286,3 +329,23 @@ packaging, CI and release practices; explicit evidence and access blockers.
 Preserved technical invariants and archived the old guide intact. Updated
 `CLAUDE.md` to reference this canonical file. Documentation checks only;
 application test evidence above comes from the preceding release preparation.
+
+**2026-10-16 - Search performance and icon repair:** Indexed Flutter result
+deduplication while preserving first-source and size matching behavior; replaced
+the black-surround launcher image with generated transparent platform icons and
+a transparent Home asset. Icon generation now uses repository-relative paths.
+Full gate passed: 266 Rust and 270 Flutter tests, with 8 screenshot skips.
+Benchmark, image prompt, build evidence and platform limits:
+[refinement notes](docs/REFINEMENT_2026-10-16.md).
+
+**2026-10-16 - Windows installer:** Created setup/portable packages with the
+existing background launch-time updater and corrected icon; verified hashes and
+ZIP components. Added five startup-flow regressions; 21 focused update tests and
+analysis passed. Installer is unsigned; lifecycle smoke refused an existing
+installation. See [installer evidence](docs/WINDOWS_INSTALLER_2026-10-16.md).
+
+**2026-10-16 - Integrations candidate:** Implemented and packaged opt-in MCP
+control/client tools, metadata-provider plugins and official Codex managed
+account sign-in. Setup and authentication boundaries are documented in
+[INTEGRATIONS.md](docs/INTEGRATIONS.md); verification and platform limits are in
+the dated integration handoff above. No live OAuth or inference was initiated.
