@@ -52,6 +52,12 @@ applications before replacing files; its final page offers to launch the app.
 Settings and history remain in their existing storage. Portable users are told
 that this flow installs a per-user copy.
 
+The installed Start menu and optional desktop shortcuts launch the app directly.
+On each normal launch, Home checks for a newer release in the background, so
+offline checks do not block opening the app. A newer release prompts for
+**Update now**, **Later**, or **Skip this version**; installation is never
+started without selecting **Update now**. No separate launcher is required.
+
 Both assets must be attached to a published stable release on this fork.
 Downloads accept only this fork's GitHub release asset URLs, have size/time
 limits, and never launch after a checksum failure. SHA-256 verifies consistency

@@ -41,5 +41,5 @@ with tempfile.TemporaryDirectory(prefix="zanzibarr-deb-") as temporary:
     )
     icon = package / "usr/share/icons/hicolor/256x256/apps"
     icon.mkdir(parents=True)
-    shutil.copy2(root / "assets/zanzibarr-logo.png", icon / "zanzibarr.png")
+    shutil.copy2(root / "assets/zanzibarr-icon-256.png", icon / "zanzibarr.png")
     subprocess.run(["dpkg-deb", "--root-owner-group", "--build", str(package), str(output / "zanzibarr-linux-x64.deb")], check=True)

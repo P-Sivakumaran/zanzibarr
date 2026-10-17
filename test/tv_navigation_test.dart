@@ -189,6 +189,13 @@ void main() {
 
         await _dpadUp(tester);
         expect(_focusLabel(tester), startsWith('simge:'));
+        expect(
+          _focusedWithin(find.byIcon(Icons.arrow_back_ios_new_rounded)),
+          isTrue,
+        );
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(_focusedWithin(find.text('MCP & AI')), isTrue);
       },
     );
 

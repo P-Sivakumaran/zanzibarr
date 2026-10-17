@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
+import '../integrations/integrations_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../src/rust/api/search.dart';
 import '../src/rust/api/streaming.dart';
@@ -73,6 +75,18 @@ class _SettingsScreenState extends State<SettingsScreen>
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _maxConnectionsController = TextEditingController();
+  final _backFocusNode = FocusNode();
+  late final _languageFocusNode = FocusNode(
+    onKeyEvent: (node, event) {
+      if ((event is KeyDownEvent || event is KeyRepeatEvent) &&
+          event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        // Keep the first control's exit stable as app-bar actions change width.
+        _backFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    },
+  );
 
   // TV kumandasında yukarı/aşağı oklar alandan çıkabilsin diye D-pad
   // gezintili odak düğümleri (issue #4). Parola/API anahtarı alanlarının
@@ -594,6 +608,8 @@ class _SettingsScreenState extends State<SettingsScreen>
       ..clear()
       ..dispose();
     _maxConnectionsController.dispose();
+    _backFocusNode.dispose();
+    _languageFocusNode.dispose();
     _hostFocusNode.dispose();
     _portFocusNode.dispose();
     _maxConnectionsFocusNode.dispose();
@@ -618,10 +634,23 @@ class _SettingsScreenState extends State<SettingsScreen>
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           leading: IconButton(
+            focusNode: _backFocusNode,
             icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 17),
             tooltip: l10n.backTooltip,
             onPressed: _leave,
           ),
+          actions: [
+            TextButton.icon(
+              key: const Key('settings-integrations'),
+              icon: const Icon(Icons.extension_outlined),
+              label: const Text('MCP & AI'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const IntegrationsScreen(),
+                ),
+              ),
+            ),
+          ],
           title: Text(
             widget.initialSection == SettingsSection.provider
                 ? l10n.providerSetupTitle
@@ -690,6 +719,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 _SettingsCard(
                                   children: [
                                     DropdownButtonFormField<Locale>(
+                                      focusNode: _languageFocusNode,
                                       isExpanded: true,
                                       initialValue: prefs.locale,
                                       // TV kumandasında D-pad gezintisi bu ilk

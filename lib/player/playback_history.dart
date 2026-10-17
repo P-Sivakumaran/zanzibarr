@@ -198,49 +198,61 @@ class PlaybackHistoryStore {
     }
   }
 
+  /// Look up the exact file, or the same release after a fresh download.
+  /// Source and URL must both match; titles alone cannot identify a release.
   Future<PlaybackHistoryEntry?> entryFor(
     String nzbPath, {
     String? entryKey,
     String? mediaTitle,
+    String? sourceId,
+    String? nzbUrl,
   }) => _serialized(() async {
     final entries = List.of(await _load());
     for (final entry in entries) {
       if (entry.nzbPath == nzbPath && entry.entryKey == entryKey) return entry;
     }
-    // A legacy pack record belongs only to the video that was actually watched.
-    // Migrate by the resolved filename, never by the pack path alone.
-    if (entryKey != null && mediaTitle != null && mediaTitle.isNotEmpty) {
-      final index = entries.indexWhere(
-        (entry) =>
-            entry.nzbPath == nzbPath &&
+    bool sameRelease(PlaybackHistoryEntry entry) =>
+        entry.nzbPath == nzbPath ||
+        (sourceId != null &&
+            sourceId.isNotEmpty &&
+            nzbUrl != null &&
+            nzbUrl.isNotEmpty &&
+            entry.sourceId == sourceId &&
+            entry.nzbUrl == nzbUrl);
+    bool sameVideo(PlaybackHistoryEntry entry) =>
+        entry.entryKey == entryKey ||
+        (entryKey != null &&
             entry.entryKey == null &&
-            entry.title == mediaTitle,
-      );
-      if (index >= 0) {
-        final legacy = entries[index];
-        final migrated = PlaybackHistoryEntry(
-          nzbPath: legacy.nzbPath,
-          entryKey: entryKey,
-          title: legacy.title,
-          positionSeconds: legacy.positionSeconds,
-          durationSeconds: legacy.durationSeconds,
-          updatedAtMs: legacy.updatedAtMs,
-          imdbId: legacy.imdbId,
-          season: legacy.season,
-          episode: legacy.episode,
-          sourceId: legacy.sourceId,
-          nzbUrl: legacy.nzbUrl,
-          // Favori işareti paket kaydından taşınmazsa, bölüm anahtarı
-          // çözülür çözülmez (ilk eşleşen video açılır açılmaz) sessizce
-          // kaybolurdu (code review bulgusu).
-          favorite: legacy.favorite,
-        );
-        entries[index] = migrated;
-        await _write(entries);
-        return migrated;
-      }
-    }
-    return null;
+            mediaTitle != null &&
+            mediaTitle.isNotEmpty &&
+            entry.title == mediaTitle);
+
+    final matches =
+        entries.where((e) => sameRelease(e) && sameVideo(e)).toList()
+          ..sort((a, b) => b.updatedAtMs.compareTo(a.updatedAtMs));
+    if (matches.isEmpty) return null;
+    final previous = matches.first;
+    final migrated = PlaybackHistoryEntry(
+      nzbPath: nzbPath,
+      entryKey: entryKey,
+      title: previous.title,
+      positionSeconds: previous.positionSeconds,
+      durationSeconds: previous.durationSeconds,
+      updatedAtMs: previous.updatedAtMs,
+      imdbId: previous.imdbId,
+      season: previous.season,
+      episode: previous.episode,
+      sourceId: previous.sourceId,
+      nzbUrl: previous.nzbUrl,
+      favorite: previous.favorite,
+    );
+    // Move the record atomically. Do not consume another history slot or
+    // retain duplicate cards for earlier downloads of this same video.
+    entries.removeWhere((e) => sameRelease(e) && sameVideo(e));
+    entries.add(migrated);
+    entries.sort((a, b) => b.updatedAtMs.compareTo(a.updatedAtMs));
+    await _write(entries);
+    return migrated;
   });
 
   /// Kaydı ekler veya günceller.
@@ -248,7 +260,7 @@ class PlaybackHistoryStore {
   /// Tamamlanmış kayıt da tutulur (silinmez): "Sıradaki" özelliği hangi
   /// bölümün izlendiğini bilmek için bu kayda ihtiyaç duyar. Aynı NZB
   /// yeniden açıldığında tamamlanmış kaydı silip baştan başlatan asıl yer
-  /// [PlayerScreen._resumeFromHistory]'dir — burada silmek o akışı bozar.
+  /// [PlayerScreen._loadHistoryPosition]'dir — burada silmek o akışı bozar.
   ///
   /// Legacy records are replaced only when they describe the same video.
   Future<void> save(PlaybackHistoryEntry entry) => _serialized(() async {

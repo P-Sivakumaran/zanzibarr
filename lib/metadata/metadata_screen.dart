@@ -28,11 +28,15 @@ class MetadataScreen extends StatefulWidget {
     required this.store,
     this.watchlistStore,
     this.initialQuery = '',
+    this.providerName,
+    this.requiresApiKey = true,
   });
   final MetadataService service;
   final MetadataSettingsStore store;
   final WatchlistStore? watchlistStore;
   final String initialQuery;
+  final String? providerName;
+  final bool requiresApiKey;
   @override
   State<MetadataScreen> createState() => _MetadataScreenState();
 }
@@ -41,6 +45,7 @@ class _MetadataScreenState extends State<MetadataScreen> {
   late final _query = TextEditingController(text: widget.initialQuery);
   late final _queryFocus = dpadTraversalFocusNode(_query);
   String _key = '';
+  bool get _lookupReady => !widget.requiresApiKey || _key.isNotEmpty;
   bool _loadingKey = true;
   bool _keyError = false;
   bool _busy = false;
@@ -68,6 +73,10 @@ class _MetadataScreenState extends State<MetadataScreen> {
   }
 
   Future<void> _loadKey() async {
+    if (!widget.requiresApiKey) {
+      setState(() => _loadingKey = false);
+      return;
+    }
     setState(() => _loadingKey = true);
     try {
       final key = await widget.store.load();
@@ -111,7 +120,7 @@ class _MetadataScreenState extends State<MetadataScreen> {
   }
 
   Future<void> _search({bool more = false}) async {
-    if (_busy || _loadingKey || _keyError || _key.isEmpty) return;
+    if (_busy || _loadingKey || _keyError || !_lookupReady) return;
     final query = more ? _activeQuery : _query.text.trim();
     if (query.isEmpty) return;
     final kind = more ? _activeKind : _kind;
@@ -161,6 +170,7 @@ class _MetadataScreenState extends State<MetadataScreen> {
         title: title,
         service: widget.service,
         apiKey: _key,
+        providerName: widget.providerName,
         watchlistStore: widget.watchlistStore ?? WatchlistStore(),
       ),
     );
@@ -188,11 +198,12 @@ class _MetadataScreenState extends State<MetadataScreen> {
       appBar: AppBar(
         title: Text(l.metadataBrowseTitle),
         actions: [
-          IconButton(
-            tooltip: l.metadataConfigure,
-            onPressed: _loadingKey || _keyError ? null : _configure,
-            icon: const Icon(Icons.key_rounded),
-          ),
+          if (widget.requiresApiKey)
+            IconButton(
+              tooltip: l.metadataConfigure,
+              onPressed: _loadingKey || _keyError ? null : _configure,
+              icon: const Icon(Icons.key_rounded),
+            ),
         ],
       ),
       body: CustomScrollView(
@@ -204,7 +215,11 @@ class _MetadataScreenState extends State<MetadataScreen> {
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     children: [
-                      Text(l.metadataPrivacyHint),
+                      Text(
+                        widget.providerName == null
+                            ? l.metadataPrivacyHint
+                            : 'Queries and title IDs are sent to ${widget.providerName!}. Ratings are provided by this plugin.',
+                      ),
                       const SizedBox(height: 12),
                       TextField(
                         controller: _query,
@@ -216,7 +231,7 @@ class _MetadataScreenState extends State<MetadataScreen> {
                           labelText: l.metadataQueryHint,
                           suffixIcon: IconButton(
                             tooltip: l.searchTooltip,
-                            onPressed: _busy || _key.isEmpty ? null : _search,
+                            onPressed: _busy || !_lookupReady ? null : _search,
                             icon: const Icon(Icons.search_rounded),
                           ),
                         ),
@@ -258,7 +273,7 @@ class _MetadataScreenState extends State<MetadataScreen> {
                       ],
                     ),
                   ),
-                if (!_loadingKey && !_keyError && _key.isEmpty)
+                if (!_loadingKey && !_keyError && !_lookupReady)
                   Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
@@ -593,11 +608,13 @@ class _TitleDetails extends StatefulWidget {
     required this.title,
     required this.service,
     required this.apiKey,
+    this.providerName,
     required this.watchlistStore,
   });
   final MediaTitle title;
   final MetadataService service;
   final String apiKey;
+  final String? providerName;
   final WatchlistStore watchlistStore;
   @override
   State<_TitleDetails> createState() => _TitleDetailsState();
@@ -724,7 +741,11 @@ class _TitleDetailsState extends State<_TitleDetails> {
                       media.ratings.isEmpty)
                     Text(l.metadataNoRatings),
                   const SizedBox(height: 12),
-                  Text(l.metadataAttribution),
+                  Text(
+                    widget.providerName == null
+                        ? l.metadataAttribution
+                        : 'Metadata and ratings supplied by ${widget.providerName!}',
+                  ),
                   TextButton(
                     onPressed: () => _openLink(
                       context,

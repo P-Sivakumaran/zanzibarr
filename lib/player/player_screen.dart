@@ -10,6 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import '../integrations/integration_runtime.dart';
+import '../integrations/integration_settings.dart';
 import '../cast/cast_device_picker.dart';
 import '../cast/cast_service.dart';
 import '../l10n/app_localizations.dart';
@@ -113,6 +115,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   static const _compressedOpenTimeout = Duration(minutes: 10);
 
   late final Player _player;
+  late final IntegrationPlayback _integrationPlayback;
   late final VideoController _videoController;
   late final AdvancedPlaybackController _playback;
   late final PictureInPictureWindow _pictureInPictureWindow;
@@ -252,10 +255,11 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _subtitleUpdateRunning = false;
   Future<void>? _subtitleDrainFuture;
 
-  // İzleme geçmişi: konum 5 sn'de bir ve kapanışta depoya yazılır; oynatma
-  // hazır olduğunda (bir kez) kayıtlı konuma dönülür.
+  // Restore before opening media; checkpoint every five seconds and on pause,
+  // backgrounding, errors and disposal.
   Timer? _historySaveTimer;
-  bool _historyResumeDone = false;
+  bool _historyLoaded = false;
+  bool _historySaveErrorShown = false;
 
   // Çok parçalı NZB'de oynatılan adayın seçici anahtarı: kullanıcı diyalogda
   // seçti ya da geçmişten `initialEntryKey` ile geldi. Tek adaylı NZB'lerde
@@ -307,6 +311,28 @@ class _PlayerScreenState extends State<PlayerScreen>
         libassAndroidFontName: 'Noto Sans',
       ),
     );
+    _integrationPlayback = IntegrationPlayback(
+      status: () => {
+        'active': _playbackReady && !_disposing,
+        'playing': _playing,
+        'casting': _casting,
+        'positionSeconds': _position.inMilliseconds / 1000,
+        'durationSeconds': _duration.inMilliseconds / 1000,
+      },
+      pause: () async {
+        _checkIntegrationPlayback();
+        await _player.pause();
+      },
+      resume: () async {
+        _checkIntegrationPlayback();
+        await _player.play();
+      },
+      seek: (position) async {
+        _checkIntegrationPlayback();
+        await _player.seek(position);
+      },
+    );
+    IntegrationRuntime.instance.attachPlayback(_integrationPlayback);
     _videoController = VideoController(
       _player,
       // Android'de (TV box'lar) auto-safe'in güvenli listesi bazı cihazlarda
@@ -338,6 +364,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _playingSubscription = _player.stream.playing.listen((playing) {
       if (!mounted) return;
       setState(() => _playing = playing);
+      if (!playing) unawaited(_saveHistoryPosition());
       _revealControls();
     });
     // open() yalnız libmpv komutunun kabulünü bekler. Demux/decode ve HTTP
@@ -500,7 +527,9 @@ class _PlayerScreenState extends State<PlayerScreen>
         _onStartupTimeout,
         after: info.compressed ? _compressedOpenTimeout : null,
       );
-      await _player.open(Media(info.url));
+      final resumePosition = await _loadHistoryPosition();
+      if (!mounted || _disposing || _startupFailed) return;
+      await _player.open(Media(info.url, start: resumePosition));
 
       if (!mounted || _startupFailed) return;
       // Stream olayı open() future'undan hemen önce gelmişse state'i de
@@ -693,15 +722,17 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
     debugPrint('PROBE: aid = ${await prop('aid')}');
     debugPrint('PROBE: current-ao = ${await prop('current-ao')}');
-    debugPrint('PROBE: audio-params/samplerate = ${await prop('audio-params/samplerate')}');
-    debugPrint('PROBE: audio-params/channels = ${await prop('audio-params/channels')}');
+    debugPrint(
+      'PROBE: audio-params/samplerate = ${await prop('audio-params/samplerate')}',
+    );
+    debugPrint(
+      'PROBE: audio-params/channels = ${await prop('audio-params/channels')}',
+    );
     debugPrint('PROBE: volume = ${await prop('volume')}');
   }
 
-  /// Oynatma hazır olduğunda kayıtlı konuma (varsa) döner ve ilerlemeyi
-  /// düzenli aralıklarla depoya yazar.
+  /// Checkpoint only after playback is ready and history has been read.
   void _startHistoryTracking() {
-    unawaited(_resumeFromHistory());
     _historySaveTimer?.cancel();
     _historySaveTimer = Timer.periodic(
       const Duration(seconds: 5),
@@ -709,16 +740,19 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Future<void> _resumeFromHistory() async {
-    if (_historyResumeDone) return;
-    _historyResumeDone = true;
+  Future<Duration?> _loadHistoryPosition() async {
+    _historyLoaded = false;
     try {
       final entry = await _historyStore.entryFor(
         widget.nzbPath,
         entryKey: _resolvedEntryKey,
         mediaTitle: _info?.filename,
+        sourceId: widget.sourceId,
+        nzbUrl: widget.nzbUrl,
       );
-      if (entry == null || _disposing) return;
+      if (_disposing) return null;
+      _historyLoaded = true;
+      if (entry == null) return null;
       _persistedImdbId = entry.imdbId;
       _persistedSeason = entry.season;
       _persistedEpisode = entry.episode;
@@ -736,18 +770,26 @@ class _PlayerScreenState extends State<PlayerScreen>
             entryKey: _resolvedEntryKey,
           );
         }
-        return;
+        return null;
       }
       final target = entry.position;
-      if (target < const Duration(seconds: 3)) return;
-      await _player.seek(target);
+      return target >= const Duration(seconds: 3) ? target : null;
     } catch (_) {
-      // Geçmiş okunamazsa oynatma baştan başlar.
+      // Preserve the previous checkpoint if storage could not be read.
+      _historyLoaded = false;
+      if (mounted && !_disposing) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).historyLoadFailed),
+          ),
+        );
+      }
+      return null;
     }
   }
 
   Future<void> _saveHistoryPosition() async {
-    if (_disposing || !_playbackReady) return;
+    if (_disposing || !_playbackReady || !_historyLoaded) return;
     final duration = _duration;
     final position = _position;
     if (position <= const Duration(seconds: 3)) return;
@@ -771,7 +813,14 @@ class _PlayerScreenState extends State<PlayerScreen>
         ),
       );
     } catch (_) {
-      // Depo yazılamazsa oynatma kesilmez.
+      if (mounted && !_disposing && !_historySaveErrorShown) {
+        _historySaveErrorShown = true;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).historyUpdateFailed),
+          ),
+        );
+      }
     }
   }
 
@@ -792,6 +841,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   Player get playerForTest => _player;
 
   void _onPlayerError(String message) {
+    unawaited(_saveHistoryPosition());
     if (!_startupActive && !_playbackReady) return;
     final description = describePlayerError(
       message,
@@ -944,9 +994,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       await _player.pause();
       if (!mounted) return;
       setState(() {});
-      _showCastMessage(
-        AppLocalizations.of(context).castPlayingOn(device.name),
-      );
+      _showCastMessage(AppLocalizations.of(context).castPlayingOn(device.name));
     } catch (error) {
       if (!mounted) return;
       _showCastMessage(
@@ -1155,9 +1203,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     await _tryNativePreference(
       () => _playback.setSubtitleColor(_subtitleColor),
     );
-    await _tryNativePreference(
-      () => _playback.setSubtitleFont(_subtitleFont),
-    );
+    await _tryNativePreference(() => _playback.setSubtitleFont(_subtitleFont));
     await _tryNativePreference(
       () => _playback.setAudioDelay(
         _clampDuration(
@@ -1240,8 +1286,17 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
   }
 
+  void _checkIntegrationPlayback() {
+    if (_disposing || !_playbackReady || _casting) {
+      throw const IntegrationException(
+        'Playback control requires ready local playback.',
+      );
+    }
+  }
+
   @override
   void dispose() {
+    IntegrationRuntime.instance.detachPlayback(_integrationPlayback);
     WidgetsBinding.instance.removeObserver(this);
     // Son izleme konumu kapanışta kaydedilir; _disposing bayrağından önce
     // çalışmalı ki yazma atlanmasın.
@@ -1304,6 +1359,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) {
+      unawaited(_saveHistoryPosition());
       unawaited(_endFastScan());
       _touchPoints.clear();
       _pinchStartDistance = null;
@@ -1520,9 +1576,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       final file = await openFile(acceptedTypeGroups: [typeGroup]);
       final path = file?.path;
       if (file == null || path == null || path.isEmpty) return;
-      await _player.setSubtitleTrack(
-        SubtitleTrack.uri(path, title: file.name),
-      );
+      await _player.setSubtitleTrack(SubtitleTrack.uri(path, title: file.name));
     } catch (error) {
       _showControlError(error);
     }
@@ -2220,7 +2274,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(AppLocalizations.of(context).errorControlFailed('$error')),
+        content: Text(
+          AppLocalizations.of(context).errorControlFailed('$error'),
+        ),
       ),
     );
   }
@@ -2385,7 +2441,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
     _repairSessionId = sessionId;
     _repairPollTimer?.cancel();
-    _repairPollTimer = Timer.periodic(const Duration(milliseconds: 500), (_) async {
+    _repairPollTimer = Timer.periodic(const Duration(milliseconds: 500), (
+      _,
+    ) async {
       final progress = await repairProgress(sessionId: sessionId);
       if (!mounted || !_repairActive) return;
       setState(() => _repairProgress = progress);
@@ -2453,9 +2511,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   void _showPictureInPictureUnavailable() {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(AppLocalizations.of(context).errorPipUnavailable),
-      ),
+      SnackBar(content: Text(AppLocalizations.of(context).errorPipUnavailable)),
     );
   }
 
@@ -3044,11 +3100,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       ),
       // inactive: DV kipi seçili ama platform desteklemiyor (Windows/Linux)
       // ya da filtre henüz kurulmadı; satır göstermeye gerek yok.
-      DvReshapeStatus.inactive => (
-        Icons.info_outline,
-        Colors.white54,
-        '',
-      ),
+      DvReshapeStatus.inactive => (Icons.info_outline, Colors.white54, ''),
     };
     if (status == DvReshapeStatus.inactive) return const SizedBox.shrink();
     final row = Padding(

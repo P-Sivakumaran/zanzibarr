@@ -43,11 +43,13 @@ repeatable packaging. You supply your own Usenet provider account and NZB source
 | **PAR2 recovery** | Trigger repair from a playback error and resume using repaired data when enough recovery blocks are available. |
 | **Playback controls** | Select audio/subtitle tracks, adjust speed and sync, choose picture presets, and crop with Smart Canvas. |
 | **HDR and Dolby Vision paths** | Use supported decode and tone-mapping paths; results depend on your device, platform and media libraries. |
+| **Film discovery chat** | Ask for recommendations, refine them in conversation and save ordered playlists. Choose Codex, Claude API or Gemini API; [setup](docs/FILM_CHAT.md). |
+| **Optional integrations** | Connect assistants over local MCP, call external MCP tools and add metadata-provider plugins. [Setup and account options](docs/INTEGRATIONS.md). |
 | **Desktop and TV interfaces** | Dark/light themes, localized interfaces and Android TV focus navigation. New fork copy can fall back to English. |
 
 Archive compatibility is not universal; a reported RAR4 parsing issue remains
 under investigation. Device playback, casting and accessibility checks for the
-latest candidate are still pending. See the [release notes](docs/releases/v1.10.md).
+latest candidate are still pending. See the [release notes](docs/releases/v1.16.md).
 
 ## Get started
 
@@ -70,7 +72,7 @@ are offered a per-user installation.
 
 ## Platforms and release status
 
-The current local candidate is **1.10.0+11**. A local build does not imply a
+The current local candidate is **1.16.0+17**. A local build does not imply a
 published GitHub release or validation on every platform.
 
 | Platform | Packaging and current requirements |
@@ -82,7 +84,7 @@ published GitHub release or validation on every platform.
 | **macOS arm64** | Requires a Mac, compatible media frameworks and signing/notarization work. No current fork package is claimed. |
 | **Web** | Unsupported: the engine depends on native networking and libraries. |
 
-Read the [v1.10 notes](docs/releases/v1.10.md) and [release runbook](docs/RELEASING.md)
+Read the [v1.16 notes](docs/releases/v1.16.md) and [release runbook](docs/RELEASING.md)
 for verification results. Published assets are the source of truth for downloads;
 upstream releases are separate from this fork.
 

@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../integrations/integration_runtime.dart';
+import '../integrations/metadata_plugin.dart';
 import '../l10n/app_localizations.dart';
 import '../metadata/metadata_screen.dart';
 import '../metadata/metadata_service.dart';
@@ -15,6 +17,7 @@ import '../settings/ui_preferences.dart';
 import '../src/rust/api/search.dart';
 import '../tv_focus.dart';
 import 'release_search_selection.dart';
+import 'search_deduplication.dart';
 import 'structured_search_dialog.dart';
 
 /// FRB `newznabSearchMany` imzası; testlerde sahte enjekte edilebilir.
@@ -320,7 +323,7 @@ class _SearchScreenState extends State<SearchScreen> {
       }
       setState(() {
         _sourceOffsets = result.nextOffsets;
-        _items = _uniqueItems(page.items);
+        _items = uniqueSearchItems(page.items);
         _nextOffset = result.nextOffsets == null ? page.items.length : 1;
         _hasMore =
             result.hasMore ??
@@ -399,17 +402,53 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _openMetadata([String? hint]) async {
-    final selection = await Navigator.of(context).push<ReleaseSearchSelection>(
-      MaterialPageRoute(
-        builder: (_) => MetadataScreen(
-          service: _metadataService,
-          store: _metadataStore,
-          watchlistStore: widget.watchlistStore,
-          initialQuery: hint ?? _queryController.text.trim(),
+    final plugins =
+        IntegrationRuntime.instance.settings?.connections
+            .where((c) => c.metadata)
+            .toList() ??
+        [];
+    var choice = 0;
+    if (plugins.isNotEmpty) {
+      final selected = await showDialog<int>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: const Text('Metadata provider'),
+          children: [
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, 0),
+              child: const Text('OMDb'),
+            ),
+            for (var i = 0; i < plugins.length; i++)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, i + 1),
+                child: Text(plugins[i].name),
+              ),
+          ],
         ),
-      ),
-    );
-    if (selection != null) await _applySelection(selection);
+      );
+      if (selected == null || !mounted) return;
+      choice = selected;
+    }
+    final plugin = choice == 0 ? null : plugins[choice - 1];
+    final pluginService = plugin == null ? null : McpMetadataService(plugin);
+    try {
+      final selection = await Navigator.of(context)
+          .push<ReleaseSearchSelection>(
+            MaterialPageRoute(
+              builder: (_) => MetadataScreen(
+                service: pluginService ?? _metadataService,
+                store: _metadataStore,
+                watchlistStore: widget.watchlistStore,
+                initialQuery: hint ?? _queryController.text.trim(),
+                providerName: plugin?.name,
+                requiresApiKey: plugin == null,
+              ),
+            ),
+          );
+      if (selection != null) await _applySelection(selection);
+    } finally {
+      pluginService?.close();
+    }
   }
 
   Future<void> _openStructured() async {
@@ -419,25 +458,6 @@ class _SearchScreenState extends State<SearchScreen> {
       title: _queryController.text.trim(),
     );
     if (selection != null) await _applySelection(selection);
-  }
-
-  List<SearchItemDto> _uniqueItems(Iterable<SearchItemDto> items) {
-    String titleKey(String title) =>
-        title.toLowerCase().replaceAll(RegExp(r'[\s._\-\[\]()]+'), '');
-    final kept = <SearchItemDto>[];
-    for (final item in items) {
-      final duplicate = kept.any((existing) {
-        if (existing.nzbUrl == item.nzbUrl) return true;
-        if (titleKey(existing.title) != titleKey(item.title)) return false;
-        final a = existing.sizeBytes;
-        final b = item.sizeBytes;
-        if (a == null || b == null) return a == b;
-        final high = a > b ? a : b;
-        return (a - b).abs() <= high ~/ BigInt.from(100);
-      });
-      if (!duplicate) kept.add(item);
-    }
-    return kept;
   }
 
   Future<void> _loadMore() async {
@@ -469,7 +489,7 @@ class _SearchScreenState extends State<SearchScreen> {
       }
       final previousCount = _items?.length ?? 0;
       setState(() {
-        _items = _uniqueItems([...?_items, ...page.items]);
+        _items = uniqueSearchItems([...?_items, ...page.items]);
         _focusAfterLoadIndex = _items!.length > previousCount
             ? previousCount
             : null;
