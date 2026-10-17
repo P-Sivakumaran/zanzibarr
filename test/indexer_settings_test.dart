@@ -79,6 +79,33 @@ Future<void> _reveal(WidgetTester tester, Finder finder) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  for (final section in <SettingsSection?>[
+    null,
+    SettingsSection.provider,
+    SettingsSection.indexer,
+  ]) {
+    testWidgets(
+      'MCP and AI are visible in ${section?.name ?? 'full'} settings',
+      (tester) async {
+        await tester.pumpWidget(
+          l10nTestApp(
+            SettingsScreen(
+              store: _FakeProviderStore(),
+              indexerStore: _FakeIndexerStore(),
+              initialSection: section,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final action = find.byKey(const Key('settings-integrations'));
+        expect(action.hitTestable(), findsOneWidget);
+        expect(find.text('MCP & AI').hitTestable(), findsOneWidget);
+        expect(tester.widget<TextButton>(action).onPressed, isNotNull);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   group('IndexerSettingsStore', () {
     setUp(() {
       _memoryStorage.clear();

@@ -32,6 +32,12 @@ try {
     if ($binaryVersion -ne "$version+$($versionLine.Matches[0].Groups[2].Value)") {
         throw 'Executable version differs from pubspec; rebuild the release first'
     }
+    $integrations = Join-Path $bundle 'integrations'
+    New-Item -ItemType Directory -Path $integrations -Force | Out-Null
+    Copy-Item -LiteralPath 'tools/zanzibarr_mcp_bridge.py' -Destination $integrations -Force
+    $guides = Join-Path $bundle 'docs'
+    New-Item -ItemType Directory -Path $guides -Force | Out-Null
+    Copy-Item -LiteralPath 'docs/AI_CONNECTIONS.md', 'docs/FILM_CHAT.md', 'docs/INTEGRATIONS.md' -Destination $guides -Force
     $licenses = Join-Path $bundle 'licenses'
     New-Item -ItemType Directory -Path $licenses -Force | Out-Null
     Copy-Item -LiteralPath 'assets/fonts/LeagueMono-OFL.txt' -Destination $licenses -Force

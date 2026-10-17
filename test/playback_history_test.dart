@@ -65,6 +65,154 @@ void main() {
     favorite: favorite,
   );
 
+  test(
+    'fresh search download resumes the same release without duplicate cards',
+    () async {
+      final store = PlaybackHistoryStore(storage: _MemoryPreferenceStorage());
+      await store.save(
+        const PlaybackHistoryEntry(
+          nzbPath: '/cache/film-100.nzb',
+          title: 'film.mkv',
+          positionSeconds: 1234,
+          durationSeconds: 6000,
+          updatedAtMs: 100,
+          sourceId: 'indexer-a',
+          nzbUrl: 'https://indexer.test/get?id=film',
+          imdbId: 'tt1234567',
+          favorite: true,
+        ),
+      );
+      final resumed = await store.entryFor(
+        '/cache/film-200.nzb',
+        mediaTitle: 'film.mkv',
+        sourceId: 'indexer-a',
+        nzbUrl: 'https://indexer.test/get?id=film',
+      );
+      expect(resumed?.position, const Duration(seconds: 1234));
+      expect(resumed?.favorite, isTrue);
+      expect(resumed?.imdbId, 'tt1234567');
+      final entries = await store.load();
+      expect(entries, hasLength(1));
+      expect(entries.single.nzbPath, '/cache/film-200.nzb');
+    },
+  );
+
+  test(
+    'source matching separates releases, profiles and pack episodes',
+    () async {
+      final store = PlaybackHistoryStore(storage: _MemoryPreferenceStorage());
+      for (final episode in [1, 2]) {
+        await store.save(
+          PlaybackHistoryEntry(
+            nzbPath: '/cache/pack-100.nzb',
+            entryKey: 'rar:e0$episode',
+            title: 'episode$episode.mkv',
+            positionSeconds: 100.0 * episode,
+            durationSeconds: 6000,
+            updatedAtMs: episode,
+            sourceId: 'indexer-a',
+            nzbUrl: 'https://indexer.test/get?id=pack',
+          ),
+        );
+      }
+      Future<PlaybackHistoryEntry?> lookup({
+        String source = 'indexer-a',
+        String url = 'https://indexer.test/get?id=pack',
+        String? key,
+      }) => store.entryFor(
+        '/cache/pack-200.nzb',
+        entryKey: key,
+        sourceId: source,
+        nzbUrl: url,
+        mediaTitle: 'episode1.mkv',
+      );
+      expect(await lookup(source: 'indexer-b', key: 'rar:e01'), isNull);
+      expect(
+        await lookup(url: 'https://indexer.test/get?id=other', key: 'rar:e01'),
+        isNull,
+      );
+      expect(await lookup(key: 'rar:e03'), isNull);
+      expect(await lookup(), isNull);
+      expect((await lookup(key: 'rar:e01'))?.positionSeconds, 100);
+      expect(
+        (await store.entryFor(
+          '/cache/pack-100.nzb',
+          entryKey: 'rar:e02',
+        ))?.positionSeconds,
+        200,
+      );
+      expect((await lookup(key: 'rar:e02'))?.positionSeconds, 200);
+      expect(await store.load(), hasLength(2));
+    },
+  );
+
+  test(
+    'fresh download migrates matching legacy video and newest progress',
+    () async {
+      final store = PlaybackHistoryStore(storage: _MemoryPreferenceStorage());
+      for (final time in [100, 200]) {
+        await store.save(
+          PlaybackHistoryEntry(
+            nzbPath: '/cache/pack-$time.nzb',
+            title: 'episode01.mkv',
+            positionSeconds: time.toDouble(),
+            durationSeconds: 6000,
+            updatedAtMs: time,
+            sourceId: 'indexer-a',
+            nzbUrl: 'https://indexer.test/get?id=pack',
+          ),
+        );
+      }
+      expect(
+        await store.entryFor(
+          '/cache/pack-300.nzb',
+          entryKey: 'rar:e02',
+          mediaTitle: 'episode02.mkv',
+          sourceId: 'indexer-a',
+          nzbUrl: 'https://indexer.test/get?id=pack',
+        ),
+        isNull,
+      );
+      final resumed = await store.entryFor(
+        '/cache/pack-300.nzb',
+        entryKey: 'rar:e01',
+        mediaTitle: 'episode01.mkv',
+        sourceId: 'indexer-a',
+        nzbUrl: 'https://indexer.test/get?id=pack',
+      );
+      expect(resumed?.positionSeconds, 200);
+      expect(resumed?.entryKey, 'rar:e01');
+      expect(await store.load(), hasLength(1));
+    },
+  );
+
+  test('failed resume migration retains the previous checkpoint', () async {
+    final storage = _DelayedPreferenceStorage();
+    final store = PlaybackHistoryStore(storage: storage);
+    await store.save(
+      const PlaybackHistoryEntry(
+        nzbPath: '/old.nzb',
+        title: 'film.mkv',
+        positionSeconds: 1234,
+        durationSeconds: 6000,
+        updatedAtMs: 1,
+        sourceId: 'indexer-a',
+        nzbUrl: 'https://indexer.test/get?id=film',
+      ),
+    );
+    storage.failNextWrite = true;
+    await expectLater(
+      store.entryFor(
+        '/new.nzb',
+        sourceId: 'indexer-a',
+        nzbUrl: 'https://indexer.test/get?id=film',
+      ),
+      throwsStateError,
+    );
+    expect((await store.load()).single.positionSeconds, 1234);
+    expect((await store.load()).single.nzbPath, '/old.nzb');
+  });
+
   test('kayıt eklenip okunabiliyor (round-trip)', () async {
     final storage = _MemoryPreferenceStorage();
     final store = PlaybackHistoryStore(storage: storage);
@@ -179,18 +327,17 @@ void main() {
         newPath: '/cache/recovered.nzb',
       );
 
-      final entries = await store.load();
-      expect(
-        entries,
-        hasLength(25),
-        reason: 'in-place migration must not trigger capacity eviction',
-      );
-      final migrated = entries.singleWhere(
-        (e) => e.nzbPath == '/cache/recovered.nzb',
-      );
-      expect(migrated.positionSeconds, 111);
-    },
-  );
+    final entries = await store.load();
+    expect(
+      entries,
+      hasLength(25),
+      reason: 'in-place migration must not trigger capacity eviction',
+    );
+    final migrated = entries.singleWhere(
+      (e) => e.nzbPath == '/cache/recovered.nzb',
+    );
+    expect(migrated.positionSeconds, 111);
+  });
 
   test('setFavorite işareti değiştirir, diğer alanlar korunur', () async {
     final store = PlaybackHistoryStore(storage: _MemoryPreferenceStorage());
@@ -293,16 +440,14 @@ void main() {
 
       await store.save(entry('/media/new-unfinished.nzb', updatedAt: 100));
 
-      final entries = await store.load();
-      expect(entries, hasLength(25));
-      expect(
-        entries.any((e) => e.nzbPath == '/media/favorite.nzb'),
-        isTrue,
-        reason:
-            'favorited entry must survive the fallback eviction pass too',
-      );
-    },
-  );
+    final entries = await store.load();
+    expect(entries, hasLength(25));
+    expect(
+      entries.any((e) => e.nzbPath == '/media/favorite.nzb'),
+      isTrue,
+      reason: 'favorited entry must survive the fallback eviction pass too',
+    );
+  });
 
   test('entryFor paket geçişinde favori işaretini korur', () async {
     final store = PlaybackHistoryStore(storage: _MemoryPreferenceStorage());
