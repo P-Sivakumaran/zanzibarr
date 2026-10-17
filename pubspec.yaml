@@ -91,7 +91,7 @@ flutter:
   generate: true
 
   assets:
-    - assets/zanzibarr-logo.png
+    - assets/zanzibarr-icon-256.png
     - assets/fonts/subtitle.ttf
     - assets/fonts/subtitle_serif.ttf
     - assets/fonts/subtitle_mono.ttf
