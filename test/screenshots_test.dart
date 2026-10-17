@@ -170,7 +170,9 @@ Future<void> _settleAssets(WidgetTester tester) async {
     () => Future<void>.delayed(const Duration(milliseconds: 600)),
   );
   await tester.pump();
-  await tester.pump(const Duration(milliseconds: 100));
+  // Let the wordmark intro (_AnimatedWordmark._totalMs = 2300) finish so
+  // golden captures show the settled logo, not a mid-fade-in frame.
+  await tester.pump(const Duration(milliseconds: 2400));
 }
 
 /// Bellek içi sahte depo; ekran dolu bir form ile açılsın diye örnek değerli.
@@ -641,18 +643,29 @@ void main() {
     TestWidgetsFlutterBinding.ensureInitialized();
     // Golden testlerde varsayılan test fontu kutu (tofu) çizer; sistemdeki
     // gerçek Arial TTF'lerini tek aile altında yükle.
+    final (regular, bold) = Platform.isWindows
+        ? (r'C:\Windows\Fonts\arial.ttf', r'C:\Windows\Fonts\arialbd.ttf')
+        : (
+            '/System/Library/Fonts/Supplemental/Arial.ttf',
+            '/System/Library/Fonts/Supplemental/Arial Bold.ttf',
+          );
     final loader = FontLoader(_fontFamily)
       ..addFont(
-        File(
-          '/System/Library/Fonts/Supplemental/Arial.ttf',
-        ).readAsBytes().then((bytes) => bytes.buffer.asByteData()),
+        File(regular).readAsBytes().then((bytes) => bytes.buffer.asByteData()),
       )
       ..addFont(
-        File(
-          '/System/Library/Fonts/Supplemental/Arial Bold.ttf',
-        ).readAsBytes().then((bytes) => bytes.buffer.asByteData()),
+        File(bold).readAsBytes().then((bytes) => bytes.buffer.asByteData()),
       );
     await loader.load();
+    // Wordmark uses the bundled League Mono asset directly (not _fontFamily);
+    // without it golden captures show tofu glyphs for "zanzibarr".
+    final wordmarkLoader = FontLoader('League Mono')
+      ..addFont(
+        File(
+          'assets/fonts/LeagueMono-Thin.ttf',
+        ).readAsBytes().then((bytes) => bytes.buffer.asByteData()),
+      );
+    await wordmarkLoader.load();
     // Icon fontları golden'larda tofu çizmemesi için SDK'daki gerçek
     // MaterialIcons OTF'sini yükle. Dart yorumlayıcısının konumu SDK
     // kurulumuna göre değişebildiğinden üst dizinlere doğru aranır.

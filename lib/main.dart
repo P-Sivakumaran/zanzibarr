@@ -11,6 +11,8 @@ import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'l10n/app_localizations.dart';
+import 'integrations/integration_runtime.dart';
+import 'chat/film_chat_screen.dart';
 import 'player/gyuni_player_controls.dart' show formatPlayerDuration;
 import 'player/playback_history.dart';
 import 'player/player_screen.dart';
@@ -33,6 +35,7 @@ enum _RedownloadError { noSource, indexerGone, downloadFailed }
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  unawaited(IntegrationRuntime.instance.load().catchError((Object _) {}));
   // Geliştirici teşhis kancası: ZANZIBARR_DEBUG_NZB verilirse uygulama
   // doğrudan oynatıcıyla açılır (release imzasıyla Keychain bölümü okunur).
   final debugNzb = Platform.environment['ZANZIBARR_DEBUG_NZB'];
@@ -160,10 +163,18 @@ class ZanzibarrApp extends StatelessWidget {
   }
 
   ThemeData _buildDarkTheme() {
+    // Error role is overridden to amber: the brand seed is itself red, so the
+    // default Material error palette lands in the same hue family as primary
+    // and focus states, making errors indistinguishable from normal brand UI.
     final scheme = ColorScheme.fromSeed(
       seedColor: _accent,
       brightness: Brightness.dark,
       surface: const Color(0xFF141416),
+    ).copyWith(
+      error: const Color(0xFFFFB74D),
+      onError: const Color(0xFF442C00),
+      errorContainer: const Color(0xFF4A3100),
+      onErrorContainer: const Color(0xFFFFDDA6),
     );
     return ThemeData(
       useMaterial3: true,
@@ -198,10 +209,17 @@ class ZanzibarrApp extends StatelessWidget {
   }
 
   ThemeData _buildLightTheme() {
+    // See _buildDarkTheme: error role overridden to amber to stay distinct
+    // from the red brand accent used for primary/focus states.
     final scheme = ColorScheme.fromSeed(
       seedColor: _accent,
       brightness: Brightness.light,
       surface: const Color(0xFFFFFFFF),
+    ).copyWith(
+      error: const Color(0xFFB26A00),
+      onError: Colors.white,
+      errorContainer: const Color(0xFFFFE0B2),
+      onErrorContainer: const Color(0xFF5C3A00),
     );
     return ThemeData(
       useMaterial3: true,
@@ -949,19 +967,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            SafeArea(
-              child: Align(
-                alignment: Alignment.topRight,
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: _GlassIconButton(
-                    icon: Icons.settings_rounded,
-                    tooltip: AppLocalizations.of(context).settingsTitle,
-                    onPressed: () => _openSettings(context),
-                  ),
-                ),
-              ),
-            ),
             Center(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(28, 72, 28, 36),
@@ -973,7 +978,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       const _AppLogoMark(),
                       const SizedBox(height: 20),
                       const _AnimatedWordmark(),
-                      const SizedBox(height: 34),
+                      const SizedBox(height: 32),
                       _OpenMediaCard(
                         busy: _pickingFile,
                         icon: Icons.folder_open_rounded,
@@ -994,19 +999,19 @@ class _HomeScreenState extends State<HomeScreen> {
                         onPressed: () => _openIndexerSearch(context),
                       ),
                       if (_historyFailed) ...[
-                        const SizedBox(height: 20),
-                        Text(l10n.historyLoadFailed),
-                        TextButton(
-                          onPressed: _loadHistory,
-                          child: Text(l10n.retry),
+                        const SizedBox(height: 12),
+                        _InlineNotice(
+                          message: l10n.historyLoadFailed,
+                          actionLabel: l10n.retry,
+                          onAction: _loadHistory,
                         ),
                       ],
                       if (_watchlistFailed) ...[
-                        const SizedBox(height: 20),
-                        Text(l10n.watchlistLoadFailed),
-                        TextButton(
-                          onPressed: _loadWatchlist,
-                          child: Text(l10n.retry),
+                        const SizedBox(height: 12),
+                        _InlineNotice(
+                          message: l10n.watchlistLoadFailed,
+                          actionLabel: l10n.retry,
+                          onAction: _loadWatchlist,
                         ),
                       ],
                       if (_resumableHistory.isNotEmpty) ...[
@@ -1072,6 +1077,40 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
+            SafeArea(
+              child: Align(
+                alignment: Alignment.topRight,
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _GlassIconButton(
+                        icon: Icons.settings_rounded,
+                        tooltip: AppLocalizations.of(context).settingsTitle,
+                        onPressed: () => _openSettings(context),
+                      ),
+                      const SizedBox(width: 10),
+                      _GlassIconButton(
+                        icon: Icons.auto_awesome,
+                        tooltip: 'Discover films',
+                        onPressed: () => Navigator.of(context).push(
+                          _fadeRoute(
+                            FilmChatScreen(
+                              onFindReleases: (selection) => _openIndexerSearch(
+                                context,
+                                initialSelection: selection,
+                                autoSearch: true,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -1097,7 +1136,15 @@ class _AppLogoMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ExcludeSemantics(
     child: Container(
+      width: 92,
+      height: 92,
+      clipBehavior: Clip.antiAlias,
+      // borderRadius here must match the child's rounding: Container clips
+      // the child to this shape but leaves the shadow (painted behind,
+      // unclipped) alone, so a mismatched radius made the shadow a sharp
+      // rectangle behind a rounded icon.
       decoration: const BoxDecoration(
+        borderRadius: BorderRadius.all(Radius.circular(22)),
         boxShadow: [
           BoxShadow(
             color: Colors.black54,
@@ -1106,9 +1153,10 @@ class _AppLogoMark extends StatelessWidget {
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
-        child: Image.asset('assets/zanzibarr-logo.png', width: 92, height: 92),
+      child: Image.asset(
+        'assets/zanzibarr-icon-256.png',
+        width: 92,
+        height: 92,
       ),
     ),
   );
@@ -1252,6 +1300,56 @@ class _AnimatedWordmarkState extends State<_AnimatedWordmark>
                   builder: (context, _) =>
                       letterWidget(letter, t: _controller.value),
                 ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A load-failure row styled like the card system below it (same radius,
+/// fill and border language as [_OpenMediaCard]) so a failed fetch reads as
+/// part of the grid, not a bare, centered paragraph bolted beneath it.
+class _InlineNotice extends StatelessWidget {
+  const _InlineNotice({
+    required this.message,
+    required this.actionLabel,
+    required this.onAction,
+  });
+
+  final String message;
+  final String actionLabel;
+  final VoidCallback onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final foreground = isDark ? Colors.white : Colors.black;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: foreground.withValues(alpha: isDark ? 0.055 : 0.045),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: foreground.withValues(alpha: 0.1)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
+        child: Row(
+          children: [
+            Icon(
+              Icons.cloud_off_rounded,
+              size: 18,
+              color: foreground.withValues(alpha: 0.5),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: foreground.withValues(alpha: 0.75),
+                ),
+              ),
+            ),
+            TextButton(onPressed: onAction, child: Text(actionLabel)),
           ],
         ),
       ),
