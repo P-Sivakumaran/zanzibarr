@@ -25,6 +25,8 @@ import 'chat/film_chat_screen.dart';
 import 'player/gyuni_player_controls.dart' show formatPlayerDuration;
 import 'player/playback_history.dart';
 import 'player/player_screen.dart';
+import 'player/download_screen.dart';
+import 'player/local_media.dart';
 import 'player/up_next.dart';
 import 'player/watchlist.dart';
 import 'update/update_service.dart';
@@ -825,6 +827,18 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       var path = entry.nzbPath;
       if (!await _fileExistsFn(path)) {
+        if (entry.entryKey == localFileEntryKey) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'This local video has moved or was deleted. Use Download / local video to open its current location.',
+                ),
+              ),
+            );
+          }
+          return;
+        }
         final result = await _redownloadForEntry(entry);
         if (!context.mounted) return;
         if (result.errorKey != null) {
@@ -940,7 +954,7 @@ class _HomeScreenState extends State<HomeScreen> {
         settings = const ProviderSettings();
       }
       if (!mounted) return;
-      if (!settings.isComplete) {
+      if (entryKey != localFileEntryKey && !settings.isComplete) {
         final saved = await Navigator.of(context).push<bool>(
           _fadeRoute(
             SettingsScreen(
@@ -1112,26 +1126,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Row(
-                          children: [
-                            const SizedBox(
-                              width: 64,
-                              height: 64,
-                              child: FittedBox(child: _AppLogoMark()),
-                            ),
-                            const SizedBox(width: 16),
-                            const Expanded(
-                              child: Align(
-                                alignment: AlignmentDirectional.centerStart,
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child: _AnimatedWordmark(),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
                         if (_resumableHistory.isNotEmpty) ...[
                           _featuredResume(context, _resumableHistory.first),
                           const SizedBox(height: 24),
@@ -1140,6 +1134,19 @@ class _HomeScreenState extends State<HomeScreen> {
                           spacing: 12,
                           runSpacing: 12,
                           children: [
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                await Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        DownloadScreen(store: _providerStore),
+                                  ),
+                                );
+                                await _loadHistory();
+                              },
+                              icon: const Icon(Icons.download_outlined),
+                              label: const Text('Download / local video'),
+                            ),
                             FilledButton.icon(
                               onPressed: () => _browseTitles(),
                               icon: const Icon(Icons.movie_outlined),
@@ -1323,46 +1330,118 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             SafeArea(
               child: Align(
-                alignment: Alignment.topRight,
+                alignment: Alignment.topCenter,
                 child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _GlassIconButton(
-                        icon: Icons.video_library_outlined,
-                        tooltip: 'My library',
-                        onPressed: _openLibrary,
-                      ),
-                      _GlassIconButton(
-                        icon: Icons.language,
-                        tooltip: 'App language',
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => LanguageSettingsScreen(
-                              uiPreferences: widget.uiPreferences,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  child: SizedBox(
+                    height: 52,
+                    child: Row(
+                      children: [
+                        const SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: FittedBox(child: _AppLogoMark()),
+                        ),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: SizedBox(
+                              width: 230,
+                              height: 48,
+                              child: FittedBox(
+                                alignment: AlignmentDirectional.centerStart,
+                                fit: BoxFit.contain,
+                                child: _AnimatedWordmark(),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      _GlassIconButton(
-                        icon: Icons.settings_rounded,
-                        tooltip: AppLocalizations.of(context).settingsTitle,
-                        onPressed: () => _openSettings(context),
-                      ),
-                      const SizedBox(width: 10),
-                      _GlassIconButton(
-                        icon: Icons.auto_awesome,
-                        tooltip: 'Discover films & TV',
-                        onPressed: () => Navigator.of(context).push(
-                          _fadeRoute(
-                            FilmChatScreen(
-                              onFindReleases: _browseDiscoverySelection,
+                        if (MediaQuery.sizeOf(context).width < 600)
+                          PopupMenuButton<String>(
+                            tooltip: 'Menu',
+                            icon: const Icon(Icons.menu),
+                            onSelected: (value) {
+                              switch (value) {
+                                case 'library':
+                                  _openLibrary();
+                                  break;
+                                case 'language':
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => LanguageSettingsScreen(
+                                        uiPreferences: widget.uiPreferences,
+                                      ),
+                                    ),
+                                  );
+                                  break;
+                                case 'settings':
+                                  _openSettings(context);
+                                  break;
+                                case 'discover':
+                                  _openDiscovery();
+                                  break;
+                              }
+                            },
+                            itemBuilder: (_) => const [
+                              PopupMenuItem(
+                                value: 'library',
+                                child: Text('My library'),
+                              ),
+                              PopupMenuItem(
+                                value: 'language',
+                                child: Text('App language'),
+                              ),
+                              PopupMenuItem(
+                                value: 'settings',
+                                child: Text('Settings'),
+                              ),
+                              PopupMenuItem(
+                                value: 'discover',
+                                child: Text('Discover films & TV'),
+                              ),
+                            ],
+                          )
+                        else ...[
+                          _GlassIconButton(
+                            icon: Icons.video_library_outlined,
+                            tooltip: 'My library',
+                            onPressed: _openLibrary,
+                          ),
+                          _GlassIconButton(
+                            icon: Icons.language,
+                            tooltip: 'App language',
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => LanguageSettingsScreen(
+                                  uiPreferences: widget.uiPreferences,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
-                      ),
-                    ],
+                          _GlassIconButton(
+                            icon: Icons.settings_rounded,
+                            tooltip: AppLocalizations.of(context).settingsTitle,
+                            onPressed: () => _openSettings(context),
+                          ),
+                          const SizedBox(width: 10),
+                          _GlassIconButton(
+                            icon: Icons.auto_awesome,
+                            tooltip: 'Discover films & TV',
+                            onPressed: () => Navigator.of(context).push(
+                              _fadeRoute(
+                                FilmChatScreen(
+                                  onFindReleases: _browseDiscoverySelection,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               ),

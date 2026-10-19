@@ -28,6 +28,8 @@ import 'picture_in_picture_window.dart';
 import 'playback_history.dart';
 import 'playback_startup_guard.dart';
 import 'player_keyboard_controls.dart';
+import 'download_screen.dart';
+import 'local_media.dart';
 import 'smart_canvas.dart';
 import 'smart_canvas_overlay.dart';
 import 'subtitle_controls_overlay.dart';
@@ -53,6 +55,7 @@ class PlayerScreen extends StatefulWidget {
     this.episode,
     this.sourceId,
     this.nzbUrl,
+    this.localFilePath,
     this.startupTimeout = const Duration(seconds: 45),
     this.streamPreparationTimeout = const Duration(seconds: 90),
   });
@@ -76,6 +79,7 @@ class PlayerScreen extends StatefulWidget {
   /// eşlik eder (Faz 4). Dosya seçiciden açılan oynatmalarda null kalır.
   final String? sourceId;
   final String? nzbUrl;
+  final String? localFilePath;
 
   /// Testlerde sahte depo enjekte etmek için; null ise gerçek depo kullanılır.
   final ProviderSettingsStore? store;
@@ -459,6 +463,12 @@ class _PlayerScreenState extends State<PlayerScreen>
       await _configureNativeEngine();
       await _loadPreferences();
 
+      if (widget.localFilePath != null ||
+          widget.initialEntryKey == localFileEntryKey) {
+        await _startLocalFile();
+        return;
+      }
+
       final store = widget.store ?? ProviderSettingsStore();
       final settings = await store.load();
       if (!settings.isComplete) {
@@ -581,6 +591,39 @@ class _PlayerScreenState extends State<PlayerScreen>
         ),
       );
     }
+  }
+
+  Future<void> _startLocalFile() async {
+    final path = widget.localFilePath ?? widget.nzbPath;
+    _resolvedEntryKey = localFileEntryKey;
+    await _playback.resetForNewMedia();
+    await _applyPreferencesToPlayer();
+    if (!mounted || _disposing) return;
+    final info = await prepareLocalPlayback(path);
+    setState(() {
+      _info = info;
+      _startupActive = true;
+      _status = 'Opening local video';
+    });
+    _startupGuard.arm(_onStartupTimeout);
+    final position = await _loadHistoryPosition();
+    if (!mounted || _disposing || _startupFailed) return;
+    await _player.open(Media(info.url, start: position));
+    if (!mounted || _disposing || _startupFailed) return;
+    _onVideoWidth(_player.state.width);
+    _onTracks(_player.state.tracks);
+  }
+
+  Future<void> _downloadLocally() async {
+    if (_repairActive) return;
+    await _releaseNativeStream();
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            DownloadScreen(nzbPath: widget.nzbPath, store: widget.store),
+      ),
+    );
   }
 
   void _onVideoWidth(int? width) {
@@ -3316,6 +3359,12 @@ class _PlayerScreenState extends State<PlayerScreen>
               repairError: _repairError,
               onRepair: _repairActive ? null : () => unawaited(_startRepair()),
               onCancelRepair: _cancelRepair,
+              onDownload:
+                  widget.localFilePath == null &&
+                      widget.initialEntryKey != localFileEntryKey &&
+                      !_repairActive
+                  ? _downloadLocally
+                  : null,
             )
           : _buildVideoSurface(),
     );
@@ -3549,6 +3598,7 @@ class _ErrorView extends StatelessWidget {
     this.repairError,
     this.onRepair,
     this.onCancelRepair,
+    this.onDownload,
   });
 
   final String message;
@@ -3561,6 +3611,7 @@ class _ErrorView extends StatelessWidget {
   final String? repairError;
   final VoidCallback? onRepair;
   final VoidCallback? onCancelRepair;
+  final VoidCallback? onDownload;
 
   @override
   Widget build(BuildContext context) {
@@ -3640,6 +3691,12 @@ class _ErrorView extends StatelessWidget {
                       label: Text(l10n.repairButton),
                     ),
                   ],
+                  if (onDownload != null)
+                    OutlinedButton.icon(
+                      onPressed: onDownload,
+                      icon: const Icon(Icons.download),
+                      label: const Text('Download & play locally'),
+                    ),
                 ],
               ),
               if (repairActive) ...[

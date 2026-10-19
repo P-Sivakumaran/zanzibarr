@@ -1,4 +1,5 @@
 import 'package:zanzibarr/metadata/metadata_screen.dart';
+import 'package:zanzibarr/metadata/film_blurb.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -142,7 +143,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Your next screening'), findsNothing);
     expect(catalog.loads, 1);
-    expect(find.text(media.plot), findsOneWidget);
+    expect(find.text(filmBlurb(media)), findsOneWidget);
+    expect(find.text(media.plot), findsNothing);
     expect(find.text('Metacritic: 76/100'), findsOneWidget);
     expect((await library.load()).single.poster, media.poster);
     final saved = (await history.load()).single;
@@ -178,7 +180,8 @@ void main() {
       await tester.pageBack();
       await tester.pumpAndSettle();
       expect(catalog.loads, 1);
-      expect(find.text(media.plot), findsOneWidget);
+      expect(find.text(filmBlurb(media)), findsOneWidget);
+      expect(find.text(media.plot), findsNothing);
       await tester.pumpWidget(const SizedBox());
     },
   );
@@ -298,7 +301,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text(media.plot), findsOneWidget);
+      expect(find.text(filmBlurb(media)), findsOneWidget);
+      expect(find.text(media.plot), findsNothing);
       expect(find.text('Rotten Tomatoes: 87% positive'), findsOneWidget);
       expect(find.text('Metacritic: 76/100'), findsOneWidget);
       expect(tester.takeException(), isNull);

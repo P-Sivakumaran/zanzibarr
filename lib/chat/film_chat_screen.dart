@@ -17,6 +17,7 @@ import 'chat_shortcuts.dart';
 import 'suggestion_metadata.dart';
 import '../metadata/artwork.dart';
 import '../metadata/metadata_service.dart';
+import '../metadata/film_blurb.dart';
 import '../metadata/metadata_screen.dart';
 import '../metadata/metadata_visuals.dart';
 
@@ -1423,7 +1424,7 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
 
         const SizedBox(height: 10),
         Text(
-          film.description,
+          media == null ? film.description : filmBlurb(media),
           style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.5),
         ),
         const SizedBox(height: 10),

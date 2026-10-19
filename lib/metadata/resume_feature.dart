@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'title_resolver.dart';
+import 'film_blurb.dart';
 import 'package:flutter/material.dart';
 import '../player/playback_history.dart';
 import '../player/gyuni_player_controls.dart' show formatPlayerDuration;
@@ -234,12 +235,7 @@ class _ResumeFeatureState extends State<ResumeFeature> {
           if (media.genre.isNotEmpty)
             Text(media.genre, style: Theme.of(context).textTheme.labelLarge),
           const SizedBox(height: 12),
-          Text(
-            media.plot.isEmpty
-                ? 'A synopsis is not available from this provider.'
-                : media.plot,
-            style: Theme.of(context).textTheme.bodyLarge,
-          ),
+          Text(filmBlurb(media), style: Theme.of(context).textTheme.bodyLarge),
           const SizedBox(height: 18),
           RatingMeters(media: media),
           if (media.actors.isNotEmpty) ...[

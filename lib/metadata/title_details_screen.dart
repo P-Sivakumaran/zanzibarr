@@ -8,6 +8,7 @@ import '../search/release_search_selection.dart';
 import 'metadata_service.dart';
 import 'metadata_enrichment.dart';
 import 'title_information.dart';
+import 'film_blurb.dart';
 import 'title_library.dart';
 import 'artwork.dart';
 
@@ -267,13 +268,10 @@ class _TitleDetailsScreenState extends State<TitleDetailsScreen> {
                                 media.runtime,
                               ].where((v) => v.isNotEmpty).join(' / '),
                             ),
-                            if (media.plot.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 20,
-                                ),
-                                child: Text(media.plot),
-                              ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 20),
+                              child: Text(filmBlurb(media)),
+                            ),
                             RatingMeters(media: media),
                             if (media.ratings.isEmpty)
                               Text(l.metadataNoRatings),
@@ -409,6 +407,16 @@ class _TitleDetailsScreenState extends State<TitleDetailsScreen> {
                       media: media,
                       artworkLoader: widget.artworkLoader,
                     ),
+                    if (media.plot.isNotEmpty)
+                      ExpansionTile(
+                        title: const Text('Story synopsis (may reveal plot)'),
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Text(media.plot),
+                          ),
+                        ],
+                      ),
                     if (_enrichment.status != null)
                       Text(
                         _enrichment.status!,
