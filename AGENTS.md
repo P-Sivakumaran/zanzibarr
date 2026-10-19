@@ -225,7 +225,10 @@ workarounds; details remain in the historical archive.
   checks passed. Native Release preview built at dist/preview-1.22/zanzibarr.exe
   (resource version 1.22.0+23); normal build output was locked by the open 1.21
   app, which was preserved. Unsigned; live providers/native UI and
-  device playback unverified; no installer created. Review-count coverage still requires a
+  device playback unverified. Setup/portable ZIP are now packaged under
+  dist/windows/v1.22 with verified hashes, ZIP integrity, CRT and notices.
+  Installer lifecycle smoke preserved the existing installation and requires a
+  fresh user/VM. Unsigned, not installed or published. Review-count coverage still requires a
   configured compatible provider; no Fabric bridge/subscription is bundled.
   See [implementation and evidence](docs/RICH_TITLE_ENRICHMENT_2026-10-19.md).
 

@@ -137,3 +137,30 @@ Unsigned, uncommitted, not installed or published; no installer created. Native
 1.22 rendered UI, live metadata credentials/coverage and device playback were
 not verified. The ordinary build/windows runner still contains the open 1.21
 executable; use the explicit 1.22 preview path above.
+
+
+## Installer packaging completed
+
+User subsequently requested an installer. Setup and portable ZIP were generated
+from the verified 1.22 bundle, with app-local x64 CRT, native DLLs, integration
+bridge, guides and TMDB/license attribution. Inno Setup 6.7.3 was bootstrapped
+with its required Authenticode publisher check. Compiler completed successfully.
+
+Artifacts under `dist/windows/v1.22/`:
+
+| File | SHA256 |
+| --- | --- |
+| zanzibarr-windows-x64-setup.exe | bc3d55985bbddfa7478d05edb636adbc636ba67e6653a99c68b73929fb119af2 |
+| zanzibarr-windows-x64.zip | 16d3d63caa1684a53c005a27cddd9b3a3c16ea145295fc1f1a0fcde39d2b6a09 |
+
+SHA256SUMS verified; ZIP CRC and 58 entries checked. Required components,
+including app-local CRT and attribution notices, were verified. The packaged
+executable matches the preview hash above and reports 1.22.0+23; setup reports
+1.22.0. Source commit is 0f2cd4d2d204324d56f235b02e555314f6a4c35b.
+
+Lifecycle smoke stopped at its existing-installation guard: "An installed copy
+exists; use a fresh user/VM for the smoke test". No existing installation was
+changed. Packages are unsigned, not installed or publicly published. Fresh-user
+installation/upgrade/playback remains unverified. Logs use the ignored
+`dist/audit/installer-1.22-*` prefix. Earlier no-installer statements describe the
+preview-build stage and are superseded by this packaging result.
