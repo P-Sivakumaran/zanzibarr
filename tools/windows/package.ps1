@@ -41,6 +41,8 @@ try {
     $licenses = Join-Path $bundle 'licenses'
     New-Item -ItemType Directory -Path $licenses -Force | Out-Null
     Copy-Item -LiteralPath 'assets/fonts/LeagueMono-OFL.txt' -Destination $licenses -Force
+    Copy-Item -LiteralPath 'assets/branding/README.md' -Destination (Join-Path $licenses 'TMDB-attribution.md') -Force
+    Get-ChildItem -LiteralPath 'assets/licenses' -File | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $licenses -Force }
     Copy-Item -LiteralPath 'vendor/unrar-sys/vendor/unrar/license.txt' -Destination (Join-Path $licenses 'unrar-license.txt') -Force
     Copy-Item -LiteralPath 'vendor/unrar-rs/LICENSE-MIT' -Destination (Join-Path $licenses 'unrar-rs-MIT.txt') -Force
     Copy-Item -LiteralPath 'vendor/unrar-rs/LICENSE-APACHE' -Destination (Join-Path $licenses 'unrar-rs-APACHE.txt') -Force

@@ -73,3 +73,15 @@ identification already in progress, and card-versus-search navigation.
 Windows build/package evidence follows when complete. Logs: ignored
 `dist/audit/trailer-*`. Live configured TMDB and native trailer playback are not
 claimed until separately exercised. No release is signed or published.
+
+
+Additional rendered verification: 34 preview checks passed with refreshed Home,
+resume, title and AI discovery screenshots. Inspected actual desktop recommendation
+and title widgets, plus the generated 256-pixel icon. These are widget renders,
+not native video playback proof.
+
+Windows build tooling uses a local NuGet 6.14.0 executable fetched from Microsoft's
+NuGet distribution endpoint; its Microsoft Authenticode signature was valid.
+The plugin pins WebView2 SDK 1.0.2792.45, WIL 1.0.231216.1 and nlohmann/json 3.11.2.
+Required third-party license/notice files are retained in `assets/licenses` and
+included by the Windows packaging script, together with TMDB attribution.
