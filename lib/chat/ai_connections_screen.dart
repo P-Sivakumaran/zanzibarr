@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -36,6 +37,8 @@ class _AiConnectionsScreenState extends State<AiConnectionsScreen> {
   AiConnections? _saved;
   FilmAiProvider _provider = FilmAiProvider.codex;
   GeminiAuthentication _auth = GeminiAuthentication.apiKey;
+  bool _allowPop = false;
+  bool _confirmingLeave = false;
   bool _busy = false;
   bool _signingIn = false;
   String? _error, _status;
@@ -105,7 +108,7 @@ class _AiConnectionsScreenState extends State<AiConnectionsScreen> {
       setState(() {
         _saved = config;
         _status =
-            'Saved. Return to Discover films to chat with ${config.provider.label}.';
+            'Saved. Return to Discover films & TV to chat with ${config.provider.label}.';
       });
     }
   }
@@ -126,6 +129,51 @@ class _AiConnectionsScreenState extends State<AiConnectionsScreen> {
       );
     }
   });
+
+  bool get _dirty =>
+      _saved != null &&
+      jsonEncode(_draft.toJson()) != jsonEncode(_saved!.toJson());
+  Future<void> _leave() async {
+    if (_confirmingLeave || _busy) return;
+    if (!_dirty) {
+      setState(() => _allowPop = true);
+      Navigator.of(context).pop();
+      return;
+    }
+    _confirmingLeave = true;
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Discard connection changes?'),
+        content: const Text(
+          'Your saved connection stays unchanged until you save.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep editing'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Discard changes'),
+          ),
+        ],
+      ),
+    );
+    _confirmingLeave = false;
+    if (discard == true && mounted) {
+      setState(() => _allowPop = true);
+      Navigator.of(context).pop();
+    }
+  }
+
+  Widget _advancedModel(String label, TextEditingController controller) =>
+      ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        title: const Text('Advanced model settings'),
+        subtitle: const Text('Use a specific model ID'),
+        children: [_field(label, controller)],
+      );
 
   Widget _field(
     String label,
@@ -171,176 +219,238 @@ class _AiConnectionsScreenState extends State<AiConnectionsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('AI connections')),
-    body: Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 720),
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            const Text(
-              'Choose the assistant for film recommendations. API access uses your provider account and quota; it does not use Claude or Gemini chat subscriptions. Setup text currently uses English.',
-            ),
-            if (_busy) const LinearProgressIndicator(),
-            if (_error != null)
-              Text(_error!, key: const Key('ai-connection-error')),
-            if (_saved == null && !_busy)
-              TextButton(
-                onPressed: _load,
-                child: const Text('Retry loading connections'),
-              ),
-            if (_saved != null) ...[
-              const SizedBox(height: 16),
-              DropdownButtonFormField<FilmAiProvider>(
-                key: const Key('ai-provider'),
-                initialValue: _provider,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: 'Film chat provider',
-                ),
-                items: [
-                  for (final p in FilmAiProvider.values)
-                    DropdownMenuItem(value: p, child: Text(p.label)),
-                ],
-                onChanged: _busy
-                    ? null
-                    : (value) => setState(() {
-                        _provider = value!;
-                        _status = null;
-                      }),
-              ),
-              const SizedBox(height: 16),
-              if (_provider == FilmAiProvider.codex)
-                const Text(
-                  'Save this choice, then use Connection setup in Discover films to sign in with ChatGPT through the installed Codex executable.',
-                ),
-              if (_provider == FilmAiProvider.claude) ...[
-                const Text(
-                  'Use a Claude Console API key. It is saved in OS secure storage and sent only to Anthropic when you press Send. Claude subscription OAuth is not used.',
-                ),
-                _field('Claude API key', _claudeKey, secret: true),
-                _field('Claude model ID', _claudeModel),
-                TextButton(
-                  onPressed: _busy
-                      ? null
-                      : () =>
-                            _link('https://platform.claude.com/settings/keys'),
-                  child: const Text('Open Claude Console'),
-                ),
-              ],
-              if (_provider == FilmAiProvider.gemini) ...[
-                DropdownButtonFormField<GeminiAuthentication>(
-                  key: const Key('gemini-auth'),
-                  initialValue: _auth,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Gemini authentication',
+  Widget build(BuildContext context) => PopScope(
+    canPop: _allowPop || (!_dirty && !_busy),
+    onPopInvokedWithResult: (didPop, result) {
+      if (!didPop) _leave();
+    },
+    child: Scaffold(
+      appBar: AppBar(
+        title: const Text('AI connections'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: 'Back',
+          onPressed: _leave,
+        ),
+      ),
+      bottomNavigationBar: _saved == null
+          ? null
+          : SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+                child: Center(
+                  heightFactor: 1,
+                  child: SizedBox(
+                    width: 920,
+                    child: FilledButton(
+                      key: const Key('save-ai-connections'),
+                      onPressed: _busy ? null : () => _run(() => _save(_draft)),
+                      child: const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Text('Save and use this provider'),
+                      ),
+                    ),
                   ),
-                  items: const [
-                    DropdownMenuItem(
-                      value: GeminiAuthentication.apiKey,
-                      child: Text('API key'),
+                ),
+              ),
+            ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 960),
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              Text(
+                'Film & TV assistant',
+                style: Theme.of(context).textTheme.headlineMedium,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Choose a provider, add its connection details, then save.',
+              ),
+              if (_saved != null)
+                Card(
+                  margin: const EdgeInsets.symmetric(vertical: 16),
+                  child: ListTile(
+                    leading: const Icon(Icons.auto_awesome),
+                    title: Text('Saved provider: ${_saved!.provider.label}'),
+                    subtitle: const Text(
+                      'Saving settings does not send a prompt or verify access.',
                     ),
-                    DropdownMenuItem(
-                      value: GeminiAuthentication.google,
-                      child: Text('Google sign-in (OAuth)'),
-                    ),
+                  ),
+                ),
+              if (_busy) const LinearProgressIndicator(),
+              if (_error != null)
+                Text(_error!, key: const Key('ai-connection-error')),
+              if (_saved == null && !_busy)
+                TextButton(
+                  onPressed: _load,
+                  child: const Text('Retry loading connections'),
+                ),
+              if (_saved != null) ...[
+                const SizedBox(height: 16),
+                DropdownButtonFormField<FilmAiProvider>(
+                  key: const Key('ai-provider'),
+                  initialValue: _provider,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Chat provider'),
+                  items: [
+                    for (final p in FilmAiProvider.values)
+                      DropdownMenuItem(value: p, child: Text(p.label)),
                   ],
                   onChanged: _busy
                       ? null
                       : (value) => setState(() {
-                          _auth = value!;
+                          _provider = value!;
                           _status = null;
                         }),
                 ),
-                _field('Gemini model ID', _geminiModel),
-                if (_auth == GeminiAuthentication.apiKey) ...[
-                  _field('Gemini API key', _geminiKey, secret: true),
-                  TextButton(
-                    onPressed: _busy
-                        ? null
-                        : () => _link('https://aistudio.google.com/apikey'),
-                    child: const Text('Get a Gemini API key'),
-                  ),
-                ] else ...[
+                const SizedBox(height: 16),
+                if (_provider == FilmAiProvider.codex)
                   const Text(
-                    'Register a Desktop app OAuth client in your Google Cloud project, enable the Generative Language API and add yourself as a test user. Google consent requests Cloud API access. Tokens stay in OS secure storage. Browser sign-in currently supports Windows, macOS and Linux.',
+                    '1. Save ChatGPT as your provider.\n2. Open film & TV chat and choose Sign in with ChatGPT.\n3. Complete sign-in in your browser.',
                   ),
-                  _field('Google Cloud project ID', _project),
-                  _field('Google OAuth client ID', _clientId),
-                  _field(
-                    'Google OAuth client secret',
-                    _clientSecret,
-                    secret: true,
-                    helper:
-                        'Enter the desktop client secret if Google supplied one.',
+                if (_provider == FilmAiProvider.claude) ...[
+                  const Text(
+                    'Connect with your Claude Console API key. API usage is billed through your Anthropic account.',
                   ),
+                  _field('Claude API key', _claudeKey, secret: true),
+                  _advancedModel('Claude model ID', _claudeModel),
                   TextButton(
+                    style: TextButton.styleFrom(
+                      alignment: AlignmentDirectional.centerStart,
+                    ),
                     onPressed: _busy
                         ? null
                         : () => _link(
-                            'https://ai.google.dev/gemini-api/docs/oauth',
+                            'https://platform.claude.com/settings/keys',
                           ),
-                    child: const Text('Google OAuth setup instructions'),
-                  ),
-                  Text(
-                    _draft.googleTokens == null
-                        ? 'Google is not connected for these client details.'
-                        : 'Google sign-in is saved on this device.',
-                  ),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      FilledButton.icon(
-                        onPressed:
-                            _busy ||
-                                !(Platform.isWindows ||
-                                    Platform.isLinux ||
-                                    Platform.isMacOS)
-                            ? null
-                            : _signIn,
-                        icon: const Icon(Icons.login),
-                        label: const Text('Sign in with Google'),
-                      ),
-                      if (_signingIn)
-                        TextButton(
-                          onPressed: _google.cancel,
-                          child: const Text('Cancel Google sign-in'),
-                        ),
-                      if (_saved!.googleTokens != null)
-                        TextButton(
-                          onPressed: _busy
-                              ? null
-                              : () => _run(
-                                  () => _save(
-                                    _draft.copyWith(clearGoogleTokens: true),
-                                  ),
-                                ),
-                          child: const Text('Disconnect Google on this device'),
-                        ),
-                    ],
+                    child: const Text('Open Claude Console'),
                   ),
                 ],
-              ],
-              const SizedBox(height: 16),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: FilledButton(
-                  key: const Key('save-ai-connections'),
-                  onPressed: _busy ? null : () => _run(() => _save(_draft)),
-                  child: const Text('Save and use this provider'),
+                if (_provider == FilmAiProvider.gemini) ...[
+                  DropdownButtonFormField<GeminiAuthentication>(
+                    key: const Key('gemini-auth'),
+                    initialValue: _auth,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Gemini authentication',
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: GeminiAuthentication.apiKey,
+                        child: Text('API key'),
+                      ),
+                      DropdownMenuItem(
+                        value: GeminiAuthentication.google,
+                        child: Text('Google sign-in (OAuth)'),
+                      ),
+                    ],
+                    onChanged: _busy
+                        ? null
+                        : (value) => setState(() {
+                            _auth = value!;
+                            _status = null;
+                          }),
+                  ),
+                  _advancedModel('Gemini model ID', _geminiModel),
+                  if (_auth == GeminiAuthentication.apiKey) ...[
+                    _field('Gemini API key', _geminiKey, secret: true),
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        alignment: AlignmentDirectional.centerStart,
+                      ),
+                      onPressed: _busy
+                          ? null
+                          : () => _link('https://aistudio.google.com/apikey'),
+                      child: const Text('Get a Gemini API key'),
+                    ),
+                  ] else ...[
+                    const Text(
+                      'Use a registered Google Desktop OAuth client. Complete the project details below, then sign in with Google. Browser sign-in supports Windows, macOS and Linux.',
+                    ),
+                    _field('Google Cloud project ID', _project),
+                    _field('Google OAuth client ID', _clientId),
+                    _field(
+                      'Google OAuth client secret',
+                      _clientSecret,
+                      secret: true,
+                      helper:
+                          'Enter the desktop client secret if Google supplied one.',
+                    ),
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        alignment: AlignmentDirectional.centerStart,
+                      ),
+                      onPressed: _busy
+                          ? null
+                          : () => _link(
+                              'https://ai.google.dev/gemini-api/docs/oauth',
+                            ),
+                      child: const Text('Google OAuth setup instructions'),
+                    ),
+                    Text(
+                      _draft.googleTokens == null
+                          ? 'Google is not connected for these client details.'
+                          : 'Google sign-in is saved on this device.',
+                    ),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        FilledButton.icon(
+                          onPressed:
+                              _busy ||
+                                  !(Platform.isWindows ||
+                                      Platform.isLinux ||
+                                      Platform.isMacOS)
+                              ? null
+                              : _signIn,
+                          icon: const Icon(Icons.login),
+                          label: const Text('Sign in with Google'),
+                        ),
+                        if (_signingIn)
+                          TextButton(
+                            onPressed: _google.cancel,
+                            child: const Text('Cancel Google sign-in'),
+                          ),
+                        if (_saved!.googleTokens != null)
+                          TextButton(
+                            onPressed: _busy
+                                ? null
+                                : () => _run(
+                                    () => _save(
+                                      _draft.copyWith(clearGoogleTokens: true),
+                                    ),
+                                  ),
+                            child: const Text(
+                              'Disconnect Google on this device',
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ],
+                const SizedBox(height: 16),
+                if (_status != null)
+                  Text(_status!, key: const Key('ai-connection-status')),
+                const SizedBox(height: 12),
+                const ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  title: Text('Privacy & account details'),
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.only(bottom: 16),
+                      child: Text(
+                        'Keys and tokens stay in OS secure storage. API access uses provider quota, separate from Claude or Gemini chat subscriptions. Clear a key and save to remove it. Changing provider starts a new chat; playlists remain available. Setup text uses English fallback.',
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              if (_status != null)
-                Text(_status!, key: const Key('ai-connection-status')),
-              const SizedBox(height: 12),
-              const Text(
-                'Saving does not send a prompt or verify model access. Clear an API key and save to remove it. Changing provider starts a new chat; saved playlists remain available.',
-              ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     ),

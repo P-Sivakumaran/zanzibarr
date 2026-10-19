@@ -113,8 +113,9 @@ take precedence over stale handover descriptions.
    failures, protect drafts on failed saves and ignore stale async results.
    Query edits invalidate selected title IDs; pagination preserves query identity.
 6. **Keep metadata optional and bounded.** Search works without an OMDb key.
-   Preserve explicit lookup, sanitized errors, timeout/body limits and bounded
-   caches. Label rating sources honestly; OMDb-provided Rotten Tomatoes scores
+   Preserve explicit search, bounded automatic enrichment with configured
+   access, rematch corrections, sanitized errors, timeout/body limits and bounded
+   caches. Do not attach ambiguous automatic matches or trust AI-supplied IDs. Label rating sources honestly; OMDb-provided Rotten Tomatoes scores
    are not direct RT API integration or scraping.
 7. **Preserve native media fixes.** Review patched unrar before replacing it:
    volume callbacks, platform link flags and Android runtime packaging address
@@ -211,9 +212,80 @@ recorded dyld/LINKEDIT issue. Upstream also recorded an Xcode `lipo` multi-arch
 verification workaround. Reproduce on the actual Mac before applying/removing
 workarounds; details remain in the historical archive.
 
-## 7. Current state and blockers - last verified 2026-10-17
+## 7. Current state and blockers - last verified 2026-10-19
 
-- Latest local Windows candidate is **1.14.0+15**, adding Claude API-key chat
+- Current working candidate is **1.22.0+23**: durable suggestion identities
+  survive metadata snapshot eviction; visible cast and retained OMDb title facts;
+  optional TMDB cast/roles/artwork/keywords, Wikidata filming vs narrative places,
+  and an existing MCP metadata connection for complete review score/count pairs.
+  Settings include opt-in source controls and unsaved-draft protection. Enrichment
+  is lazy on title pages, coalesced, bounded and persistently cached including
+  absence/retry windows. Fresh gate: 266 Rust serial tests and 383 Flutter tests
+  passed (9 screenshot skips), Clippy, analysis, native host build and whitespace
+  checks passed. Native Release preview built at dist/preview-1.22/zanzibarr.exe
+  (resource version 1.22.0+23); normal build output was locked by the open 1.21
+  app, which was preserved. Unsigned; live providers/native UI and
+  device playback unverified; no installer created. Review-count coverage still requires a
+  configured compatible provider; no Fabric bridge/subscription is bundled.
+  See [implementation and evidence](docs/RICH_TITLE_ENRICHMENT_2026-10-19.md).
+
+- Previous working candidate was **1.21.0+22**: automatic configured metadata
+  identification for resume, suggestions and playlists, with optional Rematch
+  title correction. Canonical metadata drives release search. Ratings use
+  source-correct scales and exact vote/review counts when supplied; missing
+  critic counts remain explicitly unavailable. Metadata jobs are bounded and
+  stale automatic results cannot overwrite corrections. Returning from Settings
+  retries identification after setup. Fresh gate: 266 Rust serial tests,
+  Clippy, analysis, host build and 373 Flutter tests passed with 9 screenshot
+  skips. Rendered resume, settings, suggestion, playlist and title previews
+  refreshed. Final Windows release build passed (102.6 seconds, 1.21.0+22).
+  Uncommitted, unsigned, not installed or published; no installer
+  created. Live providers and device playback remain unverified. See
+  [automatic metadata handoff](docs/AUTOMATIC_METADATA_RATINGS_2026-10-19.md).
+
+- Previous working candidate was **1.20.0+21**: removed the Your next screening
+  heading; added a full resume title/poster/synopsis/critic-score view and explicit
+  history title matching that preserves exact release identity and progress.
+  Settings now has a category overview; AI setup has a persistent Save action,
+  advanced model disclosure and an unsaved-draft guard. MCP controls are grouped.
+  Fresh ordered gate passed: 266 Rust serial, Clippy, analysis, host build and
+  363 Flutter tests with 9 screenshot skips. Seven focused checks/rendered
+  previews passed separately. Windows release build passed at 1.20.0+21.
+  Uncommitted, unsigned, not installed or published; no installer created.
+  Live providers, native rendered UI and device playback remain unverified.
+  See [resume/settings handoff](docs/RESUME_SETTINGS_REFINEMENT_2026-10-19.md).
+
+- Previous working candidate was **1.19.0+20**: wider content, grouped Home
+  actions, direct playlist navigation, shared confirmed artwork for suggestions
+  and playlists, animated source-labelled rating meters and film/TV composition.
+  Preserves the uncommitted 1.17/1.18 work. Fresh gate: 266 Rust tests passed
+  serially after parallel socket contention; 356 Flutter tests passed with
+  9 screenshot skips; Clippy, analysis and host build passed. Windows release
+  build passed. Uncommitted, unsigned, not installed or published. Live providers
+  and device playback remain unverified. See
+  [interface handoff](docs/INTERFACE_REFINEMENT_2026-10-19.md).
+
+- Previous working candidate was **1.18.0+19**, implementing the reviewed Figma
+  direction in Flutter: artwork opt-in, full title pages, saved library,
+  explicit OMDb seasons/episodes, review links and separate media-language
+  preferences. Preserves the uncommitted 1.17 work. Fresh gate: 266 Rust and
+  351 Flutter tests passed, 9 opt-in screenshot skips; Clippy, analysis and
+  host build passed. Windows release build passed (1.18.0+19). Uncommitted,
+  unsigned, not installed or published; live providers and device playback
+  remain unverified. See [implementation and evidence](docs/METADATA_LIBRARY_IMPLEMENTATION_2026-10-19.md).
+
+- Previous working candidate was **1.17.0+18**, adding typed film/TV discovery,
+  mixed playlists and TV search, plus chat keyboard shortcuts and revised
+  discovery copy. Fresh gate: 266 Rust and 337 Flutter passed, 8 screenshot
+  skips; Clippy, analysis, host build and Windows release build passed.
+  Nineteen focused TV/chat checks passed with rendered widget previews.
+  Setup/ZIP built; hashes, ZIP integrity and bundled components verified.
+  Unsigned, not installed or published. This work is uncommitted and not landed; PR #1
+  merged earlier changes. No new live inference, installation or device
+  playback was verified. See
+  [verification](docs/TV_DISCOVERY_KEYBOARD_2026-10-18.md).
+
+- Previous local Windows candidate was **1.14.0+15**, adding Claude API-key chat
   and Gemini API-key/registered Google Desktop OAuth chat. AI connections opens
   from film chat or MCP & AI. Credentials use secure storage; Google supports
   PKCE, refresh and cancellation. Stale startup results cannot undo provider
@@ -291,6 +363,16 @@ workarounds; details remain in the historical archive.
   selection does not select inner files within a single archive.
 
 ## 8. Next work and handoff
+
+The artwork-led browsing, title library, provider-backed seasons/episodes,
+ratings/review links and separate app/media-language controls now have a Flutter
+implementation, now refined through 1.22 with durable matches, visible cast,
+optional TMDB/Wikidata enrichment and configured MCP review context. See the [design specification](docs/METADATA_EXPERIENCE_DESIGN_2026-10-19.md)
+and the implementation handoff above. Next verify live metadata/plugins and
+physical playback/focus. TMDB discovery catalogs, localized metadata, ordered
+language preferences and region flags remain follow-ups. New enrichment sources
+require configured access; live review-count coverage remains unverified;
+never confuse original-title languages with detected release tracks.
 
 Recommended sequence, subject to the user's current priorities:
 

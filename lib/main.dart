@@ -1,3 +1,6 @@
+import 'metadata/resume_feature.dart';
+import 'settings/settings_home.dart';
+import 'settings/language_settings.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 
@@ -11,6 +14,12 @@ import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'l10n/app_localizations.dart';
+import 'metadata/metadata_service.dart';
+import 'metadata/metadata_screen.dart';
+import 'metadata/title_details_screen.dart';
+import 'metadata/library_screen.dart';
+import 'metadata/title_library.dart';
+import 'metadata/artwork.dart';
 import 'integrations/integration_runtime.dart';
 import 'chat/film_chat_screen.dart';
 import 'player/gyuni_player_controls.dart' show formatPlayerDuration;
@@ -166,21 +175,22 @@ class ZanzibarrApp extends StatelessWidget {
     // Error role is overridden to amber: the brand seed is itself red, so the
     // default Material error palette lands in the same hue family as primary
     // and focus states, making errors indistinguishable from normal brand UI.
-    final scheme = ColorScheme.fromSeed(
-      seedColor: _accent,
-      brightness: Brightness.dark,
-      surface: const Color(0xFF141416),
-    ).copyWith(
-      error: const Color(0xFFFFB74D),
-      onError: const Color(0xFF442C00),
-      errorContainer: const Color(0xFF4A3100),
-      onErrorContainer: const Color(0xFFFFDDA6),
-    );
+    final scheme =
+        ColorScheme.fromSeed(
+          seedColor: _accent,
+          brightness: Brightness.dark,
+          surface: const Color(0xFF101313),
+        ).copyWith(
+          error: const Color(0xFFFFB74D),
+          onError: const Color(0xFF442C00),
+          errorContainer: const Color(0xFF4A3100),
+          onErrorContainer: const Color(0xFFFFDDA6),
+        );
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
       colorScheme: scheme,
-      scaffoldBackgroundColor: const Color(0xFF09090B),
+      scaffoldBackgroundColor: const Color(0xFF101313),
       canvasColor: const Color(0xFF17171A),
       dividerColor: Colors.white.withValues(alpha: 0.08),
       appBarTheme: const AppBarTheme(
@@ -211,21 +221,22 @@ class ZanzibarrApp extends StatelessWidget {
   ThemeData _buildLightTheme() {
     // See _buildDarkTheme: error role overridden to amber to stay distinct
     // from the red brand accent used for primary/focus states.
-    final scheme = ColorScheme.fromSeed(
-      seedColor: _accent,
-      brightness: Brightness.light,
-      surface: const Color(0xFFFFFFFF),
-    ).copyWith(
-      error: const Color(0xFFB26A00),
-      onError: Colors.white,
-      errorContainer: const Color(0xFFFFE0B2),
-      onErrorContainer: const Color(0xFF5C3A00),
-    );
+    final scheme =
+        ColorScheme.fromSeed(
+          seedColor: _accent,
+          brightness: Brightness.light,
+          surface: const Color(0xFFFFFFFF),
+        ).copyWith(
+          error: const Color(0xFFB26A00),
+          onError: Colors.white,
+          errorContainer: const Color(0xFFFFE0B2),
+          onErrorContainer: const Color(0xFF5C3A00),
+        );
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
       colorScheme: scheme,
-      scaffoldBackgroundColor: const Color(0xFFF5F5F7),
+      scaffoldBackgroundColor: const Color(0xFFFAFAF8),
       canvasColor: Colors.white,
       dividerColor: Colors.black.withValues(alpha: 0.08),
       appBarTheme: const AppBarTheme(
@@ -441,8 +452,14 @@ class HomeScreen extends StatefulWidget {
     this.playerBuilder,
     this.downloadFn,
     this.fileExistsFn,
+    this.titleLibraryStore,
+    this.artworkLoader,
+    this.metadataService,
+    this.metadataSettings,
   });
 
+  final MetadataService? metadataService;
+  final MetadataSettingsStore? metadataSettings;
   final UiPreferencesController? uiPreferences;
 
   /// Testlerde sahte depo enjekte etmek için; null ise gerçek depo kullanılır.
@@ -453,6 +470,8 @@ class HomeScreen extends StatefulWidget {
   final ProviderSettingsStore? providerStore;
   final IndexerSettingsStore? indexerStore;
   final WatchlistStore? watchlistStore;
+  final TitleLibraryStore? titleLibraryStore;
+  final ArtworkLoader? artworkLoader;
 
   /// Route factory allows flow tests to avoid starting the native player.
   final Widget Function(String path, String? entryKey)? playerBuilder;
@@ -470,6 +489,113 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  late final _metadataService = widget.metadataService ?? MetadataService();
+  late final _metadataStore =
+      widget.metadataSettings ?? MetadataSettingsStore();
+  late final _titleLibrary =
+      widget.titleLibraryStore ?? TitleLibraryStore.shared;
+  List<MediaTitle> _savedTitles = [];
+  int _resumeMetadataGeneration = 0;
+  Future<void> _loadTitles() async {
+    try {
+      final titles = await _titleLibrary.load();
+      if (mounted) setState(() => _savedTitles = titles);
+    } catch (_) {
+      /* Library route provides a visible retry path. */
+    }
+  }
+
+  Future<void> _browseTitles([
+    MediaTitle? title,
+    String query = '',
+    String kind = 'movie',
+  ]) async {
+    ReleaseSearchSelection? selection;
+    if (title == null) {
+      selection = await Navigator.of(context).push<ReleaseSearchSelection>(
+        MaterialPageRoute(
+          builder: (_) => MetadataScreen(
+            service: _metadataService,
+            store: _metadataStore,
+            watchlistStore: _watchlistStore,
+            initialQuery: query,
+            initialKind: kind,
+          ),
+        ),
+      );
+    } else {
+      String key;
+      try {
+        key = await _metadataStore.load();
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Metadata settings could not be loaded.'),
+            ),
+          );
+        }
+        return;
+      }
+      if (!mounted) return;
+      selection = await Navigator.of(context).push<ReleaseSearchSelection>(
+        MaterialPageRoute(
+          builder: (_) => TitleDetailsScreen(
+            title: title,
+            service: _metadataService,
+            apiKey: key,
+            watchlistStore: _watchlistStore,
+            libraryStore: _titleLibrary,
+            historyStore: _historyStore,
+            onResume: (entry) => _resumeHistoryEntry(context, entry),
+          ),
+        ),
+      );
+    }
+    if (!mounted) return;
+    setState(() => _resumeMetadataGeneration++);
+    await _loadTitles();
+    await _loadWatchlist();
+    if (selection != null && mounted) {
+      await _openIndexerSearch(
+        context,
+        initialSelection: selection,
+        autoSearch: true,
+      );
+    }
+  }
+
+  void _openLibrary() => Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => LibraryScreen(
+        store: _titleLibrary,
+        watchlistStore: _watchlistStore,
+        onOpen: (title) => _browseTitles(title),
+        onPlaylists: () => _openDiscovery(playlists: true),
+      ),
+    ),
+  );
+  Future<void> _browseDiscoverySelection(ReleaseSearchSelection selection) =>
+      _browseTitles(
+        selection.imdbId == null
+            ? null
+            : MediaTitle(
+                imdbId: selection.imdbId!,
+                title: selection.title,
+                year: selection.year?.toString() ?? '',
+                kind: selection.kind == 'tv' ? 'series' : 'movie',
+              ),
+        selection.title,
+        selection.kind,
+      );
+  void _openDiscovery({bool playlists = false}) => Navigator.of(context).push(
+    _fadeRoute(
+      FilmChatScreen(
+        initialTab: playlists ? 1 : 0,
+        onFindReleases: _browseDiscoverySelection,
+      ),
+    ),
+  );
   bool _pickingFile = false;
   bool _openingIndexer = false;
   late final PlaybackHistoryStore _historyStore =
@@ -518,6 +644,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _loadHistory();
     _loadWatchlist();
+    _loadTitles();
     // Açılışta yeni sürüm kontrolü; bulunursa diyalog gösterilir.
     unawaited(_checkForUpdate());
   }
@@ -556,34 +683,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// "Yeni bölüm var mı?" — kullanıcının kendi tetiklediği tek seferlik bir
   /// arama; arkada otomatik/periyodik bir tarama yoktur (bkz. plan Faz 3).
-  Future<void> _checkForNewEpisodes(
-    BuildContext context,
-    WatchlistEntry entry,
-  ) async {
-    final next = nextUnwatchedEpisode(entry, _history);
-    try {
-      await _watchlistStore.markChecked(entry.imdbId);
-      await _loadWatchlist();
-    } catch (_) {
-      // Kontrol zamanı damgası sadece hatırlatma rozeti içindir; yazma
-      // başarısız olsa da kullanıcının asıl isteği olan arama engellenmez.
-    }
-    if (!context.mounted) return;
-    await _openIndexerSearch(
-      context,
-      initialSelection: ReleaseSearchSelection(
-        title: entry.title,
-        kind: 'tv',
-        imdbId: entry.imdbId,
-        season: next.season,
-        episode: next.episode,
-      ),
-      autoSearch: true,
-    );
-  }
 
   bool _checkingForUpdate = false;
-
   Future<void> _checkForUpdate({bool manual = false}) async {
     if (_checkingForUpdate) return;
     _checkingForUpdate = true;
@@ -948,16 +1049,47 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _openSettings(BuildContext context) {
-    Navigator.of(context).push(
+  Future<void> _openSettings(BuildContext context) async {
+    await Navigator.of(context).push(
       _fadeRoute(
-        SettingsScreen(
+        SettingsHomeScreen(
           uiPreferences: widget.uiPreferences,
+          providerStore: _providerStore,
+          indexerStore: _indexerStore,
           onCheckForUpdates: () => _checkForUpdate(manual: true),
         ),
       ),
     );
+    if (mounted) setState(() => _resumeMetadataGeneration++);
   }
+
+  @override
+  void dispose() {
+    if (widget.metadataService == null) _metadataService.close();
+    super.dispose();
+  }
+
+  Widget _featuredResume(
+    BuildContext context,
+    PlaybackHistoryEntry entry,
+  ) => ResumeFeature(
+    key: ValueKey(
+      '${entry.nzbPath}:${entry.entryKey}:${entry.imdbId}:$_resumeMetadataGeneration',
+    ),
+    entry: entry,
+    title: _savedTitles.where((t) => t.imdbId == entry.imdbId).firstOrNull,
+    service: _metadataService,
+    settings: _metadataStore,
+    library: _titleLibrary,
+    history: _historyStore,
+    artworkLoader: widget.artworkLoader,
+    onResume: () => _resumeHistoryEntry(context, entry),
+    onDetails: (title) => _browseTitles(title),
+    onMatched: () async {
+      await _loadTitles();
+      await _loadHistory();
+    },
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -967,112 +1099,224 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(28, 72, 28, 36),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 560),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const _AppLogoMark(),
-                      const SizedBox(height: 20),
-                      const _AnimatedWordmark(),
-                      const SizedBox(height: 32),
-                      _OpenMediaCard(
-                        busy: _pickingFile,
-                        icon: Icons.folder_open_rounded,
-                        title: l10n.selectNzbAndPlay,
-                        subtitle: l10n.selectNzbHint,
-                        // TV kumandasında D-pad gezintisinin başlayabilmesi
-                        // için ilk odak bu kartta kalır.
-                        autofocus: true,
-                        primary: true,
-                        onPressed: () => _pickAndPlay(context),
-                      ),
-                      const SizedBox(height: 12),
-                      _OpenMediaCard(
-                        busy: _openingIndexer,
-                        icon: Icons.travel_explore_rounded,
-                        title: l10n.searchIndexerCard,
-                        subtitle: l10n.searchIndexerCardHint,
-                        onPressed: () => _openIndexerSearch(context),
-                      ),
-                      if (_historyFailed) ...[
-                        const SizedBox(height: 12),
-                        _InlineNotice(
-                          message: l10n.historyLoadFailed,
-                          actionLabel: l10n.retry,
-                          onAction: _loadHistory,
+            Padding(
+              padding: EdgeInsets.only(
+                top: MediaQuery.paddingOf(context).top + 72,
+              ),
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 36),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1320),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            const SizedBox(
+                              width: 64,
+                              height: 64,
+                              child: FittedBox(child: _AppLogoMark()),
+                            ),
+                            const SizedBox(width: 16),
+                            const Expanded(
+                              child: Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: _AnimatedWordmark(),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                      if (_watchlistFailed) ...[
-                        const SizedBox(height: 12),
-                        _InlineNotice(
-                          message: l10n.watchlistLoadFailed,
-                          actionLabel: l10n.retry,
-                          onAction: _loadWatchlist,
+                        const SizedBox(height: 24),
+                        if (_resumableHistory.isNotEmpty) ...[
+                          _featuredResume(context, _resumableHistory.first),
+                          const SizedBox(height: 24),
+                        ],
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          children: [
+                            FilledButton.icon(
+                              onPressed: () => _browseTitles(),
+                              icon: const Icon(Icons.movie_outlined),
+                              label: const Text('Browse films & TV'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: _openLibrary,
+                              icon: const Icon(Icons.video_library_outlined),
+                              label: const Text('My library'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: () => _openDiscovery(playlists: true),
+                              icon: const Icon(Icons.playlist_play),
+                              label: const Text('Playlists'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: () => _openDiscovery(),
+                              icon: const Icon(Icons.auto_awesome),
+                              label: const Text('Ask AI for ideas'),
+                            ),
+                          ],
                         ),
-                      ],
-                      if (_resumableHistory.isNotEmpty) ...[
-                        const SizedBox(height: 28),
-                        _ContinueWatchingSection(
-                          entries: _resumableHistory,
-                          onOpen: (entry) =>
-                              _resumeHistoryEntry(context, entry),
-                          onRemove: _removeHistoryEntry,
-                          onToggleFavorite: _toggleFavorite,
-                          onToggleWatched: _toggleWatched,
+                        const SizedBox(height: 24),
+                        const Divider(),
+                        const SizedBox(height: 16),
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final cards = <Widget>[
+                              _OpenMediaCard(
+                                busy: _pickingFile,
+                                icon: Icons.folder_open_rounded,
+                                title: l10n.selectNzbAndPlay,
+                                subtitle: l10n.selectNzbHint,
+                                // TV kumandasında D-pad gezintisinin başlayabilmesi
+                                // için ilk odak bu kartta kalır.
+                                autofocus: true,
+                                primary: false,
+                                onPressed: () => _pickAndPlay(context),
+                              ),
+
+                              _OpenMediaCard(
+                                busy: _openingIndexer,
+                                icon: Icons.travel_explore_rounded,
+                                title: l10n.searchIndexerCard,
+                                subtitle: l10n.searchIndexerCardHint,
+                                onPressed: () => _openIndexerSearch(context),
+                              ),
+                            ];
+                            if (constraints.maxWidth >= 800 &&
+                                MediaQuery.textScalerOf(context).scale(16) <
+                                    25) {
+                              return Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(child: cards[0]),
+                                  const SizedBox(width: 16),
+                                  Expanded(child: cards[1]),
+                                ],
+                              );
+                            }
+                            return Column(
+                              children: [
+                                cards[0],
+                                const SizedBox(height: 12),
+                                cards[1],
+                              ],
+                            );
+                          },
                         ),
-                      ],
-                      if (_favoriteHistory.isNotEmpty) ...[
-                        const SizedBox(height: 28),
-                        _FavoritesSection(
-                          entries: _favoriteHistory,
-                          onOpen: (entry) =>
-                              _resumeHistoryEntry(context, entry),
-                          onRemove: _removeHistoryEntry,
-                          onToggleFavorite: _toggleFavorite,
-                          onToggleWatched: _toggleWatched,
-                        ),
-                      ],
-                      if (_recentlyWatchedHistory.isNotEmpty) ...[
-                        const SizedBox(height: 28),
-                        _RecentlyWatchedSection(
-                          entries: _recentlyWatchedHistory,
-                          onOpen: (entry) =>
-                              _resumeHistoryEntry(context, entry),
-                          onRemove: _removeHistoryEntry,
-                          onToggleFavorite: _toggleFavorite,
-                          onToggleWatched: _toggleWatched,
-                        ),
-                      ],
-                      if (_upNext.isNotEmpty) ...[
-                        const SizedBox(height: 28),
-                        _UpNextSection(
-                          suggestions: _upNext,
-                          onFind: (suggestion) => _openIndexerSearch(
-                            context,
-                            initialSelection: ReleaseSearchSelection(
-                              title: suggestion.title,
-                              kind: 'tv',
-                              imdbId: suggestion.imdbId,
-                              season: suggestion.season,
-                              episode: suggestion.episode,
+                        if (_historyFailed) ...[
+                          const SizedBox(height: 12),
+                          _InlineNotice(
+                            message: l10n.historyLoadFailed,
+                            actionLabel: l10n.retry,
+                            onAction: _loadHistory,
+                          ),
+                        ],
+                        if (_watchlistFailed) ...[
+                          const SizedBox(height: 12),
+                          _InlineNotice(
+                            message: l10n.watchlistLoadFailed,
+                            actionLabel: l10n.retry,
+                            onAction: _loadWatchlist,
+                          ),
+                        ],
+                        if (_resumableHistory.isNotEmpty) ...[
+                          const SizedBox(height: 28),
+                          _ContinueWatchingSection(
+                            entries: _resumableHistory,
+                            onOpen: (entry) =>
+                                _resumeHistoryEntry(context, entry),
+                            onRemove: _removeHistoryEntry,
+                            onToggleFavorite: _toggleFavorite,
+                            onToggleWatched: _toggleWatched,
+                          ),
+                        ],
+                        if (_favoriteHistory.isNotEmpty) ...[
+                          const SizedBox(height: 28),
+                          _FavoritesSection(
+                            entries: _favoriteHistory,
+                            onOpen: (entry) =>
+                                _resumeHistoryEntry(context, entry),
+                            onRemove: _removeHistoryEntry,
+                            onToggleFavorite: _toggleFavorite,
+                            onToggleWatched: _toggleWatched,
+                          ),
+                        ],
+                        if (_recentlyWatchedHistory.isNotEmpty) ...[
+                          const SizedBox(height: 28),
+                          _RecentlyWatchedSection(
+                            entries: _recentlyWatchedHistory,
+                            onOpen: (entry) =>
+                                _resumeHistoryEntry(context, entry),
+                            onRemove: _removeHistoryEntry,
+                            onToggleFavorite: _toggleFavorite,
+                            onToggleWatched: _toggleWatched,
+                          ),
+                        ],
+                        if (_upNext.isNotEmpty) ...[
+                          const SizedBox(height: 28),
+                          _UpNextSection(
+                            suggestions: _upNext,
+                            onFind: (suggestion) => _openIndexerSearch(
+                              context,
+                              initialSelection: ReleaseSearchSelection(
+                                title: suggestion.title,
+                                kind: 'tv',
+                                imdbId: suggestion.imdbId,
+                                season: suggestion.season,
+                                episode: suggestion.episode,
+                              ),
                             ),
                           ),
-                        ),
+                        ],
+                        if (_watchlist.isNotEmpty) ...[
+                          const SizedBox(height: 28),
+                          _WatchlistSection(
+                            entries: _watchlist,
+                            onCheckNow: (entry) => _browseTitles(
+                              MediaTitle(
+                                imdbId: entry.imdbId,
+                                title: entry.title,
+                                year: '',
+                                kind: 'series',
+                              ),
+                            ),
+                            onRemove: _untrackShow,
+                          ),
+                        ],
+                        if (_savedTitles.isNotEmpty) ...[
+                          const SizedBox(height: 28),
+                          Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: Text(
+                              'Saved titles',
+                              style: Theme.of(context).textTheme.headlineSmall,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Wrap(
+                            spacing: 20,
+                            runSpacing: 20,
+                            children: [
+                              for (final title in _savedTitles.take(6))
+                                SizedBox(
+                                  width: 180,
+                                  child: TitleCard(
+                                    title: title,
+                                    artworkLoader: widget.artworkLoader,
+                                    onOpen: () => _browseTitles(title),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
                       ],
-                      if (_watchlist.isNotEmpty) ...[
-                        const SizedBox(height: 28),
-                        _WatchlistSection(
-                          entries: _watchlist,
-                          onCheckNow: (entry) =>
-                              _checkForNewEpisodes(context, entry),
-                          onRemove: _untrackShow,
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -1086,6 +1330,22 @@ class _HomeScreenState extends State<HomeScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       _GlassIconButton(
+                        icon: Icons.video_library_outlined,
+                        tooltip: 'My library',
+                        onPressed: _openLibrary,
+                      ),
+                      _GlassIconButton(
+                        icon: Icons.language,
+                        tooltip: 'App language',
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => LanguageSettingsScreen(
+                              uiPreferences: widget.uiPreferences,
+                            ),
+                          ),
+                        ),
+                      ),
+                      _GlassIconButton(
                         icon: Icons.settings_rounded,
                         tooltip: AppLocalizations.of(context).settingsTitle,
                         onPressed: () => _openSettings(context),
@@ -1093,15 +1353,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(width: 10),
                       _GlassIconButton(
                         icon: Icons.auto_awesome,
-                        tooltip: 'Discover films',
+                        tooltip: 'Discover films & TV',
                         onPressed: () => Navigator.of(context).push(
                           _fadeRoute(
                             FilmChatScreen(
-                              onFindReleases: (selection) => _openIndexerSearch(
-                                context,
-                                initialSelection: selection,
-                                autoSearch: true,
-                              ),
+                              onFindReleases: _browseDiscoverySelection,
                             ),
                           ),
                         ),

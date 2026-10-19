@@ -13,6 +13,12 @@ import 'film_playlist.dart';
 import 'ai_connections.dart';
 import 'ai_connections_screen.dart';
 import 'api_film_chat.dart';
+import 'chat_shortcuts.dart';
+import 'suggestion_metadata.dart';
+import '../metadata/artwork.dart';
+import '../metadata/metadata_service.dart';
+import '../metadata/metadata_screen.dart';
+import '../metadata/metadata_visuals.dart';
 
 class FilmChatScreen extends StatefulWidget {
   const FilmChatScreen({
@@ -23,6 +29,9 @@ class FilmChatScreen extends StatefulWidget {
     this.playlistStore,
     this.aiStore,
     this.apiChat,
+    this.initialTab = 0,
+    this.suggestionMetadata,
+    this.artworkLoader,
   });
   final Future<void> Function(ReleaseSearchSelection) onFindReleases;
   final IntegrationRuntime? runtime;
@@ -30,6 +39,9 @@ class FilmChatScreen extends StatefulWidget {
   final FilmPlaylistStore? playlistStore;
   final AiConnectionStore? aiStore;
   final ApiFilmChat? apiChat;
+  final int initialTab;
+  final SuggestionMetadata? suggestionMetadata;
+  final ArtworkLoader? artworkLoader;
   @override
   State<FilmChatScreen> createState() => _FilmChatScreenState();
 }
@@ -42,11 +54,35 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
   late final aiStore = widget.aiStore ?? AiConnectionStore();
   late final apiChat = widget.apiChat ?? ApiFilmChat(aiStore);
   AiConnections _connections = const AiConnections();
+  TabController? _tabs;
+  void _tabChanged() {
+    if (_tabs?.index == 0) _ensureSetup();
+  }
+
+  bool _setupStarted = false;
+  final _expandedPlaylists = <String>{};
+  Future<void> _enrichCurrent() => _metadata.enrichAll([
+    for (final message in _history) ...message.reply.films,
+    for (final list in _playlists)
+      ...(_expandedPlaylists.contains(list.id)
+          ? list.films
+          : list.films.take(1)),
+  ]);
+  bool _matching = false;
+  late final _metadata = widget.suggestionMetadata ?? SuggestionMetadata();
+  void _ensureSetup() {
+    if (!_setupStarted) {
+      _setupStarted = true;
+      unawaited(_setup());
+    }
+  }
+
   bool _aiReady = false;
   int _setupGeneration = 0;
   bool get _usesCodex => _connections.provider == FilmAiProvider.codex;
   final _prompt = TextEditingController();
   final _promptFocus = FocusNode();
+  final _latestReply = GlobalKey();
   final _executable = TextEditingController();
   final _scroll = ScrollController();
   final _history = <FilmChatMessage>[];
@@ -66,7 +102,9 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
   void initState() {
     super.initState();
     account.addListener(_changed);
-    unawaited(_setup());
+    if (widget.initialTab == 0) _ensureSetup();
+    _metadata.addListener(_changed);
+    unawaited(_metadata.load());
     unawaited(_loadPlaylists());
   }
 
@@ -138,6 +176,7 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
           _loaded = true;
           _playlistError = null;
         });
+        unawaited(_enrichCurrent());
       }
     } catch (error) {
       if (mounted) setState(() => _playlistError = _message(error));
@@ -215,10 +254,30 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
     _promptFocus.requestFocus();
   }
 
+  void _insertNewLine() {
+    if (_sending) return;
+    final editor = _promptFocus.context
+        ?.findAncestorStateOfType<EditableTextState>();
+    if (editor == null) return;
+    final value = _prompt.value;
+    final selection = value.selection.isValid
+        ? value.selection
+        : TextSelection.collapsed(offset: value.text.length);
+    editor.userUpdateTextEditingValue(
+      value.copyWith(
+        text: value.text.replaceRange(selection.start, selection.end, '\n'),
+        selection: TextSelection.collapsed(offset: selection.start + 1),
+        composing: TextRange.empty,
+      ),
+      SelectionChangedCause.keyboard,
+    );
+  }
+
   Future<void> _send() async {
     if (!_canSend) return;
     final prompt = _prompt.text.trim();
     if (prompt.isEmpty) return;
+    final restoreComposerFocus = _promptFocus.hasFocus;
     setState(() {
       _sending = true;
       _error = null;
@@ -233,10 +292,13 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
         if (_history.length > 10) _history.removeAt(0);
         _prompt.clear();
       });
+      unawaited(_metadata.enrichAll(reply.films));
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scroll.hasClients) {
-          _scroll.animateTo(
-            _scroll.position.maxScrollExtent,
+        final replyContext = _latestReply.currentContext;
+        if (mounted && replyContext != null) {
+          Scrollable.ensureVisible(
+            replyContext,
+            alignment: 0,
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeOut,
           );
@@ -245,7 +307,61 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
     } catch (error) {
       if (mounted) setState(() => _error = _message(error));
     } finally {
-      if (mounted) setState(() => _sending = false);
+      if (mounted) {
+        setState(() => _sending = false);
+        if (restoreComposerFocus) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted &&
+                !_sending &&
+                !_finding &&
+                _promptFocus.canRequestFocus &&
+                ModalRoute.of(context)?.isCurrent == true) {
+              _promptFocus.requestFocus();
+            }
+          });
+        }
+      }
+    }
+  }
+
+  void _focusComposer(TabController tabs) {
+    _ensureSetup();
+    tabs.animateTo(0);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _sending) return;
+      _promptFocus.requestFocus();
+      final focusContext = _promptFocus.context;
+      if (focusContext != null) {
+        Scrollable.ensureVisible(
+          focusContext,
+          duration: const Duration(milliseconds: 200),
+        );
+      }
+    });
+  }
+
+  void _newChat(TabController tabs) {
+    if (_sending) return;
+    setState(() {
+      _history.clear();
+      _error = null;
+    });
+    // A new conversation never discards a message the user is still drafting.
+    _focusComposer(tabs);
+  }
+
+  Future<void> _cancelActiveOperation() async {
+    if (_sending) {
+      await _stop();
+    } else if (_connecting || account.signingIn) {
+      ++_setupGeneration;
+      await account.disconnect();
+      if (mounted) {
+        setState(() {
+          _connecting = false;
+          _connectionError = null;
+        });
+      }
     }
   }
 
@@ -285,7 +401,7 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
     List<FilmSuggestion> films = const [],
   }) async {
     final controller = TextEditingController(
-      text: existing?.name ?? 'Movie night',
+      text: existing?.name ?? 'Watch next',
     );
     String? error;
     var busy = false;
@@ -426,7 +542,7 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
       ];
       if (updated.length > 100) {
         throw const IntegrationException(
-          'A playlist can contain up to 100 films.',
+          'A playlist can contain up to 100 titles.',
         );
       }
       await _save([
@@ -452,7 +568,7 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
     if (_finding) return;
     setState(() => _finding = true);
     try {
-      await widget.onFindReleases(film.selection);
+      await widget.onFindReleases(_metadata.selectionFor(film));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -466,6 +582,9 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
 
   @override
   void dispose() {
+    _tabs?.removeListener(_tabChanged);
+    _metadata.removeListener(_changed);
+    if (widget.suggestionMetadata == null) _metadata.dispose();
     account.removeListener(_changed);
     unawaited(chat.cancel());
     unawaited(apiChat.cancel());
@@ -480,34 +599,81 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
   @override
   Widget build(BuildContext context) => DefaultTabController(
     length: 2,
-    child: Scaffold(
-      appBar: AppBar(
-        title: const Text('Discover films'),
-        bottom: PreferredSize(
-          preferredSize: Size.fromHeight(48),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 880),
-              child: const TabBar(
-                tabs: [
-                  Tab(text: 'Chat'),
-                  Tab(text: 'Playlists'),
-                ],
+    initialIndex: widget.initialTab.clamp(0, 1),
+    child: Builder(
+      builder: (context) {
+        final tabs = DefaultTabController.of(context);
+        if (_tabs != tabs) {
+          _tabs?.removeListener(_tabChanged);
+          _tabs = tabs..addListener(_tabChanged);
+        }
+        return ChatShortcuts(
+          onSend: () => unawaited(_send()),
+          onNewLine: _insertNewLine,
+          canSend: () => _canSend,
+          composerFocused: () => _promptFocus.hasFocus,
+          isComposing: () =>
+              _prompt.value.composing.isValid &&
+              !_prompt.value.composing.isCollapsed,
+          onFocusComposer: () => _focusComposer(tabs),
+          onNewChat: _sending ? null : () => _newChat(tabs),
+          onConnections: _sending
+              ? null
+              : () => unawaited(_openAiConnections()),
+          onCancel: _sending || _connecting || account.signingIn
+              ? () => unawaited(_cancelActiveOperation())
+              : null,
+          onHelp: () => unawaited(_showShortcuts()),
+          onSwitchTab: (index) {
+            if (index == 0) _ensureSetup();
+            tabs.animateTo(index);
+          },
+          child: Scaffold(
+            appBar: AppBar(
+              title: const Text('Discover films & TV'),
+              actions: [
+                IconButton(
+                  tooltip: 'Metadata & artwork',
+                  onPressed: _metadataSettings,
+                  icon: const Icon(Icons.image_outlined),
+                ),
+                IconButton(
+                  tooltip: 'Keyboard shortcuts',
+                  onPressed: _showShortcuts,
+                  icon: const Icon(Icons.keyboard_outlined),
+                ),
+              ],
+              bottom: PreferredSize(
+                preferredSize: Size.fromHeight(48),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1320),
+                    child: TabBar(
+                      onTap: (index) {
+                        if (index == 0) _ensureSetup();
+                      },
+                      tabs: const [
+                        Tab(text: 'Chat'),
+                        Tab(text: 'Playlists'),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
+            body: SafeArea(
+              child: TabBarView(children: [_chatView(), _playlistView()]),
+            ),
           ),
-        ),
-      ),
-      body: SafeArea(
-        child: TabBarView(children: [_chatView(), _playlistView()]),
-      ),
+        );
+      },
     ),
   );
 
   Widget _pageWidth(Widget child) => Align(
     alignment: Alignment.topCenter,
     child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 880),
+      constraints: const BoxConstraints(maxWidth: 1320),
       child: child,
     ),
   );
@@ -558,7 +724,7 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
   List<Widget> _chatContents() => [
     if (_history.isEmpty) ...[
       Text(
-        'Find your next great film',
+        'Find your next favorite',
         style: Theme.of(context).textTheme.headlineMedium?.copyWith(
           fontWeight: FontWeight.w700,
           height: 1.15,
@@ -566,7 +732,7 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
       ),
       const SizedBox(height: 10),
       Text(
-        'A mood, a genre, a film you loved. Start with an idea and make it a movie night.',
+        'Films, TV shows and miniseries. Tell us what you’re in the mood for.',
         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
           color: Theme.of(context).colorScheme.onSurfaceVariant,
           height: 1.5,
@@ -583,6 +749,7 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
     ],
     for (final entry in _history) ...[
       Align(
+        key: identical(entry, _history.last) ? _latestReply : null,
         alignment: AlignmentDirectional.centerEnd,
         child: Container(
           constraints: const BoxConstraints(maxWidth: 680),
@@ -619,7 +786,7 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
                 ? null
                 : () => _add(entry.reply.films),
             icon: const Icon(Icons.playlist_add),
-            label: const Text('Save these films as a playlist'),
+            label: const Text('Save these picks as a playlist'),
           ),
         ),
       const SizedBox(height: 28),
@@ -754,8 +921,8 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
                 failed
                     ? 'We couldn’t connect to ChatGPT. Try again or choose another provider.'
                     : _usesCodex
-                    ? 'Connect ChatGPT to get film recommendations. Your playlists work offline.'
-                    : 'Add your credentials in AI connections to get film recommendations.',
+                    ? 'Connect ChatGPT for film and TV recommendations. Your playlists work offline.'
+                    : 'Add your credentials in AI connections for film and TV recommendations.',
               ),
               const SizedBox(height: 14),
               Align(
@@ -872,13 +1039,13 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
             ),
             (
               Icons.wb_sunny_outlined,
-              'Something uplifting',
-              'A funny, uplifting movie night',
+              'TV worth getting into',
+              'Character-driven TV shows with a great first season',
             ),
             (
               Icons.auto_awesome_outlined,
               'More like a favorite',
-              'Films like Arrival, without spoilers',
+              'Films and TV shows like Arrival, without spoilers',
             ),
           ])
             SizedBox(
@@ -982,20 +1149,12 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
               ),
               const SizedBox(height: 12),
             ],
-            CallbackShortcuts(
-              bindings: {
-                const SingleActivator(
-                  LogicalKeyboardKey.enter,
-                  control: true,
-                ): () {
-                  if (_canSend) unawaited(_send());
-                },
-                const SingleActivator(
-                  LogicalKeyboardKey.enter,
-                  meta: true,
-                ): () {
-                  if (_canSend) unawaited(_send());
-                },
+            Shortcuts(
+              shortcuts: {
+                if (Theme.of(context).platform == TargetPlatform.windows ||
+                    Theme.of(context).platform == TargetPlatform.linux)
+                  const SingleActivator(LogicalKeyboardKey.keyY, control: true):
+                      const RedoTextIntent(SelectionChangedCause.keyboard),
               },
               child: TextField(
                 key: const Key('chat-prompt'),
@@ -1040,7 +1199,8 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
                         TextButton(
                           onPressed: _sending
                               ? null
-                              : () => setState(_history.clear),
+                              : () =>
+                                    _newChat(DefaultTabController.of(context)),
                           child: const Text('New chat'),
                         ),
                       if (value.text.length >= 3600)
@@ -1068,10 +1228,17 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
             if (_sending) ...[
               const SizedBox(height: 12),
               const LinearProgressIndicator(
-                semanticsLabel: 'Preparing film recommendations',
+                semanticsLabel: 'Preparing film and TV recommendations',
               ),
             ],
             const SizedBox(height: 12),
+            Text(
+              'Enter to send · Shift+Enter for a new line',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 4),
             Text(
               !_aiReady
                   ? 'Loading your AI connection…'
@@ -1088,10 +1255,12 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
     );
   }
 
+  Future<void> _showShortcuts() => showChatShortcutHelp(context);
+
   Future<void> _aboutDiscovery() => showDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('About film discovery'),
+      title: const Text('About film & TV discovery'),
       content: const SingleChildScrollView(
         child: Text(
           'Your prompt and recent conversation go to your selected provider only when you send. '
@@ -1111,49 +1280,247 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
     ),
   );
 
-  Widget _filmCard(FilmSuggestion film, List<Widget> actions) => Card(
-    margin: const EdgeInsets.only(bottom: 12),
-    child: Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            film.title + (film.year == null ? '' : ' (${film.year})'),
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            film.description,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.5),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            film.reason,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-              height: 1.4,
+  Future<void> _metadataSettings() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Artwork & title metadata'),
+        content: SizedBox(
+          width: 480,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const ArtworkSettings(),
+                const Text(
+                  'Titles are identified automatically through your configured OMDb access. Artwork and ratings load without manual matching. Use Rematch title to correct a result. Saved results work offline.',
+                ),
+                if (_metadata.error != null)
+                  TextButton(
+                    onPressed: _metadata.load,
+                    child: const Text('Retry saved matches'),
+                  ),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              FilledButton.tonalIcon(
-                onPressed: _finding ? null : () => _find(film),
-                icon: const Icon(Icons.search),
-                label: const Text('Find releases'),
-              ),
-              ...actions,
-            ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => MetadataScreen(
+                    service: _metadata.service,
+                    store: _metadata.settings,
+                  ),
+                ),
+              );
+              _metadata.resetAttempts();
+              if (mounted) unawaited(_enrichCurrent());
+            },
+            child: const Text('Configure OMDb'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Done'),
           ),
         ],
       ),
-    ),
-  );
+    );
+    _metadata.resetAttempts();
+    if (mounted) unawaited(_enrichCurrent());
+  }
+
+  Future<void> _match(FilmSuggestion film) async {
+    if (_matching) return;
+    setState(() => _matching = true);
+    try {
+      final matches = await _metadata.candidates(film);
+      if (!mounted) return;
+      if (matches.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No title matches found. The suggestion is still available without artwork.',
+            ),
+          ),
+        );
+        return;
+      }
+      final selected = await showDialog<MediaTitle>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: const Text('Confirm artwork match'),
+          children: [
+            for (final title in matches)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, title),
+                child: Text(
+                  '${title.title} (${title.year}) / ${title.kind} / ${title.imdbId}',
+                ),
+              ),
+          ],
+        ),
+      );
+      if (selected != null) await _metadata.confirm(film, selected);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error is MetadataException && error.code == 'key'
+                  ? 'Configure your OMDb key in Metadata & artwork to load posters and ratings.'
+                  : 'Could not load or save the title match. Previous artwork was preserved.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _matching = false);
+    }
+  }
+
+  Widget _filmCard(FilmSuggestion film, List<Widget> actions) {
+    final media = _metadata.forFilm(film);
+    final heading = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          (media?.title ?? film.title) +
+              (media != null && media.year.isNotEmpty
+                  ? ' (${media.year})'
+                  : film.year == null
+                  ? ''
+                  : ' (${film.year})'),
+          style: Theme.of(
+            context,
+          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+        ),
+      ],
+    );
+    final details = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            Chip(
+              avatar: Icon(
+                film.kind == DiscoveryKind.tv
+                    ? Icons.tv_outlined
+                    : Icons.theaters_outlined,
+                size: 16,
+              ),
+              label: Text(film.kind.label),
+            ),
+            if (media != null && media.runtime.isNotEmpty)
+              Chip(label: Text(media.runtime)),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        const SizedBox(height: 10),
+        Text(
+          film.description,
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.5),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          film.reason,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            height: 1.4,
+          ),
+        ),
+        if (media != null) ...[
+          const SizedBox(height: 14),
+          RatingMeters(media: media),
+          if (media.genre.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(media.genre),
+            ),
+        ],
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton.tonalIcon(
+              onPressed: _finding ? null : () => _find(film),
+              icon: const Icon(Icons.search),
+              label: const Text('Find releases'),
+            ),
+            ...actions,
+            TextButton.icon(
+              onPressed: _matching || _metadata.isLoading(film)
+                  ? null
+                  : () => _match(film),
+              icon: const Icon(Icons.image_outlined),
+              label: Text(
+                media == null
+                    ? (_metadata.isLoading(film)
+                          ? 'Identifying title...'
+                          : 'Rematch title')
+                    : 'Rematch title',
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final poster = SizedBox(
+              width: constraints.maxWidth < 560 ? 104 : 144,
+              child: TitleArtwork(
+                key: ValueKey('${film.identity}:${media?.imdbId}'),
+                url: media?.poster ?? '',
+                title: film.title,
+                loader: widget.artworkLoader,
+              ),
+            );
+            return constraints.maxWidth < 560 ||
+                    MediaQuery.textScalerOf(context).scale(16) > 24
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(width: 80, child: poster),
+                          const SizedBox(width: 16),
+                          Expanded(child: heading),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      details,
+                    ],
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      poster,
+                      const SizedBox(width: 24),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [heading, details],
+                        ),
+                      ),
+                    ],
+                  );
+          },
+        ),
+      ),
+    );
+  }
 
   Widget _playlistWarning() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1176,7 +1543,7 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Delete playlist?'),
         content: Text(
-          'Delete “${list.name}” and its saved film list? This cannot be undone.',
+          'Delete “${list.name}” and its saved list? This cannot be undone.',
         ),
         actions: [
           TextButton(
@@ -1204,14 +1571,14 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Your movie nights',
+            'Your playlists',
             style: Theme.of(
               context,
             ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
           const Text(
-            'Keep your picks in order. Choose a release for each film when you’re ready to watch.',
+            'Keep films and TV shows together. Choose a release for each title when you’re ready to watch.',
           ),
           const SizedBox(height: 24),
           if (_playlistError != null) _playlistWarning(),
@@ -1229,22 +1596,24 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'A great movie night starts with a few ideas',
+                    'Your next watch starts with a few ideas',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Ask for films in Chat, then save your favorites here.',
+                    'Ask for films or TV shows in Chat, then save your favorites here.',
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 20),
                   Builder(
                     builder: (context) => OutlinedButton.icon(
-                      onPressed: () =>
-                          DefaultTabController.of(context).animateTo(0),
+                      onPressed: () {
+                        _ensureSetup();
+                        DefaultTabController.of(context).animateTo(0);
+                      },
                       icon: const Icon(Icons.auto_awesome),
-                      label: const Text('Explore film ideas'),
+                      label: const Text('Explore ideas'),
                     ),
                   ),
                 ],
@@ -1255,27 +1624,65 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
               margin: const EdgeInsets.only(bottom: 16),
               child: ExpansionTile(
                 key: ValueKey(list.id),
+                onExpansionChanged: (expanded) {
+                  if (expanded) {
+                    _expandedPlaylists.add(list.id);
+                    unawaited(_metadata.enrichAll(list.films));
+                  } else {
+                    _expandedPlaylists.remove(list.id);
+                  }
+                },
+                leading: SizedBox(
+                  width: 44,
+                  child: TitleArtwork(
+                    url:
+                        list.films
+                            .map(_metadata.forFilm)
+                            .whereType<MediaTitle>()
+                            .where((m) => m.poster.isNotEmpty)
+                            .firstOrNull
+                            ?.poster ??
+                        '',
+                    title: list.name,
+                    loader: widget.artworkLoader,
+                  ),
+                ),
                 title: Text(list.name),
-                subtitle: Text('${list.films.length} films'),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: CollectionComposition(
+                    films: list.films
+                        .where((f) => f.kind == DiscoveryKind.movie)
+                        .length,
+                    shows: list.films
+                        .where((f) => f.kind == DiscoveryKind.tv)
+                        .length,
+                  ),
+                ),
                 childrenPadding: const EdgeInsets.all(16),
                 children: [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      TextButton.icon(
-                        onPressed: _saving
-                            ? null
-                            : () => _namePlaylist(existing: list),
-                        icon: const Icon(Icons.edit_outlined),
-                        label: const Text('Rename'),
-                      ),
-                      TextButton.icon(
-                        onPressed: _saving ? null : () => _deletePlaylist(list),
-                        icon: const Icon(Icons.delete_outline),
-                        label: const Text('Delete playlist'),
-                      ),
-                    ],
+                  SizedBox(
+                    width: double.infinity,
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        TextButton.icon(
+                          onPressed: _saving
+                              ? null
+                              : () => _namePlaylist(existing: list),
+                          icon: const Icon(Icons.edit_outlined),
+                          label: const Text('Rename'),
+                        ),
+                        TextButton.icon(
+                          onPressed: _saving
+                              ? null
+                              : () => _deletePlaylist(list),
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('Delete playlist'),
+                        ),
+                      ],
+                    ),
                   ),
                   for (var i = 0; i < list.films.length; i++)
                     _filmCard(list.films[i], [

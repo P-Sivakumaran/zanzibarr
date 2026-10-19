@@ -89,7 +89,7 @@ class ApiFilmChat {
         if (response['stop_reason'] != 'end_turn' ||
             response['content'] is! List) {
           throw const IntegrationException(
-            'Claude could not finish the film list. Ask for fewer films or try again.',
+            'Claude could not finish the recommendation list. Ask for fewer titles or try again.',
           );
         }
         reply = (response['content'] as List)
@@ -157,7 +157,7 @@ class ApiFilmChat {
             candidates.first is! Map ||
             candidates.first['finishReason'] != 'STOP') {
           throw const IntegrationException(
-            'Gemini could not finish the film list. Ask for fewer films or try again.',
+            'Gemini could not finish the recommendation list. Ask for fewer titles or try again.',
           );
         }
         final parts = candidates.first['content']['parts'] as List;
@@ -177,7 +177,7 @@ class ApiFilmChat {
       rethrow;
     } catch (_) {
       throw const IntegrationException(
-        'The assistant returned an invalid film list. Please try again.',
+        'The assistant returned an invalid recommendation list. Please try again.',
       );
     } finally {
       _busy = false;

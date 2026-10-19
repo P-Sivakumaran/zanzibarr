@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zanzibarr/chat/ai_connections.dart';
@@ -15,10 +16,30 @@ import 'package:zanzibarr/settings/ui_preferences.dart';
 
 import 'film_chat_test.dart' show FakeCodex, film, settleChat;
 import 'integrations_test.dart' show MemoryStorage;
+import 'tv_discovery_test.dart' as tv;
 
 final _screenshots = Platform.environment['GENERATE_CHAT_SCREENSHOTS'] == '1';
 const _promptKey = Key('chat-prompt');
 const _sendKey = Key('chat-send');
+
+Future<void> _key(
+  WidgetTester tester,
+  LogicalKeyboardKey key, {
+  bool primary = false,
+  bool meta = false,
+  bool shift = false,
+}) async {
+  if (primary) await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+  if (meta) await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+  if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+  try {
+    await tester.sendKeyEvent(key);
+  } finally {
+    if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    if (meta) await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    if (primary) await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+  }
+}
 
 Future<void> _fonts() async {
   if (!_screenshots) return;
@@ -61,8 +82,11 @@ CodexRpc _harmlessRpc() {
 
 Future<void> _shot(WidgetTester tester, String name) async {
   if (_screenshots) {
+    await tester.pump(const Duration(milliseconds: 350));
     await expectLater(
-      find.byKey(const Key('discovery-preview')),
+      name == 'shortcuts-large-text'
+          ? find.byType(MaterialApp)
+          : find.byKey(const Key('discovery-preview')),
       matchesGoldenFile('../docs/screenshots/film-chat-$name.png'),
     );
   }
@@ -74,12 +98,15 @@ Future<
 _mount(
   WidgetTester tester, {
   CodexAccount? account,
+  FakeCodex? fake,
+  void Function(String kind)? onSearchKind,
   MemoryStorage? storage,
   bool connected = true,
   Size size = const Size(1280, 800),
   double scale = 1,
   TextDirection direction = TextDirection.ltr,
   ThemeMode mode = ThemeMode.dark,
+  TargetPlatform platform = TargetPlatform.windows,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -88,7 +115,7 @@ _mount(
   final runtime = IntegrationRuntime(store: IntegrationStore(storage: memory));
   await runtime.load();
   await runtime.save(runtime.settings!.copyWith(codexExecutable: 'codex.exe'));
-  final actualAccount = account ?? FakeCodex().account;
+  final actualAccount = account ?? (fake ?? FakeCodex()).account;
   if (connected) await actualAccount.connect('codex.exe');
   final preferences = UiPreferencesController(UiPreferencesStore())
     ..themeMode = mode;
@@ -103,11 +130,12 @@ _mount(
             child: Theme(
               data: _screenshots
                   ? theme.copyWith(
+                      platform: platform,
                       textTheme: theme.textTheme.apply(
                         fontFamily: 'DiscoveryPreview',
                       ),
                     )
-                  : theme,
+                  : theme.copyWith(platform: platform),
               child: MediaQuery(
                 data: MediaQuery.of(
                   context,
@@ -119,7 +147,8 @@ _mount(
                     runtime: runtime,
                     aiStore: AiConnectionStore(storage: memory),
                     playlistStore: FilmPlaylistStore(storage: memory),
-                    onFindReleases: (_) async {},
+                    onFindReleases: (selection) async =>
+                        onSearchKind?.call(selection.kind),
                   ),
                 ),
               ),
@@ -145,6 +174,242 @@ _mount(
 
 void main() {
   setUpAll(_fonts);
+
+  testWidgets(
+    'Enter sends TV recommendations and Find releases uses TV search',
+    (tester) async {
+      final fake = FakeCodex()..suggestions = const [tv.show];
+      String? searched;
+      await _mount(tester, fake: fake, onSearchKind: (kind) => searched = kind);
+      await tester.enterText(find.byKey(_promptKey), 'TV shows with a mystery');
+      await _key(tester, LogicalKeyboardKey.enter);
+      await settleChat(tester);
+      expect(find.text('Severance (2022)'), findsOneWidget);
+      expect(find.text('TV show'), findsOneWidget);
+      expect(fake.threads, 1);
+      expect(
+        tester.widget<TextField>(find.byKey(_promptKey)).focusNode!.hasFocus,
+        isTrue,
+      );
+      await tester.ensureVisible(find.text('Find releases'));
+      await tester.tap(find.text('Find releases'));
+      await settleChat(tester);
+      expect(searched, 'tv');
+      await _shot(tester, 'tv-recommendation');
+      await tester.ensureVisible(find.text('Add to playlist'));
+      await tester.tap(find.text('Add to playlist'));
+      await settleChat(tester);
+      await tester.tap(find.text('New playlist'));
+      await settleChat(tester);
+      final name = find.byWidgetPredicate(
+        (w) => w is TextField && w.decoration?.labelText == 'Playlist name',
+      );
+      await tester.enterText(name, 'TV to try');
+      await tester.tap(find.text('Save'));
+      await settleChat(tester);
+      await tester.tap(find.text('Playlists'));
+      await settleChat(tester);
+      await tester.tap(find.text('TV to try'));
+      await settleChat(tester);
+      expect(find.text('TV show'), findsOneWidget);
+      expect(find.text('Severance (2022)'), findsOneWidget);
+    },
+  );
+
+  testWidgets('Shift Enter inserts a newline and Cmd Enter sends once', (
+    tester,
+  ) async {
+    final fake = FakeCodex();
+    await _mount(tester, fake: fake);
+    await tester.enterText(find.byKey(_promptKey), 'First line');
+    await tester.pump(const Duration(milliseconds: 600));
+    await _key(tester, LogicalKeyboardKey.enter, shift: true);
+    await tester.pump();
+    final controller = tester
+        .widget<TextField>(find.byKey(_promptKey))
+        .controller!;
+    expect(controller.text, 'First line\n');
+    expect(fake.threads, 0);
+    await tester.pump(const Duration(milliseconds: 600));
+    await _key(tester, LogicalKeyboardKey.keyZ, primary: true);
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(controller.text, 'First line');
+    await _key(tester, LogicalKeyboardKey.keyY, primary: true);
+    await tester.pump();
+    expect(controller.text, 'First line\n');
+    await _key(tester, LogicalKeyboardKey.enter, meta: true);
+    await settleChat(tester);
+    expect(fake.threads, 1);
+    expect(controller.text, isEmpty);
+  });
+
+  testWidgets('Enter commits IME composition without starting a request', (
+    tester,
+  ) async {
+    final fake = FakeCodex();
+    await _mount(tester, fake: fake);
+    await tester.enterText(find.byKey(_promptKey), '草稿');
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: '草稿',
+        selection: TextSelection.collapsed(offset: 2),
+        composing: TextRange(start: 0, end: 2),
+      ),
+    );
+    await tester.pump();
+    await _key(tester, LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(fake.threads, 0);
+    expect(
+      tester.widget<TextField>(find.byKey(_promptKey)).controller!.text,
+      contains('草稿'),
+    );
+  });
+
+  testWidgets(
+    'macOS command shortcuts focus the composer and native selection',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      try {
+        await _mount(tester, platform: TargetPlatform.macOS);
+        await _key(tester, LogicalKeyboardKey.keyL, meta: true);
+        await settleChat(tester);
+        await tester.enterText(find.byKey(_promptKey), 'Mac draft');
+        await _key(tester, LogicalKeyboardKey.keyA, meta: true);
+        final field = tester.widget<TextField>(find.byKey(_promptKey));
+        expect(
+          field.controller!.selection,
+          const TextSelection(baseOffset: 0, extentOffset: 9),
+        );
+        await _key(tester, LogicalKeyboardKey.keyN, meta: true);
+        await settleChat(tester);
+        expect(field.controller!.text, 'Mac draft');
+        await _key(tester, LogicalKeyboardKey.slash, meta: true);
+        await tester.pumpAndSettle();
+        expect(find.text('Enter or ⌘+Enter'), findsOneWidget);
+        await tester.tap(find.text('Done'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    },
+  );
+
+  testWidgets('Escape stops a reply and preserves the draft', (tester) async {
+    final fake = FakeCodex()..finish = false;
+    await _mount(tester, fake: fake);
+    await tester.enterText(find.byKey(_promptKey), 'Keep this TV request');
+    await _key(tester, LogicalKeyboardKey.enter);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Stop'), findsOneWidget);
+    await _key(tester, LogicalKeyboardKey.escape);
+    await settleChat(tester);
+    expect(find.text('Stop'), findsNothing);
+    expect(
+      tester.widget<TextField>(find.byKey(_promptKey)).controller!.text,
+      'Keep this TV request',
+    );
+  });
+
+  testWidgets(
+    'chat navigation shortcuts switch tabs, keep drafts and expose help',
+    (tester) async {
+      await _mount(tester);
+      await tester.enterText(find.byKey(_promptKey), 'First request');
+      await _key(tester, LogicalKeyboardKey.enter);
+      await settleChat(tester);
+      await tester.enterText(find.byKey(_promptKey), 'Keep this draft');
+      await _key(tester, LogicalKeyboardKey.digit2, primary: true);
+      await settleChat(tester);
+      expect(find.text('Your playlists'), findsOneWidget);
+      await _key(tester, LogicalKeyboardKey.keyL, primary: true);
+      await settleChat(tester);
+      expect(
+        tester.widget<TextField>(find.byKey(_promptKey)).focusNode!.hasFocus,
+        isTrue,
+      );
+      await _key(tester, LogicalKeyboardKey.keyN, primary: true);
+      await settleChat(tester);
+      expect(find.text('Arrival (2016)'), findsNothing);
+      expect(
+        tester.widget<TextField>(find.byKey(_promptKey)).controller!.text,
+        'Keep this draft',
+      );
+      await _key(tester, LogicalKeyboardKey.slash, primary: true);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.text('New chat (keeps your draft)'), findsOneWidget);
+      await _key(tester, LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      await _key(tester, LogicalKeyboardKey.comma, primary: true);
+      await tester.pumpAndSettle();
+      expect(find.text('AI connections'), findsOneWidget);
+      await tester.pageBack();
+      await settleChat(tester);
+      expect(
+        tester.widget<TextField>(find.byKey(_promptKey)).controller!.text,
+        'Keep this draft',
+      );
+    },
+  );
+
+  testWidgets(
+    'native select copy cut paste undo redo and Tab remain available',
+    (tester) async {
+      var clipboard = '';
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') {
+          clipboard = (call.arguments as Map)['text'] as String;
+        }
+        if (call.method == 'Clipboard.getData') return {'text': clipboard};
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+      await _mount(tester);
+      await tester.enterText(find.byKey(_promptKey), 'A television draft');
+      await tester.pump(const Duration(milliseconds: 600));
+      final field = tester.widget<TextField>(find.byKey(_promptKey));
+      await _key(tester, LogicalKeyboardKey.keyA, primary: true);
+      expect(
+        field.controller!.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 18),
+      );
+      await _key(tester, LogicalKeyboardKey.keyC, primary: true);
+      await tester.pump();
+      expect(clipboard, 'A television draft');
+      await _key(tester, LogicalKeyboardKey.keyX, primary: true);
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(field.controller!.text, isEmpty);
+      await _key(tester, LogicalKeyboardKey.keyV, primary: true);
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(field.controller!.text, 'A television draft');
+      await _key(tester, LogicalKeyboardKey.keyZ, primary: true);
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(field.controller!.text, isEmpty);
+      await _key(tester, LogicalKeyboardKey.keyZ, primary: true, shift: true);
+      await tester.pump();
+      expect(field.controller!.text, 'A television draft');
+      await _key(tester, LogicalKeyboardKey.tab);
+      await tester.pump();
+      expect(field.focusNode!.hasFocus, isFalse);
+      await _key(tester, LogicalKeyboardKey.tab, shift: true);
+      await tester.pump();
+      expect(field.focusNode!.hasFocus, isTrue);
+      expect(tester.takeException(), isNull);
+      await _key(tester, LogicalKeyboardKey.f1);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await _key(tester, LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+    },
+  );
 
   testWidgets(
     'connection failure has a retry, hides the path, and keeps Send disabled',
@@ -254,6 +519,13 @@ void main() {
         lessThanOrEqualTo(360),
       );
       expect(tester.takeException(), isNull);
+      await _key(tester, LogicalKeyboardKey.f1);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await _shot(tester, 'shortcuts-large-text');
+      await _key(tester, LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
     },
   );
 

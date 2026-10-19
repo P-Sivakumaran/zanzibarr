@@ -426,6 +426,40 @@ class PlaybackHistoryStore {
     await _write(entries);
   });
 
+  /// Associate only the exact release the user matched. Preserve newer playback
+  /// progress, source recovery and favorites; never recreate a deleted entry.
+  Future<void> setTitleIdentity(PlaybackHistoryEntry expected, String imdbId) =>
+      _serialized(() async {
+        if (!RegExp(r'^tt[0-9]{7,10}$').hasMatch(imdbId)) {
+          throw const FormatException('Invalid title identity');
+        }
+        final entries = List.of(await _load());
+        final index = entries.indexWhere(
+          (e) =>
+              e.nzbPath == expected.nzbPath && e.entryKey == expected.entryKey,
+        );
+        if (index < 0) throw StateError('History entry no longer exists');
+        final old = entries[index];
+        if (old.title != expected.title || old.imdbId != expected.imdbId) {
+          throw StateError('History identity changed');
+        }
+        entries[index] = PlaybackHistoryEntry(
+          nzbPath: old.nzbPath,
+          entryKey: old.entryKey,
+          title: old.title,
+          positionSeconds: old.positionSeconds,
+          durationSeconds: old.durationSeconds,
+          updatedAtMs: old.updatedAtMs,
+          imdbId: imdbId,
+          season: old.season,
+          episode: old.episode,
+          sourceId: old.sourceId,
+          nzbUrl: old.nzbUrl,
+          favorite: old.favorite,
+        );
+        await _write(entries);
+      });
+
   Future<void> _write(List<PlaybackHistoryEntry> entries) => _storage.write(
     storageKey,
     jsonEncode(<String, Object>{

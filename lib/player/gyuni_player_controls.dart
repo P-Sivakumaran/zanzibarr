@@ -1,3 +1,4 @@
+import 'track_language.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -1271,8 +1272,13 @@ String trackLabel(Object track, {required String auto, required String off}) {
   if (id == 'no') return off;
   return [
     if (title?.trim().isNotEmpty ?? false) title!.trim(),
-    if (language?.trim().isNotEmpty ?? false) language!.toUpperCase(),
+    if (language?.trim().isNotEmpty ?? false) trackLanguageLabel(language),
     if (codec?.trim().isNotEmpty ?? false) codec!.toUpperCase(),
+    if ((language?.trim().isEmpty ?? true)) 'Unknown language',
+    if ((track is AudioTrack && track.uri) ||
+        (track is SubtitleTrack && (track.uri || track.data)))
+      'External',
+    'Detected',
     if ((title?.trim().isEmpty ?? true) &&
         (language?.trim().isEmpty ?? true) &&
         (codec?.trim().isEmpty ?? true))

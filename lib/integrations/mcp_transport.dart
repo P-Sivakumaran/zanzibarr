@@ -80,7 +80,7 @@ class McpClient {
     final result = await _send('initialize', {
       'protocolVersion': mcpProtocolVersion,
       'capabilities': <String, Object>{},
-      'clientInfo': {'name': 'zanzibarr', 'version': '1.16.0'},
+      'clientInfo': {'name': 'zanzibarr', 'version': '1.17.0'},
     });
     final version = result['protocolVersion'];
     if (!_supportedVersions.contains(version)) {
@@ -373,7 +373,7 @@ class LocalMcpServer {
             'capabilities': {
               'tools': {'listChanged': false},
             },
-            'serverInfo': {'name': 'zanzibarr', 'version': '1.16.0'},
+            'serverInfo': {'name': 'zanzibarr', 'version': '1.17.0'},
           };
         } else if (method == 'ping') {
           result = <String, Object>{};

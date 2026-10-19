@@ -42,6 +42,7 @@ class _Service extends MetadataService {
     String query, {
     String? kind,
     int page = 1,
+    int? year,
   }) async {
     requests++;
     return const MetadataPage([media]);
@@ -133,11 +134,15 @@ void main() {
       await tester.tap(find.byIcon(Icons.search_rounded));
       await tester.pumpAndSettle();
       expect(service.requests, 1);
+      await tester.ensureVisible(find.text('The Matrix'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('The Matrix'));
       await tester.pumpAndSettle();
       expect(service.requests, 2);
       expect(find.text('IMDb: 8.7/10'), findsOneWidget);
-      expect(find.text('Rotten Tomatoes: 83%'), findsOneWidget);
+      expect(find.text('Rotten Tomatoes: 83% positive'), findsOneWidget);
+      await tester.ensureVisible(find.text('Find releases'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Find releases'));
       await tester.pumpAndSettle();
       final fields = tester

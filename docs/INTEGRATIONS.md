@@ -1,9 +1,10 @@
 # Zanzibarr integrations
 
-Available in the 1.15 candidate under **Settings → MCP & AI**. This labelled
-app-bar action appears in full, indexer and provider settings. **Sign in with
-ChatGPT** is at the top of Integrations; MCP controls follow below. Everything
-is optional and local MCP access is off by default.
+Available in the 1.20 candidate under **Settings → MCP & plugins**.
+The labelled **MCP & AI** action in provider/indexer forms still opens this page.
+AI provider setup has its own **Settings → AI connections** entry. On the MCP
+page, endpoint/token details and advanced Codex account controls are collapsed
+until needed. Everything is optional; local MCP access is off by default.
 New integration copy is English in all locales; the screen discloses this.
 
 ## Assistants controlling Zanzibarr
@@ -98,7 +99,7 @@ downloadable plugin bundles and a marketplace are not included.
 
 ## Claude and Gemini film chat
 
-Choose **Claude and Gemini AI connections** at the top of Integrations. This
+Choose **AI providers & accounts** on the MCP page, or **AI connections** in Settings. This
 opens secure API-key setup for both providers and Google desktop OAuth setup
 for Gemini. [Setup instructions](AI_CONNECTIONS.md). Chat is under Discover
 films and reuses the existing playlists. These API options use provider API
@@ -106,7 +107,7 @@ quota; they do not import subscription credentials.
 
 ## Subscription accounts
 
-**Codex:** enter the path to an up-to-date official Codex executable and choose
+**Codex:** expand **Advanced ChatGPT connection**, enter the path to an up-to-date official Codex executable and choose
 Sign in with ChatGPT through Codex. App-server owns OAuth, refresh, cancellation,
 sign-out and keyring storage. A separate Codex home lives under Zanzibarr's
 application-support directory. Zanzibarr requests keyring credential storage and
@@ -137,3 +138,34 @@ and one real film recommendation were subsequently verified. Claude/Gemini live
 account access and inference remain unverified.
 Live provider compatibility and physical playback/remote behavior remain to be
 checked. See dated integration verification notes for the gate and build.
+
+
+### Optional rating-count context
+
+Each Ratings entry may add an exact positive integer Count beside Source and
+Value. Internet Movie Database counts represent user votes; Rotten Tomatoes
+and Metacritic counts represent critic reviews. For example:
+
+```json
+{"Ratings":[{"Source":"Rotten Tomatoes","Value":"95%","Count":240}]}
+```
+
+Old payloads remain valid. Counts are optional; omit them when unavailable.
+Do not send rounded abbreviations or reuse a different source's count. Zanzibarr
+validates, stores and displays the counts with their source's original scale.
+
+
+### Optional review gap filling (1.22)
+
+Settings > Artwork & ratings > Cast, topics & review context can select an
+existing metadata-enabled MCP connection for lazy title-page enrichment. The
+connection must return the confirmed title ID and type plus Ratings rows with
+source-specific score and exact Count. The app replaces score/count observations
+together and shows the selected connection name as attribution. Source scales
+and counts are validated; missing/invalid fields preserve the prior observation.
+
+The app does not reinterpret arbitrary votes fields or bundle a licensed Fabric
+bridge. Provider authors must map documented critic-review vs user-vote meanings
+and ensure their data access/redistribution terms allow the intended use. Cached
+successful/absent responses expire after 24 hours; failures use a shorter retry
+window. No OMDb key is sent to the MCP review provider.

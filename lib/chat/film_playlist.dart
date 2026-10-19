@@ -5,30 +5,47 @@ import '../integrations/integration_settings.dart';
 import '../player/media_preferences.dart';
 import '../search/release_search_selection.dart';
 
+enum DiscoveryKind {
+  movie('Film'),
+  tv('TV show');
+
+  const DiscoveryKind(this.label);
+  final String label;
+}
+
+// Keep the existing class and storage format compatible with saved film lists.
 class FilmSuggestion {
   const FilmSuggestion({
     required this.title,
     required this.year,
     required this.description,
     required this.reason,
+    this.kind = DiscoveryKind.movie,
   });
   final String title;
   final int? year;
   final String description;
   final String reason;
-  String get identity => '${title.toLowerCase().trim()}:$year';
+  final DiscoveryKind kind;
+  String get identity => '${kind.name}:${title.toLowerCase().trim()}:$year';
   // AI identifiers are not trusted to constrain release searches.
   ReleaseSearchSelection get selection =>
-      ReleaseSearchSelection(title: title, year: year, kind: 'movie');
+      ReleaseSearchSelection(title: title, year: year, kind: kind.name);
   Map<String, Object?> toJson() => {
     'title': title,
     'year': year,
     'description': description,
     'reason': reason,
+    'kind': kind.name,
   };
   factory FilmSuggestion.fromJson(Object? value) {
     if (value is! Map) throw const FormatException('Invalid film');
     final year = value['year'];
+    final rawKind = value.containsKey('kind') ? value['kind'] : 'movie';
+    final kind = DiscoveryKind.values
+        .where((kind) => kind.name == rawKind)
+        .firstOrNull;
+    if (kind == null) throw const FormatException('Invalid title type');
     if (year != null && (year is! int || year < 1880 || year > 2200)) {
       throw const FormatException('Invalid year');
     }
@@ -37,6 +54,7 @@ class FilmSuggestion {
       year: year as int?,
       description: boundedText(value['description'], 2000),
       reason: boundedText(value['reason'], 1000),
+      kind: kind,
     );
   }
 }
@@ -61,13 +79,20 @@ class FilmReply {
       throw const FormatException('Invalid reply');
     }
     final seen = <String>{};
-    final films = [
-      for (final film in value['films']) FilmSuggestion.fromJson(film),
-    ];
+    final films = [for (final film in value['films']) _parseSuggestion(film)];
     return FilmReply(
       boundedText(value['message'], 8000),
       List.unmodifiable(films.where((film) => seen.add(film.identity))),
     );
+  }
+
+  static FilmSuggestion _parseSuggestion(Object? value) {
+    // Only stored legacy playlists may omit kind. AI replies must not silently
+    // route an unclassified TV suggestion into film search.
+    if (value is! Map || !value.containsKey('kind')) {
+      throw const FormatException('Missing title type');
+    }
+    return FilmSuggestion.fromJson(value);
   }
 }
 

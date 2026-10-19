@@ -109,7 +109,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('TR'));
+      await tester.tap(find.textContaining('Türkçe'));
       await tester.pumpAndSettle();
       expect(selected?.id, '2');
       expect(tester.takeException(), isNull);

@@ -1,3 +1,4 @@
+import 'language_settings.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -718,6 +719,22 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 const SizedBox(height: 24),
                                 _SettingsCard(
                                   children: [
+                                    OutlinedButton.icon(
+                                      onPressed: () =>
+                                          Navigator.of(context).push(
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  LanguageSettingsScreen(
+                                                    uiPreferences: prefs,
+                                                  ),
+                                            ),
+                                          ),
+                                      icon: const Icon(Icons.translate),
+                                      label: const Text(
+                                        'Language & region / media languages',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
                                     DropdownButtonFormField<Locale>(
                                       focusNode: _languageFocusNode,
                                       isExpanded: true,

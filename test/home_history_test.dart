@@ -38,16 +38,15 @@ void main() {
       ),
     );
 
-    await tester.pumpWidget(
-      l10nTestApp(HomeScreen(historyStore: store)),
-    );
+    await tester.pumpWidget(l10nTestApp(HomeScreen(historyStore: store)));
     await tester.pumpAndSettle();
 
     expect(find.text('İzlemeye devam et'), findsOneWidget);
-    expect(find.text('Ornek.Film.2024'), findsOneWidget);
+    expect(find.text('Ornek.Film.2024'), findsWidgets);
     // 3600 - 600 = 3000 sn = 50:00 kalan süre.
     expect(find.textContaining('50:00'), findsWidgets);
 
+    await tester.ensureVisible(find.byTooltip('Geçmişten kaldır'));
     await tester.tap(find.byTooltip('Geçmişten kaldır'));
     await tester.pumpAndSettle();
 
@@ -59,9 +58,7 @@ void main() {
     final storage = _MemoryPreferenceStorage();
     final store = PlaybackHistoryStore(storage: storage);
 
-    await tester.pumpWidget(
-      l10nTestApp(HomeScreen(historyStore: store)),
-    );
+    await tester.pumpWidget(l10nTestApp(HomeScreen(historyStore: store)));
     await tester.pumpAndSettle();
 
     expect(find.text('İzlemeye devam et'), findsNothing);

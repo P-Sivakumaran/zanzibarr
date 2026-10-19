@@ -48,7 +48,8 @@ class _FakeIndexerStore extends IndexerSettingsStore {
 
 class _NullUpdateService extends UpdateService {
   @override
-  Future<ReleaseInfo?> checkForUpdate({bool ignoreSkipped = false}) async => null;
+  Future<ReleaseInfo?> checkForUpdate({bool ignoreSkipped = false}) async =>
+      null;
 }
 
 class _MemoryPreferenceStorage implements PlayerPreferenceStorage {
@@ -155,8 +156,14 @@ void main() {
         find.widgetWithText(TextFormField, 'API anahtarı'),
         'TESTPASS123',
       );
-      final fields = tester.widgetList<TextField>(find.descendant(
-        of: find.byType(AlertDialog), matching: find.byType(TextField))).toList();
+      final fields = tester
+          .widgetList<TextField>(
+            find.descendant(
+              of: find.byType(AlertDialog),
+              matching: find.byType(TextField),
+            ),
+          )
+          .toList();
       fields.first.focusNode!.requestFocus();
       await tester.pumpAndSettle();
       await _dpadDown(tester);
@@ -456,13 +463,22 @@ void main() {
       await _dpadDown(tester);
       expect(_focusedWithin(find.text("Indexer'da ara")), isTrue);
 
-      // İlk karttan yukarı çıkınca ayarlar dişlisine ulaşılmalı.
-      await _dpadUp(tester);
-      await _dpadUp(tester);
+      // The redesigned dashboard adds browsing actions before the utility bar.
+      // D-pad traversal must still reach Settings without falling back to Tab.
+      var reached = false;
+      for (var i = 0; i < 8 && !reached; i++) {
+        await _dpadUp(tester);
+        reached = _focusedWithin(find.byIcon(Icons.settings_rounded));
+      }
+      for (var i = 0; i < 4 && !reached; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        reached = _focusedWithin(find.byIcon(Icons.settings_rounded));
+      }
       expect(
-        _focusedWithin(find.byIcon(Icons.settings_rounded)),
+        reached,
         isTrue,
-        reason: 'yukarı ok ayarlar düğmesine çıkmalı',
+        reason: 'D-pad must reach Settings from the dashboard',
       );
     });
   });

@@ -104,15 +104,15 @@ class _IntegrationsScreenState extends State<IntegrationsScreen> {
   Widget build(BuildContext context) {
     final config = runtime.settings;
     return Scaffold(
-      appBar: AppBar(title: const Text('Integrations')),
+      appBar: AppBar(title: const Text('MCP & plugins')),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
+          constraints: const BoxConstraints(maxWidth: 960),
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
               const Text(
-                'Integration controls currently use English. Connections are optional; search and playback work without them.',
+                'Optional tools for connected assistants and metadata providers. Controls use English fallback.',
               ),
               if (_busy) const LinearProgressIndicator(),
               if (_error != null || runtime.error != null) ...[
@@ -126,38 +126,26 @@ class _IntegrationsScreenState extends State<IntegrationsScreen> {
                 ),
               ],
               const SizedBox(height: 12),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: FilledButton.icon(
-                  key: const Key('integration-sign-in'),
-                  onPressed:
-                      _busy || config == null || _codex?.signingIn == true
-                      ? null
-                      : () => _run(_signIn),
-                  icon: const Icon(Icons.login),
-                  label: Text(
-                    _codex?.connected == true
-                        ? 'ChatGPT connected'
-                        : _codex?.signingIn == true
-                        ? 'Finish browser sign-in'
-                        : 'Sign in with ChatGPT',
+              Text(
+                'AI recommendations',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.auto_awesome),
+                  title: const Text('AI providers & accounts'),
+                  subtitle: const Text(
+                    'Choose ChatGPT, Claude or Gemini for film & TV chat',
                   ),
-                ),
-              ),
-              const Text(
-                'Use your Codex subscription for film chat. MCP connections are managed below.',
-              ),
-              if (_codex?.error != null) Text(_codex!.error!),
-              OutlinedButton.icon(
-                onPressed: _busy
-                    ? null
-                    : () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const AiConnectionsScreen(),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _busy
+                      ? null
+                      : () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const AiConnectionsScreen(),
+                          ),
                         ),
-                      ),
-                icon: const Icon(Icons.settings_outlined),
-                label: const Text('Claude and Gemini AI connections'),
+                ),
               ),
               const SizedBox(height: 20),
               Text(
@@ -206,38 +194,50 @@ class _IntegrationsScreenState extends State<IntegrationsScreen> {
                             runtime.save(config.copyWith(allowPlayback: value)),
                       ),
               ),
-              if (config != null) ...[
-                Text('Endpoint: http://127.0.0.1:${config.port}/mcp'),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+              if (config != null)
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  title: const Text('Client connection details'),
+                  subtitle: const Text('Endpoint and private access token'),
                   children: [
-                    OutlinedButton(
-                      onPressed: _busy
-                          ? null
-                          : () => _copy('http://127.0.0.1:${config.port}/mcp'),
-                      child: const Text('Copy endpoint'),
+                    Text('Endpoint: http://127.0.0.1:${config.port}/mcp'),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton(
+                          onPressed: _busy
+                              ? null
+                              : () => _copy(
+                                  'http://127.0.0.1:${config.port}/mcp',
+                                ),
+                          child: const Text('Copy endpoint'),
+                        ),
+                        OutlinedButton(
+                          onPressed: _busy ? null : () => _copy(config.token),
+                          child: const Text('Copy secret access token'),
+                        ),
+                        TextButton(
+                          onPressed: _busy
+                              ? null
+                              : () => _run(
+                                  () => runtime.save(
+                                    config.copyWith(
+                                      token: newIntegrationToken(),
+                                    ),
+                                  ),
+                                ),
+                          child: const Text(
+                            'Revoke token and create a new one',
+                          ),
+                        ),
+                      ],
                     ),
-                    OutlinedButton(
-                      onPressed: _busy ? null : () => _copy(config.token),
-                      child: const Text('Copy secret access token'),
-                    ),
-                    TextButton(
-                      onPressed: _busy
-                          ? null
-                          : () => _run(
-                              () => runtime.save(
-                                config.copyWith(token: newIntegrationToken()),
-                              ),
-                            ),
-                      child: const Text('Revoke token and create a new one'),
+                    const Text(
+                      'Use an HTTP MCP client such as Claude Code or Codex. Keep the token private. Access is limited to this computer and stops when Zanzibarr closes.',
                     ),
                   ],
                 ),
-                const Text(
-                  'Use an HTTP MCP client such as Claude Code or Codex. Keep the token private. Access is limited to this computer and stops when Zanzibarr closes.',
-                ),
-              ],
               const Divider(height: 36),
               Text(
                 'MCP connections and provider plugins',
@@ -298,67 +298,69 @@ class _IntegrationsScreenState extends State<IntegrationsScreen> {
                         ),
                       ),
                 icon: const Icon(Icons.auto_awesome),
-                label: const Text('Discover films: chat and playlists'),
+                label: const Text('Discover films & TV: chat and playlists'),
               ),
-              Text(
-                'Codex subscription account',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const Text(
-                'Sign in through the official Codex app-server. Codex handles OAuth and stores credentials in the OS keyring in a separate Zanzibarr profile. Open Discover films to chat for recommendations and save playlists.',
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _executable,
-                enabled: !_busy && _codex?.signingIn != true,
-                decoration: const InputDecoration(
-                  labelText: 'Official Codex executable path',
-                  hintText: 'Full path to codex.exe',
-                ),
-                onChanged: (_) {
-                  _codex?.dispose();
-                  setState(() => _codex = null);
-                },
-              ),
-              if (_codex?.error != null) Text(_codex!.error!),
-              Text(
-                _codex?.connected == true
-                    ? 'Signed in with ChatGPT${_codex?.plan == null ? '' : ' (${_codex!.plan!})'}'
-                    : _codex?.signingIn == true
-                    ? 'Waiting for browser sign-in…'
-                    : 'Not connected',
-              ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: const Text('Advanced ChatGPT connection'),
+                subtitle: const Text('Official Codex executable and account'),
                 children: [
-                  FilledButton(
-                    onPressed:
-                        _busy || config == null || _codex?.signingIn == true
-                        ? null
-                        : () => _run(_signIn),
-                    child: const Text('Sign in with ChatGPT through Codex'),
+                  Text(
+                    'Codex subscription account',
+                    style: Theme.of(context).textTheme.titleLarge,
                   ),
-                  if (_codex?.signingIn == true)
-                    TextButton(
-                      onPressed: _busy
-                          ? null
-                          : () => _run(_codex!.cancelSignIn),
-                      child: const Text('Cancel sign-in'),
+                  const Text(
+                    'Sign in through the official Codex app-server. Codex handles OAuth and stores credentials in the OS keyring in a separate Zanzibarr profile. Open Discover films & TV to chat for recommendations and save playlists.',
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _executable,
+                    enabled: !_busy && _codex?.signingIn != true,
+                    decoration: const InputDecoration(
+                      labelText: 'Official Codex executable path',
+                      hintText: 'Full path to codex.exe',
                     ),
-                  if (_codex?.connected == true)
-                    TextButton(
-                      onPressed: _busy ? null : () => _run(_codex!.signOut),
-                      child: const Text(
-                        'Sign out of Zanzibarr’s Codex profile',
+                    onChanged: (_) {
+                      _codex?.dispose();
+                      setState(() => _codex = null);
+                    },
+                  ),
+                  if (_codex?.error != null) Text(_codex!.error!),
+                  Text(
+                    _codex?.connected == true
+                        ? 'Signed in with ChatGPT${_codex?.plan == null ? '' : ' (${_codex!.plan!})'}'
+                        : _codex?.signingIn == true
+                        ? 'Waiting for browser sign-in…'
+                        : 'Not connected',
+                  ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton(
+                        onPressed:
+                            _busy || config == null || _codex?.signingIn == true
+                            ? null
+                            : () => _run(_signIn),
+                        child: const Text('Sign in with ChatGPT through Codex'),
                       ),
-                    ),
+                      if (_codex?.signingIn == true)
+                        TextButton(
+                          onPressed: _busy
+                              ? null
+                              : () => _run(_codex!.cancelSignIn),
+                          child: const Text('Cancel sign-in'),
+                        ),
+                      if (_codex?.connected == true)
+                        TextButton(
+                          onPressed: _busy ? null : () => _run(_codex!.signOut),
+                          child: const Text(
+                            'Sign out of Zanzibarr’s Codex profile',
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
-              ),
-              const Divider(height: 36),
-              Text('Claude', style: Theme.of(context).textTheme.titleLarge),
-              const Text(
-                'Use Claude and Gemini AI connections above to set up film chat with API access. Claude Code or Claude Desktop can also connect to the local MCP endpoint. Sign in to Claude subscriptions in their own app; no subscription tokens are imported into Zanzibarr.',
               ),
             ],
           ),

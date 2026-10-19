@@ -7,6 +7,9 @@ import '../search/release_search_selection.dart';
 import '../search/structured_search_dialog.dart';
 import '../tv_focus.dart';
 import 'metadata_service.dart';
+import 'title_details_screen.dart';
+import 'library_screen.dart';
+import 'artwork.dart';
 
 Future<void> _openLink(BuildContext context, Uri uri) async {
   try {
@@ -28,15 +31,19 @@ class MetadataScreen extends StatefulWidget {
     required this.store,
     this.watchlistStore,
     this.initialQuery = '',
+    this.initialKind = 'movie',
     this.providerName,
     this.requiresApiKey = true,
+    this.selectTitleOnly = false,
   });
   final MetadataService service;
   final MetadataSettingsStore store;
   final WatchlistStore? watchlistStore;
   final String initialQuery;
+  final String initialKind;
   final String? providerName;
   final bool requiresApiKey;
+  final bool selectTitleOnly;
   @override
   State<MetadataScreen> createState() => _MetadataScreenState();
 }
@@ -61,6 +68,9 @@ class _MetadataScreenState extends State<MetadataScreen> {
   @override
   void initState() {
     super.initState();
+    _kind = widget.initialKind == 'tv' || widget.initialKind == 'series'
+        ? 'series'
+        : 'movie';
     _loadKey();
   }
 
@@ -119,6 +129,16 @@ class _MetadataScreenState extends State<MetadataScreen> {
     }
   }
 
+  void _invalidate() {
+    ++_generation;
+    setState(() {
+      _titles = null;
+      _hasMore = false;
+      _busy = false;
+      _error = null;
+    });
+  }
+
   Future<void> _search({bool more = false}) async {
     if (_busy || _loadingKey || _keyError || !_lookupReady) return;
     final query = more ? _activeQuery : _query.text.trim();
@@ -164,28 +184,37 @@ class _MetadataScreenState extends State<MetadataScreen> {
   }
 
   Future<void> _choose(MediaTitle title) async {
-    final media = await showDialog<MediaTitle>(
-      context: context,
-      builder: (_) => _TitleDetails(
-        title: title,
-        service: widget.service,
-        apiKey: _key,
-        providerName: widget.providerName,
-        watchlistStore: widget.watchlistStore ?? WatchlistStore(),
+    if (widget.selectTitleOnly) {
+      Navigator.pop(context, title);
+      return;
+    }
+    final selected = await Navigator.of(context).push<ReleaseSearchSelection>(
+      MaterialPageRoute(
+        builder: (_) => TitleDetailsScreen(
+          title: title,
+          service: widget.service,
+          apiKey: _key,
+          providerName: widget.providerName,
+          watchlistStore: widget.watchlistStore ?? WatchlistStore(),
+        ),
       ),
     );
-    if (media == null || !mounted) return;
+    if (selected == null || !mounted) return;
     final selection = await showStructuredSearchDialog(
       context,
-      initial: ReleaseSearchSelection.fromMedia(media),
+      initial: selected,
     );
     if (selection != null && mounted) Navigator.pop(context, selection);
   }
 
   Future<void> _manual() async {
+    if (widget.selectTitleOnly) return;
     final selection = await showStructuredSearchDialog(
       context,
-      title: _query.text.trim(),
+      initial: ReleaseSearchSelection(
+        title: _query.text.trim(),
+        kind: _kind == 'series' ? 'tv' : 'movie',
+      ),
     );
     if (selection != null && mounted) Navigator.pop(context, selection);
   }
@@ -196,7 +225,11 @@ class _MetadataScreenState extends State<MetadataScreen> {
     final titles = _titles;
     return Scaffold(
       appBar: AppBar(
-        title: Text(l.metadataBrowseTitle),
+        title: Text(
+          widget.selectTitleOnly
+              ? 'Match saved release'
+              : l.metadataBrowseTitle,
+        ),
         actions: [
           if (widget.requiresApiKey)
             IconButton(
@@ -220,6 +253,9 @@ class _MetadataScreenState extends State<MetadataScreen> {
                             ? l.metadataPrivacyHint
                             : 'Queries and title IDs are sent to ${widget.providerName!}. Ratings are provided by this plugin.',
                       ),
+                      const SizedBox(height: 8),
+                      const Text('New library copy uses English fallback.'),
+                      const ArtworkSettings(),
                       const SizedBox(height: 12),
                       TextField(
                         controller: _query,
@@ -227,6 +263,7 @@ class _MetadataScreenState extends State<MetadataScreen> {
                         autofocus: true,
                         textInputAction: TextInputAction.search,
                         onSubmitted: (_) => _search(),
+                        onChanged: (_) => _invalidate(),
                         decoration: InputDecoration(
                           labelText: l.metadataQueryHint,
                           suffixIcon: IconButton(
@@ -245,18 +282,25 @@ class _MetadataScreenState extends State<MetadataScreen> {
                           ChoiceChip(
                             label: Text(l.metadataMovie),
                             selected: _kind == 'movie',
-                            onSelected: (_) => setState(() => _kind = 'movie'),
+                            onSelected: (_) {
+                              _invalidate();
+                              setState(() => _kind = 'movie');
+                            },
                           ),
                           ChoiceChip(
                             label: Text(l.metadataSeries),
                             selected: _kind == 'series',
-                            onSelected: (_) => setState(() => _kind = 'series'),
+                            onSelected: (_) {
+                              _invalidate();
+                              setState(() => _kind = 'series');
+                            },
                           ),
-                          TextButton.icon(
-                            onPressed: _manual,
-                            icon: const Icon(Icons.tune_rounded),
-                            label: Text(l.structuredSearchTitle),
-                          ),
+                          if (!widget.selectTitleOnly)
+                            TextButton.icon(
+                              onPressed: _manual,
+                              icon: const Icon(Icons.tune_rounded),
+                              label: Text(l.structuredSearchTitle),
+                            ),
                         ],
                       ),
                     ],
@@ -318,26 +362,49 @@ class _MetadataScreenState extends State<MetadataScreen> {
               ),
             ),
           if (titles != null && titles.isNotEmpty)
-            SliverPadding(
-              padding: const EdgeInsets.all(16),
-              sliver: SliverList.builder(
-                itemCount: titles.length + (_hasMore ? 1 : 0),
-                itemBuilder: (_, index) => index == titles.length
-                    ? OutlinedButton(
-                        onPressed: _busy ? null : () => _search(more: true),
-                        child: Text(l.loadMore),
-                      )
-                    : Card(
-                        child: ListTile(
-                          autofocus: index == 0,
-                          title: Text(titles[index].title),
-                          subtitle: Text(
-                            '${titles[index].year} · ${titles[index].kind == 'series' ? l.metadataSeries : l.metadataMovie} · ${titles[index].imdbId}',
-                          ),
-                          trailing: const Icon(Icons.chevron_right_rounded),
-                          onTap: () => _choose(titles[index]),
-                        ),
+            SliverLayoutBuilder(
+              builder: (context, constraints) {
+                final columns =
+                    (constraints.crossAxisExtent /
+                            MediaQuery.textScalerOf(context).scale(190))
+                        .floor()
+                        .clamp(1, 5);
+                return SliverPadding(
+                  padding: const EdgeInsets.all(16),
+                  sliver: SliverList.builder(
+                    itemCount: (titles.length / columns).ceil(),
+                    itemBuilder: (context, row) => Padding(
+                      padding: const EdgeInsets.only(bottom: 20),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (var col = 0; col < columns; col++) ...[
+                            if (col > 0) const SizedBox(width: 16),
+                            Expanded(
+                              child: row * columns + col < titles.length
+                                  ? TitleCard(
+                                      title: titles[row * columns + col],
+                                      onOpen: () =>
+                                          _choose(titles[row * columns + col]),
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
+                          ],
+                        ],
                       ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          if (_hasMore)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: OutlinedButton(
+                  onPressed: _busy ? null : () => _search(more: true),
+                  child: Text(l.loadMore),
+                ),
               ),
             ),
         ],
@@ -599,195 +666,6 @@ class _MetadataKeyDialogState extends State<_MetadataKeyDialog> {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _TitleDetails extends StatefulWidget {
-  const _TitleDetails({
-    required this.title,
-    required this.service,
-    required this.apiKey,
-    this.providerName,
-    required this.watchlistStore,
-  });
-  final MediaTitle title;
-  final MetadataService service;
-  final String apiKey;
-  final String? providerName;
-  final WatchlistStore watchlistStore;
-  @override
-  State<_TitleDetails> createState() => _TitleDetailsState();
-}
-
-class _TitleDetailsState extends State<_TitleDetails> {
-  late Future<MediaTitle?> _details = widget.service.details(
-    widget.apiKey,
-    widget.title.imdbId,
-  );
-  bool _tracked = false;
-  bool _trackedLoaded = false;
-  bool _trackedLoadFailed = false;
-  bool _trackBusy = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadTracked();
-  }
-
-  Future<void> _loadTracked() async {
-    setState(() {
-      _trackedLoaded = false;
-      _trackedLoadFailed = false;
-    });
-    try {
-      final tracked = await widget.watchlistStore.isTracked(
-        widget.title.imdbId,
-      );
-      if (mounted) {
-        setState(() {
-          _tracked = tracked;
-          _trackedLoaded = true;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _trackedLoadFailed = true);
-    }
-  }
-
-  /// Hedef duruma göre yazar — aktif `_tracked`'ı tersine çevirmez (code
-  /// review bulgusu: art arda basınca her çağrı eski değeri tersine çevirip
-  /// birbirini ezebiliyordu, bir noktada düğme gerçek durumla uyuşmaz hale
-  /// geliyordu).
-  Future<void> _toggleTrack(MediaTitle media) async {
-    if (_trackBusy) return;
-    final target = !_tracked;
-    setState(() => _trackBusy = true);
-    try {
-      if (target) {
-        await widget.watchlistStore.track(media.imdbId, media.title);
-      } else {
-        await widget.watchlistStore.untrack(media.imdbId);
-      }
-      if (mounted) setState(() => _tracked = target);
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppLocalizations.of(context).watchlistUpdateFailed),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _trackBusy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l = AppLocalizations.of(context);
-    return FutureBuilder<MediaTitle?>(
-      future: _details,
-      builder: (context, snapshot) {
-        final media = snapshot.data ?? widget.title;
-        return AlertDialog(
-          title: Text('${media.title} (${media.year})'),
-          content: SizedBox(
-            width: 480,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (snapshot.connectionState != ConnectionState.done)
-                    const LinearProgressIndicator(),
-                  if (snapshot.hasError ||
-                      (snapshot.connectionState == ConnectionState.done &&
-                          snapshot.data == null)) ...[
-                    Text(l.metadataFailed),
-                    TextButton(
-                      onPressed: () => setState(
-                        () => _details = widget.service.details(
-                          widget.apiKey,
-                          widget.title.imdbId,
-                        ),
-                      ),
-                      child: Text(l.retry),
-                    ),
-                  ],
-                  if (media.genre.isNotEmpty || media.runtime.isNotEmpty)
-                    Text(
-                      [
-                        media.genre,
-                        media.runtime,
-                      ].where((part) => part.isNotEmpty).join(' · '),
-                    ),
-                  if (media.plot.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Text(media.plot),
-                    ),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final rating in media.ratings.entries)
-                        Chip(label: Text('${rating.key}: ${rating.value}')),
-                    ],
-                  ),
-                  if (snapshot.connectionState == ConnectionState.done &&
-                      !snapshot.hasError &&
-                      media.ratings.isEmpty)
-                    Text(l.metadataNoRatings),
-                  const SizedBox(height: 12),
-                  Text(
-                    widget.providerName == null
-                        ? l.metadataAttribution
-                        : 'Metadata and ratings supplied by ${widget.providerName!}',
-                  ),
-                  TextButton(
-                    onPressed: () => _openLink(
-                      context,
-                      Uri.https('www.imdb.com', '/title/${media.imdbId}/'),
-                    ),
-                    child: const Text('IMDb'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            if (media.kind == 'series')
-              if (_trackedLoadFailed)
-                TextButton.icon(
-                  onPressed: _loadTracked,
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: Text(l.retry),
-                )
-              else
-                TextButton.icon(
-                  onPressed: (_trackedLoaded && !_trackBusy)
-                      ? () => _toggleTrack(media)
-                      : null,
-                  icon: Icon(
-                    _tracked
-                        ? Icons.bookmark_rounded
-                        : Icons.bookmark_add_outlined,
-                  ),
-                  label: Text(_tracked ? l.untrackShow : l.trackShow),
-                ),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(MaterialLocalizations.of(context).closeButtonLabel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, media),
-              child: Text(l.metadataFindReleases),
-            ),
-          ],
-        );
-      },
     );
   }
 }

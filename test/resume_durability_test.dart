@@ -9,7 +9,8 @@ import 'package:zanzibarr/update/update_service.dart';
 
 class _NoUpdates extends UpdateService {
   @override
-  Future<ReleaseInfo?> checkForUpdate({bool ignoreSkipped = false}) async => null;
+  Future<ReleaseInfo?> checkForUpdate({bool ignoreSkipped = false}) async =>
+      null;
 }
 
 class _ProviderStore extends ProviderSettingsStore {
@@ -131,61 +132,62 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Show.S01E01.mkv'));
-    await tester.tap(find.text('Show.S01E01.mkv'));
+    await tester.ensureVisible(find.text('Show.S01E01.mkv').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Show.S01E01.mkv').last);
     await tester.pumpAndSettle();
 
     expect(downloadCalled, isFalse);
     expect(openedPath, '/cache/vanished.nzb');
   });
 
-  testWidgets(
-    'dosya kayıpsa ve kaynak biliniyorsa yeniden indirilip açılır',
-    (tester) async {
-      final history = _HistoryStore([_withSource]);
-      String? openedPath;
-      IndexerConfigDto? usedConfig;
-      await tester.pumpWidget(
-        _app(
-          HomeScreen(
-            historyStore: history,
-            indexerStore: _IndexerStore([_trackedProfile]),
-            providerStore: _ProviderStore(),
-            updateService: _NoUpdates(),
-            fileExistsFn: (_) async => false,
-            downloadFn: (config, nzbUrl, suggestedName) async {
-              usedConfig = config;
-              return '/cache/fresh.nzb';
-            },
-            playerBuilder: (path, key) {
-              openedPath = path;
-              return const Scaffold(body: Text('Playback started'));
-            },
-          ),
+  testWidgets('dosya kayıpsa ve kaynak biliniyorsa yeniden indirilip açılır', (
+    tester,
+  ) async {
+    final history = _HistoryStore([_withSource]);
+    String? openedPath;
+    IndexerConfigDto? usedConfig;
+    await tester.pumpWidget(
+      _app(
+        HomeScreen(
+          historyStore: history,
+          indexerStore: _IndexerStore([_trackedProfile]),
+          providerStore: _ProviderStore(),
+          updateService: _NoUpdates(),
+          fileExistsFn: (_) async => false,
+          downloadFn: (config, nzbUrl, suggestedName) async {
+            usedConfig = config;
+            return '/cache/fresh.nzb';
+          },
+          playerBuilder: (path, key) {
+            openedPath = path;
+            return const Scaffold(body: Text('Playback started'));
+          },
         ),
-      );
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Show.S01E01.mkv'));
-      await tester.tap(find.text('Show.S01E01.mkv'));
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Show.S01E01.mkv').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Show.S01E01.mkv').last);
+    await tester.pumpAndSettle();
 
-      expect(openedPath, '/cache/fresh.nzb');
-      expect(usedConfig?.id, 'idx1');
-      expect(
-        history.entries.any((e) => e.nzbPath == '/cache/vanished.nzb'),
-        isFalse,
-        reason: 'stale ghost entry at the old path must be cleaned up',
-      );
-      final migrated = history.entries.singleWhere(
-        (e) => e.nzbPath == '/cache/fresh.nzb',
-      );
-      expect(
-        migrated.positionSeconds,
-        _withSource.positionSeconds,
-        reason: 'recovery must not discard the saved resume position',
-      );
-    },
-  );
+    expect(openedPath, '/cache/fresh.nzb');
+    expect(usedConfig?.id, 'idx1');
+    expect(
+      history.entries.any((e) => e.nzbPath == '/cache/vanished.nzb'),
+      isFalse,
+      reason: 'stale ghost entry at the old path must be cleaned up',
+    );
+    final migrated = history.entries.singleWhere(
+      (e) => e.nzbPath == '/cache/fresh.nzb',
+    );
+    expect(
+      migrated.positionSeconds,
+      _withSource.positionSeconds,
+      reason: 'recovery must not discard the saved resume position',
+    );
+  });
 
   testWidgets(
     'art arda dokunma kurtarma bitmeden ikinci indirmeyi tetiklemez',
@@ -210,9 +212,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Show.S01E01.mkv'));
-      await tester.tap(find.text('Show.S01E01.mkv'));
-      await tester.tap(find.text('Show.S01E01.mkv'));
+      await tester.ensureVisible(find.text('Show.S01E01.mkv').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Show.S01E01.mkv').last);
+      await tester.tap(find.text('Show.S01E01.mkv').last);
       await tester.pumpAndSettle();
 
       expect(downloadCalls, 1);
@@ -237,8 +240,9 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Manual pick.mkv'));
-      await tester.tap(find.text('Manual pick.mkv'));
+      await tester.ensureVisible(find.text('Manual pick.mkv').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Manual pick.mkv').last);
       await tester.pumpAndSettle();
 
       expect(downloadCalled, isFalse);
@@ -251,32 +255,32 @@ void main() {
     },
   );
 
-  testWidgets(
-    'dosya kayıpsa ve orijinal indexer artık yoksa hata gösterilir',
-    (tester) async {
-      await tester.pumpWidget(
-        _app(
-          HomeScreen(
-            historyStore: _HistoryStore([_withSource]),
-            indexerStore: _IndexerStore(const []),
-            updateService: _NoUpdates(),
-            fileExistsFn: (_) async => false,
-          ),
+  testWidgets('dosya kayıpsa ve orijinal indexer artık yoksa hata gösterilir', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        HomeScreen(
+          historyStore: _HistoryStore([_withSource]),
+          indexerStore: _IndexerStore(const []),
+          updateService: _NoUpdates(),
+          fileExistsFn: (_) async => false,
         ),
-      );
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Show.S01E01.mkv'));
-      await tester.tap(find.text('Show.S01E01.mkv'));
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Show.S01E01.mkv').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Show.S01E01.mkv').last);
+    await tester.pumpAndSettle();
 
-      expect(
-        find.text(
-          "This file is no longer available; its original indexer isn't configured anymore.",
-        ),
-        findsOneWidget,
-      );
-    },
-  );
+    expect(
+      find.text(
+        "This file is no longer available; its original indexer isn't configured anymore.",
+      ),
+      findsOneWidget,
+    );
+  });
 
   testWidgets(
     'yeniden indirme başarısız olursa hata gösterilir, geçmiş kaydı korunur',
@@ -296,8 +300,9 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Show.S01E01.mkv'));
-      await tester.tap(find.text('Show.S01E01.mkv'));
+      await tester.ensureVisible(find.text('Show.S01E01.mkv').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Show.S01E01.mkv').last);
       await tester.pumpAndSettle();
 
       expect(

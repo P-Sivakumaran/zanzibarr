@@ -42,6 +42,7 @@ class McpMetadataService extends MetadataService {
     String query, {
     String? kind,
     int page = 1,
+    int? year,
   }) async {
     if (query.trim().isEmpty) return const MetadataPage([]);
     final id = normalizeImdbId(query);
@@ -58,7 +59,10 @@ class McpMetadataService extends MetadataService {
     try {
       return MetadataPage([
         for (final row in rows)
-          MediaTitle.fromJson(Map<String, dynamic>.from(row as Map)),
+          MediaTitle.fromJson({
+            ...Map<String, dynamic>.from(row as Map),
+            'metadataProvider': connection.name,
+          }),
       ], hasMore: data['hasMore'] == true && page < 100);
     } catch (_) {
       throw const MetadataException('response');
@@ -72,12 +76,32 @@ class McpMetadataService extends MetadataService {
     final data = await _call('metadata_details', {'imdbId': normalized});
     if (data['found'] == false) return null;
     try {
-      final title = MediaTitle.fromJson(data);
+      final title = MediaTitle.fromJson({
+        ...data,
+        'metadataProvider': connection.name,
+        'fetchedAt': DateTime.now().toIso8601String(),
+      });
       if (title.imdbId != normalized) throw const MetadataException('response');
       return title;
     } catch (_) {
       throw const MetadataException('response');
     }
+  }
+
+  @override
+  Future<List<MediaEpisode>> season(
+    String apiKey,
+    String id,
+    int season,
+  ) async {
+    final normalized = normalizeImdbId(id);
+    if (normalized == null || season < 0 || season > 100) {
+      throw const MetadataException('id');
+    }
+    return parseSeason(
+      await _call('metadata_season', {'imdbId': normalized, 'season': season}),
+      season,
+    );
   }
 
   @override

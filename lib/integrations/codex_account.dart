@@ -278,7 +278,7 @@ class CodexAccount extends ChangeNotifier {
         'clientInfo': {
           'name': 'zanzibarr',
           'title': 'Zanzibarr',
-          'version': '1.16.0',
+          'version': '1.17.0',
         },
       });
       rpc.send({'method': 'initialized', 'params': <String, Object>{}});

@@ -70,14 +70,14 @@ class AiHttp {
     }
     if ((response.contentLength ?? 0) > 512 * 1024) {
       throw IntegrationException(
-        '$service response was too large. Ask for fewer films.',
+        '$service response was too large. Ask for fewer titles.',
       );
     }
     final bytes = <int>[];
     await for (final chunk in response.stream) {
       if (bytes.length + chunk.length > 512 * 1024) {
         throw IntegrationException(
-          '$service response was too large. Ask for fewer films.',
+          '$service response was too large. Ask for fewer titles.',
         );
       }
       bytes.addAll(chunk);

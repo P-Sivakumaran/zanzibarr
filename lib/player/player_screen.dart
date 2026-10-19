@@ -1,3 +1,4 @@
+import 'track_language.dart';
 import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
@@ -143,6 +144,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   final _videoKey = GlobalKey<VideoState>();
   final _playButtonFocusNode = FocusNode(debugLabel: 'Oynat/Duraklat düğmesi');
+
   /// TV kumandası modunda odak kökü: kontroller gizlenirken odak buraya geri
   /// çekilir; aksi halde odak kaybolur ve kumanda tuşları hiçbir yere ulaşmaz.
   final _keyboardFocusNode = FocusNode(debugLabel: 'Oynatıcı klavye kökü');
@@ -287,6 +289,35 @@ class _PlayerScreenState extends State<PlayerScreen>
   int? _effectiveEpisode;
   // Android çok-sesli sessiz açılış düzeltmesi tek seferlik uygulanır.
   bool _audioReasserted = false;
+  TrackLanguagePreferences _languagePreferences =
+      const TrackLanguagePreferences();
+  bool _audioLanguageChosen = false, _subtitleLanguageChosen = false;
+  bool _manualAudio = false, _manualSubtitle = false;
+  void _applyLanguagePreferences(Tracks tracks) {
+    if (_disposing) return;
+    if (!_manualAudio &&
+        !_audioLanguageChosen &&
+        tracks.audio.any((t) => t.id != 'auto' && t.id != 'no')) {
+      final audio = preferredAudio(tracks.audio, _languagePreferences.audio);
+      if (audio != null) {
+        _audioLanguageChosen = true;
+        unawaited(_player.setAudioTrack(audio).catchError((Object _) {}));
+      }
+    }
+    if (!_manualSubtitle &&
+        !_subtitleLanguageChosen &&
+        tracks.subtitle.any((t) => t.id != 'auto' && t.id != 'no')) {
+      final subtitle = preferredSubtitle(
+        tracks.subtitle,
+        _languagePreferences.subtitle,
+      );
+      if (subtitle != null) {
+        _subtitleLanguageChosen = true;
+        unawaited(_player.setSubtitleTrack(subtitle).catchError((Object _) {}));
+      }
+    }
+  }
+
   // Video sığdırma kipi: false=contain (oran korunur), true=cover (doldur).
   bool _videoFill = false;
 
@@ -557,6 +588,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   void _onTracks(Tracks tracks) {
+    _applyLanguagePreferences(tracks);
     if (mounted) setState(() => _tracks = tracks);
     final hasRealVideo = tracks.video.any(
       (track) => track.id != 'auto' && track.id != 'no',
@@ -701,10 +733,18 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     debugPrint('PROBE: === VIDEO ===');
     for (final p in [
-      'video-params/w', 'video-params/h', 'video-params/dw',
-      'video-params/dh', 'video-params/aspect', 'video-params/par',
-      'video-params/pixelformat', 'video-out-params/w', 'video-out-params/h',
-      'video-out-params/aspect', 'dwidth', 'dheight',
+      'video-params/w',
+      'video-params/h',
+      'video-params/dw',
+      'video-params/dh',
+      'video-params/aspect',
+      'video-params/par',
+      'video-params/pixelformat',
+      'video-out-params/w',
+      'video-out-params/h',
+      'video-out-params/aspect',
+      'dwidth',
+      'dheight',
     ]) {
       debugPrint('PROBE: $p = ${await prop(p)}');
     }
@@ -1134,6 +1174,11 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _loadPreferences() async {
+    try {
+      _languagePreferences = await TrackLanguageStore().load();
+    } catch (_) {
+      // A preference storage failure must not prevent playback.
+    }
     final preferences = await _preferenceStore.load(widget.nzbPath);
     _preferences = preferences;
     _canvasCommitted = CanvasCrop(
@@ -1548,6 +1593,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       defaultTargetPlatform == TargetPlatform.android;
 
   Future<void> _selectSubtitle(SubtitleTrack track) async {
+    _manualSubtitle = true;
     try {
       await _player.setSubtitleTrack(track);
       if (mounted) setState(() => _track = _track.copyWith(subtitle: track));
@@ -1557,6 +1603,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _selectAudio(AudioTrack track) async {
+    _manualAudio = true;
     try {
       await _player.setAudioTrack(track);
       if (mounted) setState(() => _track = _track.copyWith(audio: track));
@@ -1568,6 +1615,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// İçeriğin gömülü altyazılarına ek olarak kullanıcının diskinden altyazı
   /// (srt/ass/vtt…) yükler. libmpv izi mevcut oynatmaya ekler.
   Future<void> _loadExternalSubtitle() async {
+    _manualSubtitle = true;
     try {
       final typeGroup = XTypeGroup(
         label: AppLocalizations.of(context).fileTypeSubtitles,
@@ -1585,6 +1633,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// İçeriğin gömülü ses izlerine ek olarak kullanıcının diskinden harici
   /// ses dosyası (ac3/dts/mka…) yükler.
   Future<void> _loadExternalAudio() async {
+    _manualAudio = true;
     try {
       final typeGroup = XTypeGroup(
         label: AppLocalizations.of(context).fileTypeAudioFiles,

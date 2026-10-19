@@ -26,6 +26,7 @@ class _Plugin extends MetadataService {
     String query, {
     String? kind,
     int page = 1,
+    int? year,
   }) async {
     searches++;
     return const MetadataPage([
@@ -68,10 +69,11 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final signIn = find.byKey(const Key('integration-sign-in'));
-      expect(signIn.hitTestable(), findsOneWidget);
-      expect(tester.widget<FilledButton>(signIn).onPressed, isNotNull);
-      expect(find.text('Sign in with ChatGPT').hitTestable(), findsOneWidget);
+      expect(
+        find.text('AI providers & accounts').hitTestable(),
+        findsOneWidget,
+      );
+      expect(find.text('Official Codex executable path'), findsNothing);
       expect(runtime.settings!.enabled, isFalse);
       await tester.scrollUntilVisible(
         find.text('Allow indexer searches'),

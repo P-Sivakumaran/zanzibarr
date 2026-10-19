@@ -6,7 +6,8 @@ import 'package:zanzibarr/update/update_service.dart';
 
 class _NoUpdates extends UpdateService {
   @override
-  Future<ReleaseInfo?> checkForUpdate({bool ignoreSkipped = false}) async => null;
+  Future<ReleaseInfo?> checkForUpdate({bool ignoreSkipped = false}) async =>
+      null;
 }
 
 class _HistoryStore extends PlaybackHistoryStore {
@@ -90,6 +91,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Favorites'), findsNothing);
+    await tester.ensureVisible(find.byIcon(Icons.star_border_rounded));
+    await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.star_border_rounded));
     await tester.pumpAndSettle();
 
@@ -119,6 +122,8 @@ void main() {
       // Favori + devam eden kayıt aynı anda hem Continue Watching hem
       // Favoriler'de görünür; ikisi de aynı veriyi gösterir, hangisine
       // dokunulduğu sonucu değiştirmez.
+      await tester.ensureVisible(find.byIcon(Icons.done_rounded).first);
+      await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.done_rounded).first);
       await tester.pumpAndSettle();
 
@@ -149,6 +154,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Continue watching'), findsNothing);
+      await tester.ensureVisible(find.byIcon(Icons.replay_rounded));
+      await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.replay_rounded));
       await tester.pumpAndSettle();
 
@@ -175,6 +182,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Favorites'), findsOneWidget);
+    await tester.ensureVisible(find.byIcon(Icons.star_rounded).first);
+    await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.star_rounded).first);
     await tester.pumpAndSettle();
 

@@ -20,9 +20,13 @@ class FilmChat {
   bool _busy = false;
   int _generation = 0;
   Completer<String>? _result;
-  static const instructions = '''You are Zanzibarr's film discovery assistant.
-Help the user choose films and arrange an ordered viewing list. Reply warmly and briefly.
-Recommend at most 12 real films with a short spoiler-free description and why each fits.
+  static const instructions =
+      '''You are Zanzibarr's film and TV discovery assistant.
+Help the user choose films, TV shows or a mix, and arrange an ordered viewing list. Reply warmly and briefly.
+Recommend at most 12 real titles with a short spoiler-free description and why each fits.
+Respect requests for TV shows, miniseries or films; do not turn a TV request into movie recommendations.
+Set kind to "movie" for films and "tv" for TV shows and miniseries. For TV, year means the first release year.
+The schema's films array holds all recommendations, including TV shows.
 Use the user's language. Ask a clarifying question when needed, with an empty films list.
 Respect requests to change, narrow or reorder prior recommendations. If asked for a playlist,
 return the proposed full list in order. The user saves it using the app's playlist buttons.
@@ -42,9 +46,13 @@ Return only the JSON object described by the output schema.''';
         'items': {
           'type': 'object',
           'additionalProperties': false,
-          'required': ['title', 'year', 'description', 'reason'],
+          'required': ['title', 'year', 'description', 'reason', 'kind'],
           'properties': {
             'title': {'type': 'string', 'maxLength': 200},
+            'kind': {
+              'type': 'string',
+              'enum': ['movie', 'tv'],
+            },
             'year': {
               'type': ['integer', 'null'],
               'minimum': 1880,
@@ -130,7 +138,7 @@ Return only the JSON object described by the output schema.''';
           if (finalText.length > 64000) {
             result.completeError(
               const IntegrationException(
-                'The reply was too large. Ask for fewer films.',
+                'The reply was too large. Ask for fewer titles.',
               ),
             );
           }
@@ -197,7 +205,7 @@ Return only the JSON object described by the output schema.''';
       if (generation == _generation) await account.disconnect();
       if (error is IntegrationException) rethrow;
       throw const IntegrationException(
-        'The assistant returned an invalid film list. Reconnect and try again.',
+        'The assistant returned an invalid recommendation list. Reconnect and try again.',
       );
     } finally {
       timer.cancel();

@@ -50,7 +50,8 @@ class _IndexerStore extends IndexerSettingsStore {
 
 class _NoUpdates extends UpdateService {
   @override
-  Future<ReleaseInfo?> checkForUpdate({bool ignoreSkipped = false}) async => null;
+  Future<ReleaseInfo?> checkForUpdate({bool ignoreSkipped = false}) async =>
+      null;
 }
 
 class _HistoryStore extends PlaybackHistoryStore {
@@ -130,13 +131,17 @@ void main() {
         findsOneWidget,
       );
       history.failLoad = false;
+      await tester.ensureVisible(find.text('Try again'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Try again'));
       await tester.pumpAndSettle();
       history.failRemove = true;
       await tester.ensureVisible(find.byTooltip('Remove from history'));
+      await tester.ensureVisible(find.byTooltip('Remove from history'));
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Remove from history'));
       await tester.pumpAndSettle();
-      expect(find.text('Pending episode'), findsOneWidget);
+      expect(find.text('Pending episode').last, findsOneWidget);
       expect(
         find.text('This item could not be removed. Try again.'),
         findsOneWidget,
@@ -188,6 +193,10 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'release');
+    await tester.ensureVisible(
+      find.widgetWithIcon(IconButton, Icons.search_rounded),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.widgetWithIcon(IconButton, Icons.search_rounded));
     await tester.pumpAndSettle();
     expect(
@@ -227,8 +236,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Pending episode'));
-    await tester.tap(find.text('Pending episode'));
+    await tester.ensureVisible(find.text('Pending episode').last);
+    await tester.ensureVisible(find.text('Pending episode').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Pending episode').last);
     await tester.pumpAndSettle();
     expect(openedPath, isNull);
     await tester.enterText(
@@ -253,6 +264,8 @@ void main() {
           )
           .first,
     );
+    await tester.ensureVisible(find.text('Save securely'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Save securely'));
     await tester.pumpAndSettle();
     expect(openedPath, '/pending.nzb');

@@ -1,15 +1,17 @@
 # Claude and Gemini connections
 
-Available in the **1.15.0+16** Windows candidate. Open **Discover films → AI
-connections**, or **Settings → MCP & AI → Claude and Gemini AI connections**.
+Available in the **1.22.0+23** Windows candidate. Open **Settings → AI
+connections**, or **AI connections** from film & TV chat. Model IDs are under
+**Advanced model settings**. The Save action stays visible while scrolling;
+Back protects unsaved changes with Keep editing / Discard changes.
 
 ## Claude API
 
 1. Open Claude Console from the setup screen and create an API key.
-2. Select **Claude API**, enter the key in the masked field and choose your model
-   ID. The initial model is `claude-sonnet-4-6`; enter another supported model
+2. Select **Claude API**, enter the key in the masked field and use Advanced model settings
+   to change the model ID when needed. The initial model is `claude-sonnet-4-6`; enter another supported model
    if needed. API access, availability and quota belong to your Claude account.
-3. Choose **Save and use this provider**, return to Discover films and send a
+3. Choose **Save and use this provider**, return to Discover films & TV and send a
    request. Saving alone does not validate the key or send a prompt.
 
 This uses Claude API access. It does not use a Claude Pro/Max subscription.
@@ -20,7 +22,7 @@ This uses Claude API access. It does not use a Claude Pro/Max subscription.
 1. Select **Gemini API → API key**. Open Google AI Studio from the screen.
 2. Create an API key in your project and enter it in the masked field. The initial
    model is `gemini-3.8-flash`; the model ID is editable.
-3. Save, return to Discover films and send your request. API quota/charges apply
+3. Save, return to Discover films & TV and send your request. API quota/charges apply
    to your project. Google AI Pro/Ultra subscription credentials are not used.
 
 ## Gemini Google sign-in
@@ -39,7 +41,7 @@ ID or secret is bundled with Zanzibarr. The API-key option works independently.
    consent in your browser and return to Zanzibarr. Consent requests the
    `cloud-platform` and `generative-language.retriever` scopes documented in
    Google's Gemini OAuth guide.
-5. After the sign-in is saved, return to Discover films and send a request. A
+5. After the sign-in is saved, return to Discover films & TV and send a request. A
    completed model response is the check of actual API/model access.
 
 [Google Gemini OAuth guide](https://ai.google.dev/gemini-api/docs/oauth) and

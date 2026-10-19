@@ -21,6 +21,7 @@ const film = FilmSuggestion(
 );
 
 class FakeCodex {
+  List<FilmSuggestion> suggestions = const [film];
   final sent = <Map<String, Object?>>[];
   StreamController<Map<String, dynamic>>? stream;
   bool finish = true;
@@ -76,8 +77,10 @@ class FakeCodex {
                     'text': malformed
                         ? 'invalid'
                         : jsonEncode({
-                            'message': 'Here is a film that fits.',
-                            'films': [film.toJson()],
+                            'message': 'Here is a title that fits.',
+                            'films': [
+                              for (final item in suggestions) item.toJson(),
+                            ],
                           }),
                   },
                 },
