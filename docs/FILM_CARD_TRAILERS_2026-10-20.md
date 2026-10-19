@@ -85,3 +85,30 @@ NuGet distribution endpoint; its Microsoft Authenticode signature was valid.
 The plugin pins WebView2 SDK 1.0.2792.45, WIL 1.0.231216.1 and nlohmann/json 3.11.2.
 Required third-party license/notice files are retained in `assets/licenses` and
 included by the Windows packaging script, together with TMDB attribution.
+
+
+Windows release build passed in 445.3 seconds, executable resource version
+1.24.0+25. Native flutter_inappwebview plugin and WebView2Loader DLL are included.
+The dependency emitted CMP0175 and C4244/C4458 warnings; the build completed
+successfully without weakening project checks or modifying vendored code.
+
+
+## Packaged candidate
+
+Preview: `dist/preview-1.24/zanzibarr.exe` (keep its complete directory).
+Unsigned setup/portable ZIP: `dist/windows/v1.24`. Packaged source fd10fb3;
+application implementation 64f97e8, with packaging/notices and screenshots in
+40246e0/fd10fb3. BUILD-INFO retains the full SHA. No app source changed during build.
+
+| Artifact | SHA256 |
+| --- | --- |
+| zanzibarr-windows-x64-setup.exe | 33ee018b0d9e580e7048a1f1002dd2f45a18b76262bca31af5ac738c95c71d2c |
+| zanzibarr-windows-x64.zip | f00b340b45f37f422f584e023706e0995ce25c2705d9ac771a52f43599354077 |
+
+Verified SHA256SUMS, ZIP CRC/74 entries, native webview and loader, CRT, media/AOT
+components and notices. Packaged executable/plugin equal the preview binaries.
+Installer lifecycle smoke stopped at its existing-installation guard:
+"An installed copy exists; use a fresh user/VM for the smoke test". No existing
+installation was replaced. Unsigned, not installed or published. Live configured
+TMDB, native embedded video playback, clean-user installation and other devices
+remain unverified. Logs: `dist/audit/trailer-*`.

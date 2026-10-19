@@ -214,7 +214,24 @@ workarounds; details remain in the historical archive.
 
 ## 7. Current state and blockers - last verified 2026-10-20
 
-- Current working candidate is **1.23.0+24**: concise fact-based overviews with
+- Current working candidate is **1.24.0+25**: AI/playlist film cards open title
+  information immediately, with independent search/save controls and an optional
+  user-loaded embedded YouTube trailer selected from verified TMDB official
+  trailer/teaser data. Existing TMDB token and bounded persistent enrichment cache
+  are reused; no AI video IDs, autoplay or scraping. Windows uses WebView2 Runtime
+  with graceful external fallback; Linux uses external viewing. Refined the logo
+  sun clearance, glow and reflection and regenerated platform icons.
+  Fresh ordered gate: 270 Rust tests, Clippy, analysis, host build, 393 Flutter
+  tests (9 skips) and whitespace passed; 34 preview checks passed and renders
+  inspected. Windows release build passed in 445.3 seconds, including webview
+  plugin/loader. Native plugin warnings are recorded in the audit log.
+  Unsigned setup/portable packages under dist/windows/v1.24 passed hashes, ZIP
+  integrity and component checks. Installer smoke preserved the existing
+  registration; not installed or published. Source fd10fb3, app code 64f97e8.
+  Live TMDB and native embedded playback remain unverified. See
+  [implementation and evidence](docs/FILM_CARD_TRAILERS_2026-10-20.md).
+
+- Previous working candidate was **1.23.0+24**: concise fact-based overviews with
   full synopses behind a spoiler warning, fixed Home header branding/navigation,
   explicit bounded downloads of original NZB files and local-file playback/history.
   Archive sets need extraction using a separate local tool; RAR4 streaming parsing,
