@@ -212,9 +212,23 @@ recorded dyld/LINKEDIT issue. Upstream also recorded an Xcode `lipo` multi-arch
 verification workaround. Reproduce on the actual Mac before applying/removing
 workarounds; details remain in the historical archive.
 
-## 7. Current state and blockers - last verified 2026-10-19
+## 7. Current state and blockers - last verified 2026-10-20
 
-- Current working candidate is **1.22.0+23**: durable suggestion identities
+- Current working candidate is **1.23.0+24**: concise fact-based overviews with
+  full synopses behind a spoiler warning, fixed Home header branding/navigation,
+  explicit bounded downloads of original NZB files and local-file playback/history.
+  Archive sets need extraction using a separate local tool; RAR4 streaming parsing,
+  missing-article repair and persistent download resumption are not claimed.
+  Fresh ordered gate: 270 Rust tests, Clippy, analysis, native host build and
+  388 Flutter tests passed (9 screenshot skips); 21 preview checks passed and
+  rendered desktop/narrow previews were inspected. Windows release build passed
+  (178.3 seconds), resource version 1.23.0+24. Source commit bbd229f.
+  Unsigned setup/portable ZIP under dist/windows/v1.23 passed checksum and bundle
+  verification; installer smoke preserved the existing registration. Not installed
+  or published. Live NNTP download, local native playback and clean-user installation remain
+  unverified. See [implementation and evidence](docs/SPOILER_FREE_LOCAL_DOWNLOADS_2026-10-20.md).
+
+- Previous working candidate was **1.22.0+23**: durable suggestion identities
   survive metadata snapshot eviction; visible cast and retained OMDb title facts;
   optional TMDB cast/roles/artwork/keywords, Wikidata filming vs narrative places,
   and an existing MCP metadata connection for complete review score/count pairs.

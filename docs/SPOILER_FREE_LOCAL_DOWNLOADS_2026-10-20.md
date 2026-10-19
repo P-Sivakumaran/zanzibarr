@@ -57,6 +57,26 @@ Rendered previews were inspected: [desktop resume](screenshots/resume-1280-flutt
 [narrow resume](screenshots/resume-360-flutter.png),
 [title](screenshots/metadata-title-flutter.png).
 
-Windows build/package evidence will be recorded below when complete. No live NNTP
+Windows release build passed in 178.3 seconds, with both executable and newly
+built native DLL reporting current build timestamps. The executable resource
+version is 1.23.0+24. Source commit: bbd229f. No live NNTP
 download, RAR4 extraction, local native playback, device playback or clean-user
 installation is claimed. No release is signed or published.
+
+
+## Windows packages
+
+Preview: `dist/preview-1.23/zanzibarr.exe` (keep the full directory together).
+Setup and portable ZIP: `dist/windows/v1.23/`.
+
+| Artifact | SHA256 |
+| --- | --- |
+| zanzibarr-windows-x64-setup.exe | a5063031d38dd5cb30157fe4dc8d49d99fd64a5278f15f62369f5d9500d1f12d |
+| zanzibarr-windows-x64.zip | 5f7f67f27da827ded60969652ba508bef6af496d02907dc80a106f99b39680db |
+
+Verified SHA256SUMS, ZIP CRC and 59 entries, app-local CRT/native media libraries,
+AOT assets and attribution notices. ZIP executable equals the preview binary.
+Setup is unsigned. Lifecycle smoke stopped at its existing-installation guard:
+"An installed copy exists; use a fresh user/VM for the smoke test". The existing
+installation was preserved. These packages have not been installed or published.
+Logs are under ignored `dist/audit/local-play-*`.
