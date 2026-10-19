@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'metadata_links.dart';
+import 'title_trailer.dart';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -52,6 +53,7 @@ class MediaTitle {
     required this.title,
     required this.year,
     required this.kind,
+    this.trailer,
     this.plot = '',
     this.genre = '',
     this.runtime = '',
@@ -84,6 +86,7 @@ class MediaTitle {
   /// OMDb uses movie / series. Episode lookups are deliberately not guessed
   /// into series identities.
   final String kind;
+  final TitleTrailer? trailer;
   final String plot;
   final String genre;
   final String runtime;
@@ -111,6 +114,7 @@ class MediaTitle {
     'Year': year,
     'Type': kind,
     'Plot': plot,
+    if (trailer != null) 'trailer': trailer!.toJson(),
     'Genre': genre,
     'Runtime': runtime,
     'Poster': artworkUri(poster)?.toString() ?? '',
@@ -199,6 +203,7 @@ class MediaTitle {
       year: field('Year'),
       kind: kind,
       plot: field('Plot'),
+      trailer: TitleTrailer.fromJson(json['trailer']),
       genre: field('Genre'),
       runtime: field('Runtime'),
       ratings: Map.unmodifiable(ratings),

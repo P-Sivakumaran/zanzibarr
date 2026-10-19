@@ -15,6 +15,7 @@ import 'ai_connections_screen.dart';
 import 'api_film_chat.dart';
 import 'chat_shortcuts.dart';
 import 'suggestion_metadata.dart';
+import 'suggestion_details_screen.dart';
 import '../metadata/artwork.dart';
 import '../metadata/metadata_service.dart';
 import '../metadata/film_blurb.dart';
@@ -1382,6 +1383,34 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
     }
   }
 
+  bool _openingFilm = false;
+  Future<void> _openFilm(FilmSuggestion film) async {
+    if (_openingFilm) return;
+    _openingFilm = true;
+    try {
+      final selection = await Navigator.of(context)
+          .push<ReleaseSearchSelection>(
+            MaterialPageRoute(
+              builder: (_) => SuggestionDetailsScreen(
+                film: film,
+                metadata: _metadata,
+                artworkLoader: widget.artworkLoader,
+                onRematch: () => _match(film),
+              ),
+            ),
+          );
+      if (selection != null && mounted) await widget.onFindReleases(selection);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_message(error))));
+      }
+    } finally {
+      _openingFilm = false;
+    }
+  }
+
   Widget _filmCard(FilmSuggestion film, List<Widget> actions) {
     final media = _metadata.forFilm(film);
     final heading = Column(
@@ -1420,8 +1449,6 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
               Chip(label: Text(media.runtime)),
           ],
         ),
-        const SizedBox(height: 8),
-
         const SizedBox(height: 10),
         Text(
           media == null ? film.description : filmBlurb(media),
@@ -1450,6 +1477,11 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
           runSpacing: 8,
           children: [
             FilledButton.tonalIcon(
+              onPressed: () => _openFilm(film),
+              icon: const Icon(Icons.info_outline),
+              label: const Text('Details & trailer'),
+            ),
+            OutlinedButton.icon(
               onPressed: _finding ? null : () => _find(film),
               icon: const Icon(Icons.search),
               label: const Text('Find releases'),
@@ -1474,50 +1506,54 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
     );
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final poster = SizedBox(
-              width: constraints.maxWidth < 560 ? 104 : 144,
-              child: TitleArtwork(
-                key: ValueKey('${film.identity}:${media?.imdbId}'),
-                url: media?.poster ?? '',
-                title: film.title,
-                loader: widget.artworkLoader,
-              ),
-            );
-            return constraints.maxWidth < 560 ||
-                    MediaQuery.textScalerOf(context).scale(16) > 24
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(width: 80, child: poster),
-                          const SizedBox(width: 16),
-                          Expanded(child: heading),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      details,
-                    ],
-                  )
-                : Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      poster,
-                      const SizedBox(width: 24),
-                      Expanded(
-                        child: Column(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _openFilm(film),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final poster = SizedBox(
+                width: constraints.maxWidth < 560 ? 104 : 144,
+                child: TitleArtwork(
+                  key: ValueKey('${film.identity}:${media?.imdbId}'),
+                  url: media?.poster ?? '',
+                  title: film.title,
+                  loader: widget.artworkLoader,
+                ),
+              );
+              return constraints.maxWidth < 560 ||
+                      MediaQuery.textScalerOf(context).scale(16) > 24
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [heading, details],
+                          children: [
+                            SizedBox(width: 80, child: poster),
+                            const SizedBox(width: 16),
+                            Expanded(child: heading),
+                          ],
                         ),
-                      ),
-                    ],
-                  );
-          },
+                        const SizedBox(height: 8),
+                        details,
+                      ],
+                    )
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        poster,
+                        const SizedBox(width: 24),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [heading, details],
+                          ),
+                        ),
+                      ],
+                    );
+            },
+          ),
         ),
       ),
     );

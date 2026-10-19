@@ -49,7 +49,7 @@ repeatable packaging. You supply your own Usenet provider account and NZB source
 
 Archive compatibility is not universal; a reported RAR4 parsing issue remains
 under investigation. Device playback, casting and accessibility checks for the
-latest candidate are still pending. See the [release notes](docs/releases/v1.23.md).
+latest candidate are still pending. See the [release notes](docs/releases/v1.24.md).
 
 ## Get started
 
@@ -72,7 +72,7 @@ are offered a per-user installation.
 
 ## Platforms and release status
 
-The current local candidate is **1.23.0+24**. A local build does not imply a
+The current local candidate is **1.24.0+25**. A local build does not imply a
 published GitHub release or validation on every platform.
 
 | Platform | Packaging and current requirements |
@@ -84,7 +84,7 @@ published GitHub release or validation on every platform.
 | **macOS arm64** | Requires a Mac, compatible media frameworks and signing/notarization work. No current fork package is claimed. |
 | **Web** | Unsupported: the engine depends on native networking and libraries. |
 
-Read the [v1.23 notes](docs/releases/v1.23.md) and [release runbook](docs/RELEASING.md)
+Read the [v1.24 notes](docs/releases/v1.24.md) and [release runbook](docs/RELEASING.md)
 for verification results. Published assets are the source of truth for downloads;
 upstream releases are separate from this fork.
 

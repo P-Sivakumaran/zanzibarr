@@ -203,7 +203,7 @@ class _EnrichmentSettingsScreenState extends State<EnrichmentSettingsScreen> {
                   child: const Text('Get a TMDB read access token'),
                 ),
                 const Text(
-                  'Adds cast, character names, portraits and topic keywords. Image loading follows your artwork preference.',
+                  'Adds cast, character names, portraits, official trailers and topic keywords. Image loading follows your artwork preference.',
                 ),
                 const SizedBox(height: 24),
                 Text('Places', style: Theme.of(context).textTheme.titleLarge),

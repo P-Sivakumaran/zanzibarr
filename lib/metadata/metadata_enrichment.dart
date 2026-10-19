@@ -7,6 +7,7 @@ import '../player/media_preferences.dart';
 import '../integrations/integration_settings.dart';
 import '../integrations/metadata_plugin.dart';
 import 'metadata_service.dart';
+import 'title_trailer.dart';
 
 class EnrichmentSettings {
   const EnrichmentSettings({
@@ -80,6 +81,7 @@ class MetadataEnrichment {
   Future<void> _writes = Future.value();
   bool _closed = false;
   String? status;
+  bool trailersConfigured = false;
   void close() {
     _closed = true;
     _client.close();
@@ -232,11 +234,12 @@ class MetadataEnrichment {
       return title;
     }
     if (_closed) return title;
+    trailersConfigured = config.tmdbToken.isNotEmpty;
     var data = title.toJson();
     final sources = {...title.enrichmentSources};
     if (config.tmdbToken.isNotEmpty) {
       final patch = await _cached(
-        'tmdb:${title.kind}:${title.imdbId}',
+        'tmdb-v2:${title.kind}:${title.imdbId}',
         const Duration(days: 7),
         () => _tmdb(title, config.tmdbToken),
       );
@@ -364,7 +367,7 @@ class MetadataEnrichment {
     final kind = title.kind == 'series' ? 'tv' : 'movie';
     final response = await _get(
       Uri.https('api.themoviedb.org', '/3/$kind/$tmdbId', {
-        'append_to_response': 'credits,keywords,external_ids',
+        'append_to_response': 'credits,keywords,external_ids,videos',
         'language': 'en-US',
       }),
       headers: headers,
@@ -389,7 +392,9 @@ class MetadataEnrichment {
     final keywords = keywordData is Map
         ? (keywordData['keywords'] ?? keywordData['results'])
         : null;
+    final trailer = selectTitleTrailer(response['videos']);
     return {
+      if (trailer != null) 'trailer': trailer.toJson(),
       if (cast.isNotEmpty)
         'cast': [
           for (final person in cast.take(40))

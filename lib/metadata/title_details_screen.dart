@@ -9,6 +9,7 @@ import 'metadata_service.dart';
 import 'metadata_enrichment.dart';
 import 'title_information.dart';
 import 'film_blurb.dart';
+import 'trailer_panel.dart';
 import 'title_library.dart';
 import 'artwork.dart';
 
@@ -44,12 +45,17 @@ class _TitleDetailsScreenState extends State<TitleDetailsScreen> {
   late final _enrichment = widget.enrichment ?? MetadataEnrichment();
   MediaTitle? _base;
   late Future<MediaTitle?> _details = _loadDetails();
+  bool _refreshFailed = false;
   Future<MediaTitle?> _loadDetails() async {
-    final title = await widget.service.details(
-      widget.apiKey,
-      widget.title.imdbId,
-    );
-    if (title == null) return null;
+    _refreshFailed = false;
+    MediaTitle? title;
+    try {
+      title = await widget.service.details(widget.apiKey, widget.title.imdbId);
+      _refreshFailed = title == null;
+    } catch (_) {
+      _refreshFailed = true;
+    }
+    title ??= widget.title;
     if (mounted) setState(() => _base = title);
     return _enrichment.enrich(title);
   }
@@ -221,7 +227,8 @@ class _TitleDetailsScreenState extends State<TitleDetailsScreen> {
                     if (snapshot.connectionState != ConnectionState.done &&
                         _base != null)
                       const Text('Checking optional title details...'),
-                    if (snapshot.hasError ||
+                    if (_refreshFailed ||
+                        snapshot.hasError ||
                         (snapshot.connectionState == ConnectionState.done &&
                             snapshot.data == null))
                       Wrap(
@@ -363,6 +370,14 @@ class _TitleDetailsScreenState extends State<TitleDetailsScreen> {
                                 ],
                               );
                       },
+                    ),
+                    const SizedBox(height: 24),
+                    TrailerPanel(
+                      trailer: media.trailer,
+                      loading: snapshot.connectionState != ConnectionState.done,
+                      configured: _enrichment.trailersConfigured,
+                      onConfigured: () =>
+                          setState(() => _details = _loadDetails()),
                     ),
                     if (_storageError != null)
                       Wrap(
