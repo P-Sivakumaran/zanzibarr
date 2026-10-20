@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:zanzibarr/metadata/trailer_navigation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
@@ -44,7 +46,67 @@ class Catalog extends MetadataService {
   }) async => const MetadataPage([media]);
 }
 
+class RecordingBrowser extends Fake implements InAppWebViewController {
+  String? method;
+  Map<String, dynamic>? parameters;
+  URLRequest? request;
+  dynamic result = <String, dynamic>{'frameId': 'frame'};
+  @override
+  Future<dynamic> callDevToolsProtocolMethod({
+    required String methodName,
+    Map<String, dynamic>? parameters,
+  }) async {
+    method = methodName;
+    this.parameters = parameters;
+    return result;
+  }
+
+  @override
+  Future<void> loadUrl({
+    required URLRequest urlRequest,
+    Uri? iosAllowingReadAccessTo,
+    WebUri? allowingReadAccessTo,
+  }) async {
+    request = urlRequest;
+  }
+}
+
 void main() {
+  test(
+    'Windows trailer sets browser navigation referrer instead of only HTTP headers',
+    () async {
+      final browser = RecordingBrowser();
+      await navigateTrailer(browser, trailer, platform: TargetPlatform.windows);
+      expect(browser.method, 'Page.navigate');
+      expect(browser.parameters, {
+        'url': trailer.embedUri.toString(),
+        'referrer': trailerAppReferrer,
+        'referrerPolicy': 'strictOriginWhenCrossOrigin',
+      });
+      expect(browser.request, isNull);
+    },
+  );
+  test('native navigation failures propagate to the retry surface', () async {
+    final browser = RecordingBrowser()..result = {'errorText': 'TESTPASS123'};
+    await expectLater(
+      navigateTrailer(browser, trailer, platform: TargetPlatform.windows),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'sanitized',
+          isNot(contains('TESTPASS123')),
+        ),
+      ),
+    );
+  });
+  test('other native platforms preserve app identity headers', () async {
+    final browser = RecordingBrowser();
+    await navigateTrailer(browser, trailer, platform: TargetPlatform.android);
+    expect(browser.method, isNull);
+    expect(browser.request!.headers, {'Referer': trailerAppReferrer});
+    expect(browser.request!.url, WebUri.uri(trailer.embedUri));
+  });
+
   test(
     'trailers reject arbitrary URLs, clips and unofficial uploads and rank English trailers',
     () {

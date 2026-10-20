@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
 import '../settings/enrichment_settings.dart';
 import 'title_trailer.dart';
+import 'trailer_navigation.dart';
 
 /// No YouTube connection or platform view until the viewer chooses to load it.
 class TrailerPanel extends StatefulWidget {
@@ -175,8 +176,6 @@ class _EmbeddedTrailerState extends State<_EmbeddedTrailer>
   InAppWebViewController? _controller;
   WebViewEnvironment? _environment;
   Timer? _deadline;
-  // Stable installed application identity, with version/architecture omitted.
-  static const _referrer = 'https://com.zanzibarr.zanzibarr/';
   late final Future<bool> _available = _checkRuntime();
   Future<bool> _checkRuntime() async {
     if (defaultTargetPlatform != TargetPlatform.windows) return true;
@@ -242,10 +241,6 @@ class _EmbeddedTrailerState extends State<_EmbeddedTrailer>
       }
       return InAppWebView(
         webViewEnvironment: _environment,
-        initialUrlRequest: URLRequest(
-          url: WebUri.uri(widget.trailer.embedUri),
-          headers: {'Referer': _referrer},
-        ),
         initialSettings: InAppWebViewSettings(
           javaScriptEnabled: true,
           mediaPlaybackRequiresUserGesture: true,
@@ -254,9 +249,23 @@ class _EmbeddedTrailerState extends State<_EmbeddedTrailer>
           javaScriptCanOpenWindowsAutomatically: false,
           supportMultipleWindows: false,
         ),
-        onWebViewCreated: (controller) => _controller = controller,
-        onLoadStop: (_, _) {
-          _deadline?.cancel();
+        onWebViewCreated: (controller) async {
+          _controller = controller;
+          try {
+            await navigateTrailer(
+              controller,
+              widget.trailer,
+              platform: defaultTargetPlatform,
+            );
+          } catch (_) {
+            if (mounted) widget.onError();
+          }
+        },
+        onLoadStop: (_, url) {
+          if (url?.host == widget.trailer.embedUri.host &&
+              url?.path == widget.trailer.embedUri.path) {
+            _deadline?.cancel();
+          }
         },
         onReceivedError: (_, request, _) {
           if (request.isForMainFrame == true) widget.onError();
