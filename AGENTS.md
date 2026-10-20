@@ -227,7 +227,12 @@ workarounds; details remain in the historical archive.
   dist/windows/v1.26 passed hashes, ZIP CRC/73 entries and bundle/AOT checks.
   Preview is dist/preview-1.26/zanzibarr.exe. Installer smoke preserved existing
   registration; not installed/published. Clean-user install/native rendered UI
-  remains unverified. See [implementation and limits](docs/ADULT_CATALOG_IMPLEMENTATION_2026-10-21.md).
+  remains unverified. User subsequently reported API setup failures. Fresh
+  public probes found TPDB docs online/search HTTP401 without a key and StashDB's
+  deployed query contract valid; authenticated setup/search is still unverified.
+  See [API and playback research](docs/VIDEO_API_PROJECT_RESEARCH_2026-10-21.md)
+  before adding sources. Stash/Jellyfin are proposed user-library playback
+  connectors, not implemented hosted catalogs. See [implementation and limits](docs/ADULT_CATALOG_IMPLEMENTATION_2026-10-21.md).
 
 - Previous working candidate was **1.25.0+26**: fixes the repeated Windows trailer
   video-player configuration error. WebView2 now receives a browser navigation
