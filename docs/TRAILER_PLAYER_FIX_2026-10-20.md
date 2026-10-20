@@ -80,3 +80,30 @@ Fresh ordered gate passed: 270 Rust serial tests, Clippy with warnings denied,
 Flutter analysis, native host build, 396 Flutter tests (9 skips), whitespace.
 Eight focused trailer tests passed, including the three new navigation regressions.
 Windows build and packaging evidence follows below.
+
+
+## Windows build and packages
+
+Normal lib/main.dart release build passed in 142.1 seconds. Resource version
+1.25.0+26; packaged source db59e55cc8cdb7a61d9195de72e71ce9592ab0ac.
+Generated configuration contains lib/main.dart and no diagnostic Dart defines.
+Production AOT differs from 1.24 and is included identically in the preview/ZIP.
+
+Preview: `dist/preview-1.25/zanzibarr.exe` (keep the whole directory).
+Unsigned setup/portable ZIP: `dist/windows/v1.25/`.
+
+| Artifact | SHA256 |
+| --- | --- |
+| zanzibarr-windows-x64-setup.exe | 25ec54f245381f9b5a57c9b9da914a41b4fb1128b55b088207660a55945bb3b0 |
+| zanzibarr-windows-x64.zip | 059c85fe2f59626ae5439428caa947fe93b41dc0284a23c47799c9af46fd9c49 |
+
+SHA256SUMS, ZIP CRC/74 entries, preview matches, current AOT/native components,
+CRT and attribution/notices passed verification. No diagnostic browser port was
+left listening. Native-test source analysis passed separately.
+
+Installer smoke preserved the existing registration and stopped with:
+"An installed copy exists; use a fresh user/VM for the smoke test".
+Unsigned, not installed or publicly published. Clean-install, other platforms,
+live TMDB lookup and broader film-specific/regional coverage remain unverified;
+the native example-video proof above supersedes the old no-native-playback
+limitation for this tested Windows path.

@@ -214,7 +214,22 @@ workarounds; details remain in the historical archive.
 
 ## 7. Current state and blockers - last verified 2026-10-20
 
-- Current working candidate is **1.24.0+25**: AI/playlist film cards open title
+- Current working candidate is **1.25.0+26**: fixes the repeated Windows trailer
+  video-player configuration error. WebView2 now receives a browser navigation
+  referrer via Page.navigate; a header override alone left document.referrer empty.
+  Original native probe failed twice; fixed production helper passed twice and a
+  muted native playback check advanced beyond 4 seconds with decoded 1280x720
+  frames (Runtime 155.0.4283.62). Three offline navigation regressions and an
+  opt-in native integration test cover this boundary. Fresh ordered gate: 270
+  Rust tests, Clippy, analysis, host build, 396 Flutter tests (9 skips), whitespace
+  passed; 8 focused trailer tests and native-test analysis passed. Source db59e55.
+  Normal Windows release build passed (142.1s); unsigned setup/portable packages
+  in dist/windows/v1.25 passed hashes, ZIP CRC/74 entries, AOT and components.
+  Installer smoke preserved the existing registration. Not installed/published;
+  clean-install, other platforms and broader live metadata coverage unverified.
+  See [diagnosis and verification](docs/TRAILER_PLAYER_FIX_2026-10-20.md).
+
+- Previous working candidate was **1.24.0+25**: AI/playlist film cards open title
   information immediately, with independent search/save controls and an optional
   user-loaded embedded YouTube trailer selected from verified TMDB official
   trailer/teaser data. Existing TMDB token and bounded persistent enrichment cache
