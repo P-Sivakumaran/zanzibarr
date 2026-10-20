@@ -8,7 +8,10 @@ import 'metadata_links.dart';
 export 'metadata_links.dart';
 
 class ArtworkLoader {
-  ArtworkLoader({http.Client? client}) : _client = client ?? http.Client();
+  ArtworkLoader({http.Client? client, Uri? Function(String)? validateUri})
+    : _client = client ?? http.Client(),
+      _validateUri = validateUri ?? artworkUri;
+  final Uri? Function(String) _validateUri;
   static final shared = ArtworkLoader();
   final http.Client _client;
   final _cache = <String, ({DateTime at, Uint8List bytes})>{};
@@ -29,7 +32,7 @@ class ArtworkLoader {
   }
 
   Future<Uint8List?> load(String url) async {
-    final uri = artworkUri(url);
+    final uri = _validateUri(url);
     if (uri == null) return null;
     final cached = _cache.remove(url);
     if (cached != null) {

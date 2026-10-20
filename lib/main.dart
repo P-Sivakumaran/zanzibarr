@@ -1,3 +1,4 @@
+import 'adult/adult_screen.dart';
 import 'metadata/resume_feature.dart';
 import 'settings/settings_home.dart';
 import 'settings/language_settings.dart';
@@ -1161,6 +1162,15 @@ class _HomeScreenState extends State<HomeScreen> {
                               onPressed: () => _openDiscovery(playlists: true),
                               icon: const Icon(Icons.playlist_play),
                               label: const Text('Playlists'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => const AdultLibraryScreen(),
+                                ),
+                              ),
+                              icon: const Icon(Icons.video_library_outlined),
+                              label: const Text('Adult library'),
                             ),
                             OutlinedButton.icon(
                               onPressed: () => _openDiscovery(),

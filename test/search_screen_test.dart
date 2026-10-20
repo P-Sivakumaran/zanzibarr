@@ -79,6 +79,34 @@ Future<void> _enterQueryAndSearch(WidgetTester tester, String query) async {
 }
 
 void main() {
+  testWidgets(
+    'adult search retains category after query edits and avoids mainstream matching',
+    (tester) async {
+      final configsSeen = <List<IndexerConfigDto>>[];
+      await tester.pumpWithL10n(
+        SearchScreen(
+          adultOnly: true,
+          store: _completeStore,
+          searchFn: (configs, query, limit, offset) async {
+            configsSeen.add(configs);
+            return _fakeSearch(configs, query, limit, offset);
+          },
+          capsFn: (_) async =>
+              throw StateError('Adult text search must not request movie caps'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await _enterQueryAndSearch(tester, 'Catalog fixture');
+      await _enterQueryAndSearch(tester, 'Edited fixture');
+      expect(configsSeen, hasLength(2));
+      for (final configs in configsSeen) {
+        expect(configs.single.structured!.kind, 'adult');
+        expect(configs.single.structured!.imdbId, isNull);
+      }
+      expect(find.byIcon(Icons.movie_filter_outlined), findsNothing);
+      expect(find.byIcon(Icons.tune_rounded), findsNothing);
+    },
+  );
   testWidgets('unreadable profiles show a recoverable load failure', (
     tester,
   ) async {

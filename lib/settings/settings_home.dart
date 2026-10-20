@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../adult/adult_screen.dart';
 import '../chat/ai_connections_screen.dart';
 import '../integrations/integrations_screen.dart';
 import '../metadata/artwork.dart';
@@ -111,6 +112,12 @@ class _SettingsHomeScreenState extends State<SettingsHomeScreen> {
                         'Artwork & ratings',
                         'Posters, OMDb and critic score sources',
                         () => _open(const MetadataPreferencesScreen()),
+                      ),
+                      _item(
+                        Icons.video_library_outlined,
+                        'Adult library & sources',
+                        'Separate catalog, saved matches and adult release search',
+                        () => _open(const AdultLibraryScreen()),
                       ),
                       _item(
                         Icons.auto_awesome,

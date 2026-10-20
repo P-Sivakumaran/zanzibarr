@@ -212,9 +212,20 @@ recorded dyld/LINKEDIT issue. Upstream also recorded an Xcode `lipo` multi-arch
 verification workaround. Reproduce on the actual Mac before applying/removing
 workarounds; details remain in the historical archive.
 
-## 7. Current state and blockers - last verified 2026-10-20
+## 7. Current state and blockers - last verified 2026-10-21
 
-- Current working candidate is **1.25.0+26**: fixes the repeated Windows trailer
+- Current working candidate is **1.26.0+27**: separate opt-in adult metadata
+  library with ThePornDB scene/movie and StashDB scene adapters, secure source
+  settings, persistent provider identities/rematching, performer names, studio/date,
+  optional first-party TPDB artwork and explicit category-6000 Newznab search.
+  IAFD supports provider-supplied reference links only; direct API access and local
+  Stash are not implemented. Existing playback/history remains shared, not private.
+  Fresh ordered gate passed: 271 Rust tests, Clippy, Flutter analysis, native host
+  build, 406 Flutter tests (9 skips) and whitespace checks. All 23 focused checks
+  passed. Live sources/indexer coverage/adult playback unverified. Windows build
+  and packaging pending. See [implementation and limits](docs/ADULT_CATALOG_IMPLEMENTATION_2026-10-21.md).
+
+- Previous working candidate was **1.25.0+26**: fixes the repeated Windows trailer
   video-player configuration error. WebView2 now receives a browser navigation
   referrer via Page.navigate; a header override alone left document.referrer empty.
   Original native probe failed twice; fixed production helper passed twice and a

@@ -57,6 +57,7 @@ class SearchScreen extends StatefulWidget {
     this.initialSelection,
     this.autoSearchInitialSelection = false,
     this.watchlistStore,
+    this.adultOnly = false,
   });
 
   /// Testlerde sahte depo enjekte edebilmek için; null ise gerçek depo kullanılır.
@@ -93,6 +94,7 @@ class SearchScreen extends StatefulWidget {
   /// Metadata ekranındaki "Takip et" düğmesine iletilir; null ise gerçek
   /// depo kullanılır.
   final WatchlistStore? watchlistStore;
+  final bool adultOnly;
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -355,6 +357,21 @@ class _SearchScreenState extends State<SearchScreen> {
     List<IndexerConfigDto> configs,
     ReleaseSearchSelection? selection,
   ) async {
+    if (widget.adultOnly) {
+      return [
+        for (final config in configs)
+          IndexerConfigDto(
+            id: config.id,
+            baseUrl: config.baseUrl,
+            apiKey: config.apiKey,
+            nickname: config.nickname,
+            structured: const ReleaseSearchSelection(
+              title: '',
+              kind: 'adult',
+            ).toDto(const []),
+          ),
+      ];
+    }
     if (selection == null) return configs;
     return Future.wait([
       for (final config in configs)
@@ -622,16 +639,18 @@ class _SearchScreenState extends State<SearchScreen> {
     return Scaffold(
       appBar: AppBar(
         actions: [
-          IconButton(
-            tooltip: l10n.metadataBrowseTitle,
-            onPressed: _busyIndex == null ? _openMetadata : null,
-            icon: const Icon(Icons.movie_filter_outlined),
-          ),
-          IconButton(
-            tooltip: l10n.structuredSearchTitle,
-            onPressed: _busyIndex == null ? _openStructured : null,
-            icon: const Icon(Icons.tune_rounded),
-          ),
+          if (!widget.adultOnly)
+            IconButton(
+              tooltip: l10n.metadataBrowseTitle,
+              onPressed: _busyIndex == null ? _openMetadata : null,
+              icon: const Icon(Icons.movie_filter_outlined),
+            ),
+          if (!widget.adultOnly)
+            IconButton(
+              tooltip: l10n.structuredSearchTitle,
+              onPressed: _busyIndex == null ? _openStructured : null,
+              icon: const Icon(Icons.tune_rounded),
+            ),
           PopupMenuButton<int>(
             tooltip: l10n.indexerSectionTitle,
             enabled:
@@ -659,7 +678,7 @@ class _SearchScreenState extends State<SearchScreen> {
           onPressed: () => Navigator.maybePop(context),
         ),
         title: Text(
-          l10n.searchTitle,
+          widget.adultOnly ? 'Adult release search' : l10n.searchTitle,
           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
         ),
       ),
@@ -842,10 +861,12 @@ class _SearchScreenState extends State<SearchScreen> {
                     ],
                   )
                 : _SearchResultCard(
-                    onMetadata: () => _openMetadata(
-                      items[index].imdbId ??
-                          releaseTitleHint(items[index].title),
-                    ),
+                    onMetadata: widget.adultOnly
+                        ? null
+                        : () => _openMetadata(
+                            items[index].imdbId ??
+                                releaseTitleHint(items[index].title),
+                          ),
                     item: items[index],
                     busy: _busyIndex == index,
                     enabled: _busyIndex == null,
@@ -878,7 +899,7 @@ class _SearchResultCard extends StatefulWidget {
   final bool busy;
   final bool enabled;
   final VoidCallback onTap;
-  final VoidCallback onMetadata;
+  final VoidCallback? onMetadata;
 
   /// İlk sonuç kartında kullanılır: arama bitince odak buraya taşınır.
   final FocusNode? focusNode;
@@ -1074,15 +1095,16 @@ class _SearchResultCardState extends State<_SearchResultCard> {
                       child: SelectableText(item.title),
                     ),
                     actions: [
-                      TextButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          widget.onMetadata();
-                        },
-                        child: Text(
-                          AppLocalizations.of(context).metadataBrowseTitle,
+                      if (widget.onMetadata != null)
+                        TextButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            widget.onMetadata!();
+                          },
+                          child: Text(
+                            AppLocalizations.of(context).metadataBrowseTitle,
+                          ),
                         ),
-                      ),
                       TextButton(
                         onPressed: () => Navigator.pop(context),
                         child: Text(

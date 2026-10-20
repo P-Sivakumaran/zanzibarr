@@ -248,6 +248,18 @@ fn search_query_params(
     let Some(search) = structured else {
         return Ok(fallback());
     };
+    if search.kind == "adult" {
+        if search.imdb_id.is_some()
+            || search.tvdb_id.is_some()
+            || search.season.is_some()
+            || search.episode.is_some()
+        {
+            return Err("catalog IDs cannot constrain adult release search".into());
+        }
+        let mut params = fallback();
+        params.push(("cat".into(), "6000".into()));
+        return Ok(params);
+    }
     if !matches!(search.kind.as_str(), "movie" | "tv") {
         return Err("invalid search type".into());
     }
@@ -499,6 +511,23 @@ mod tests {
             episode: None,
             supported_params: params.iter().map(|p| p.to_string()).collect(),
         }
+    }
+
+    #[test]
+    fn adult_search_uses_text_and_category_without_catalog_ids() {
+        let mut adult = selection("adult", &[]);
+        assert!(search_query_params("Catalog title", Some(&adult)).is_err());
+        adult.imdb_id = None;
+        assert_eq!(
+            search_query_params("Catalog title", Some(&adult)).unwrap(),
+            vec![
+                ("t".into(), "search".into()),
+                ("q".into(), "Catalog title".into()),
+                ("cat".into(), "6000".into())
+            ]
+        );
+        adult.season = Some(1);
+        assert!(search_query_params("Catalog title", Some(&adult)).is_err());
     }
 
     #[test]
