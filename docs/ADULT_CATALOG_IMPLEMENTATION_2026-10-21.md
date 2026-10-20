@@ -62,6 +62,25 @@ mainstream shared loader keeps its existing allowlist and preferences. Adult
 artwork uses its own opt-in and cache, cleared when the screen closes. No live
 adult catalog records or media were fetched during implementation or testing.
 
+## Windows artifacts
+
+Source commit: `4c16559d3d9a85aefe22c065362e638e66bf6ac9`.
+Normal Windows release build passed in 131.3 seconds at **1.26.0+27**.
+Native/plugin CMake developer warnings remain recorded in the build log.
+
+- Preview: `dist/preview-1.26/zanzibarr.exe` (keep its adjacent files).
+- Setup: `dist/windows/v1.26/zanzibarr-windows-x64-setup.exe`, 29,879,606 bytes.
+  SHA256 `e712ba23f94ea43a3fc6c4a8c0184866d3cda9726470070d9a287d59668267f9`.
+- Portable ZIP: `dist/windows/v1.26/zanzibarr-windows-x64.zip`, 39,159,379 bytes.
+  SHA256 `acaa1c96d19ba9437a51a8397b99c567026cfeba8a6e74ac45db3e2463595b58`.
+
+SHA256SUMS verified; ZIP CRC and 73 entries verified, including native engine,
+Flutter, WebView2, app-local CRT and notices. Packaged AOT matches the preview and
+is different from 1.25. Executable and installer are unsigned. Installer smoke
+reported `An installed copy exists; use a fresh user/VM for the smoke test` and
+preserved that registration. Not installed or published. Clean-user installation,
+rendered native UI and live source/playback validation remain unverified.
+
 ## Verification
 
 Candidate version: **1.26.0+27**. Fresh ordered application gate passed:

@@ -222,8 +222,12 @@ workarounds; details remain in the historical archive.
   Stash are not implemented. Existing playback/history remains shared, not private.
   Fresh ordered gate passed: 271 Rust tests, Clippy, Flutter analysis, native host
   build, 406 Flutter tests (9 skips) and whitespace checks. All 23 focused checks
-  passed. Live sources/indexer coverage/adult playback unverified. Windows build
-  and packaging pending. See [implementation and limits](docs/ADULT_CATALOG_IMPLEMENTATION_2026-10-21.md).
+  passed. Live sources/indexer coverage/adult playback unverified. Windows release
+  build passed (131.3s), source 4c16559; unsigned setup/portable ZIP under
+  dist/windows/v1.26 passed hashes, ZIP CRC/73 entries and bundle/AOT checks.
+  Preview is dist/preview-1.26/zanzibarr.exe. Installer smoke preserved existing
+  registration; not installed/published. Clean-user install/native rendered UI
+  remains unverified. See [implementation and limits](docs/ADULT_CATALOG_IMPLEMENTATION_2026-10-21.md).
 
 - Previous working candidate was **1.25.0+26**: fixes the repeated Windows trailer
   video-player configuration error. WebView2 now receives a browser navigation
