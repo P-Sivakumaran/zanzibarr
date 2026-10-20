@@ -1,9 +1,16 @@
 # Video API and project research - 2026-10-21
 
+## Scope update after user-supplied API links
+
+See the [follow-up review](PROVIDED_VIDEO_API_REVIEW_2026-10-21.md) of the four
+links supplied after this research. The server recommendations below address
+existing user-managed libraries; they are not an exhaustive survey of hosted
+catalog/player APIs. Use the follow-up when evaluating that different workflow.
+
 ## Decision
 
-For **search followed by actual playback**, connect to an existing video server,
-not another metadata database. **Stash is the shortest fit for a user-managed
+For **search followed by playback of an existing personal library**, connect
+to its video server rather than another metadata database. **Stash is the shortest fit for a user-managed
 scene library; Jellyfin is the strongest general film/TV solution.** XBVR is a
 specialist VR-library option. PeerTube provides instance-hosted/federated video
 publishing. None supplies an entitlement-independent hosted commercial catalog.
