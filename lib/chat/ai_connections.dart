@@ -63,8 +63,10 @@ class AiConnections {
     this.googleClientSecret = '',
     this.googleProject = '',
     this.googleTokens,
+    this.liveResearch = false,
   });
   final FilmAiProvider provider;
+  final bool liveResearch;
   final String claudeKey, claudeModel, geminiKey, geminiModel;
   final GeminiAuthentication geminiAuthentication;
   final String googleClientId, googleClientSecret, googleProject;
@@ -72,6 +74,7 @@ class AiConnections {
 
   AiConnections copyWith({
     FilmAiProvider? provider,
+    bool? liveResearch,
     String? claudeKey,
     String? claudeModel,
     String? geminiKey,
@@ -90,6 +93,7 @@ class AiConnections {
         (googleProject != null && googleProject != this.googleProject);
     return AiConnections(
       provider: provider ?? this.provider,
+      liveResearch: liveResearch ?? this.liveResearch,
       claudeKey: claudeKey ?? this.claudeKey,
       claudeModel: claudeModel ?? this.claudeModel,
       geminiKey: geminiKey ?? this.geminiKey,
@@ -107,6 +111,7 @@ class AiConnections {
   Map<String, Object?> toJson() => {
     'version': 1,
     'provider': provider.name,
+    'liveResearch': liveResearch,
     'claudeKey': claudeKey,
     'claudeModel': claudeModel,
     'geminiKey': geminiKey,
@@ -121,8 +126,12 @@ class AiConnections {
     if (json['version'] != 1) {
       throw const FormatException('Unsupported settings');
     }
+    if (json.containsKey('liveResearch') && json['liveResearch'] is! bool) {
+      throw const FormatException('Invalid research setting');
+    }
     final result = AiConnections(
       provider: FilmAiProvider.values.byName(json['provider'] as String),
+      liveResearch: json['liveResearch'] == true,
       claudeKey: _credential(json['claudeKey']),
       claudeModel: json['claudeModel'] as String,
       geminiKey: _credential(json['geminiKey']),

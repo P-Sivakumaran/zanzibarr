@@ -1,3 +1,5 @@
+import '../player/series_preferences.dart';
+import 'episode_release_ranker.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -58,6 +60,8 @@ class SearchScreen extends StatefulWidget {
     this.autoSearchInitialSelection = false,
     this.watchlistStore,
     this.adultOnly = false,
+    this.pickEpisodeReleaseOnly = false,
+    this.seriesPreferences,
   });
 
   /// Testlerde sahte depo enjekte edebilmek için; null ise gerçek depo kullanılır.
@@ -95,6 +99,8 @@ class SearchScreen extends StatefulWidget {
   /// depo kullanılır.
   final WatchlistStore? watchlistStore;
   final bool adultOnly;
+  final bool pickEpisodeReleaseOnly;
+  final SeriesPreferences? seriesPreferences;
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -137,6 +143,8 @@ class _SearchScreenState extends State<SearchScreen> {
   List<String> _failedIndexers = [];
   Uint32List? _sourceOffsets;
   String? _pageError;
+  String? _automaticStatus;
+  late final _series = widget.seriesPreferences ?? SeriesPreferences.shared;
   Object? _error;
 
   /// Şu an NZB'si indirilen öğenin listedeki sırası; spinner burada gösterilir.
@@ -305,6 +313,7 @@ class _SearchScreenState extends State<SearchScreen> {
       _loadingMore = false;
       _error = null;
       _pageError = null;
+      _automaticStatus = null;
       _activeQuery = query;
       _activeSelection = _selection;
       _activeConfigs = configs;
@@ -337,6 +346,29 @@ class _SearchScreenState extends State<SearchScreen> {
         _failedIndexers = result.failedIndexers;
         _searching = false;
       });
+      final target = _activeSelection;
+      if (target?.autoPick == true) {
+        await _series.load();
+        if (!mounted || generation != _generation) return;
+        if (_series.ready && _series.value.autoSelect) {
+          final ranked = rankEpisodeReleases(
+            _items!.where((item) => _configFor(item) != null).toList(),
+            target!,
+            _series.value,
+          );
+          if (ranked.isNotEmpty) {
+            setState(
+              () => _automaticStatus = 'Selected ${ranked.first.explanation}',
+            );
+            await _downloadAndPlay(_items!.indexOf(ranked.first.item));
+            return;
+          }
+          setState(
+            () => _automaticStatus =
+                'No confident automatic choice. Choose a release below. Known runtime, size, matching episode and a suitable AVC encode within your connection budget are required.',
+          );
+        }
+      }
       if (page.items.isNotEmpty) {
         // Klavyeden "ara" eylemi alan odağını düşürür; D-pad zinciri
         // kopmasın diye odak ilk sonuç kartına taşınır.
@@ -546,6 +578,19 @@ class _SearchScreenState extends State<SearchScreen> {
   Future<void> _downloadAndPlay(int index) async {
     if (_busyIndex != null) return;
     final item = _items![index];
+    final selection = _activeSelection;
+    final generation = _generation;
+    if (widget.pickEpisodeReleaseOnly &&
+        (selection == null || !isExactEpisode(item, selection))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Choose an exact single-episode release. Packs and ambiguous results cannot be used for episode navigation.',
+          ),
+        ),
+      );
+      return;
+    }
     final config = _configFor(item);
     if (config == null) {
       // Profil arama sırasından beri silinmiş/değişmiş olabilir.
@@ -558,8 +603,33 @@ class _SearchScreenState extends State<SearchScreen> {
     }
     setState(() => _busyIndex = index);
     try {
+      if (widget.pickEpisodeReleaseOnly || selection?.autoPick == true) {
+        final profiles = await _store.load();
+        if (!mounted || generation != _generation) return;
+        if (!profiles.any(
+          (p) =>
+              p.enabled &&
+              p.id == config.id &&
+              p.baseUrl == config.baseUrl &&
+              p.apiKey == config.apiKey,
+        )) {
+          throw StateError('Source configuration changed');
+        }
+      }
       final path = await _downloadFn(config, item.nzbUrl, item.title);
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
+      if (widget.pickEpisodeReleaseOnly) {
+        Navigator.pop(
+          context,
+          SelectedEpisodeRelease(
+            path: path,
+            selection: selection!,
+            sourceId: config.id,
+            nzbUrl: item.nzbUrl,
+          ),
+        );
+        return;
+      }
       final onDownloaded = widget.onDownloaded;
       if (onDownloaded != null) {
         onDownloaded(path);
@@ -569,6 +639,9 @@ class _SearchScreenState extends State<SearchScreen> {
             builder: (_) => PlayerScreen(
               nzbPath: path,
               imdbId: _activeSelection?.imdbId,
+              seriesTitle: _activeSelection?.kind == 'tv'
+                  ? _activeSelection?.title
+                  : null,
               season: item.season ?? _activeSelection?.season,
               episode: item.episode ?? _activeSelection?.episode,
               sourceId: config.id,
@@ -639,13 +712,13 @@ class _SearchScreenState extends State<SearchScreen> {
     return Scaffold(
       appBar: AppBar(
         actions: [
-          if (!widget.adultOnly)
+          if (!widget.adultOnly && !widget.pickEpisodeReleaseOnly)
             IconButton(
               tooltip: l10n.metadataBrowseTitle,
               onPressed: _busyIndex == null ? _openMetadata : null,
               icon: const Icon(Icons.movie_filter_outlined),
             ),
-          if (!widget.adultOnly)
+          if (!widget.adultOnly && !widget.pickEpisodeReleaseOnly)
             IconButton(
               tooltip: l10n.structuredSearchTitle,
               onPressed: _busyIndex == null ? _openStructured : null,
@@ -684,6 +757,14 @@ class _SearchScreenState extends State<SearchScreen> {
       ),
       body: Column(
         children: [
+          if (_automaticStatus != null)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                _automaticStatus!,
+                key: const Key('episode-auto-status'),
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: Row(
@@ -691,6 +772,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 Expanded(
                   child: TextField(
                     controller: _queryController,
+                    readOnly: widget.pickEpisodeReleaseOnly,
                     focusNode: _queryFocusNode,
                     // TV kumandasında D-pad gezintisi metin alanından başlar.
                     autofocus: true,
@@ -700,7 +782,9 @@ class _SearchScreenState extends State<SearchScreen> {
                     decoration: InputDecoration(
                       hintText: l10n.searchHint,
                       prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                      suffixIcon: _queryController.text.isEmpty
+                      suffixIcon:
+                          widget.pickEpisodeReleaseOnly ||
+                              _queryController.text.isEmpty
                           ? null
                           : IconButton(
                               tooltip: l10n.searchClearTooltip,

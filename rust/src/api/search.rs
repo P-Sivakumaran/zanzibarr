@@ -420,6 +420,23 @@ pub fn newznab_search_many(
     })
 }
 
+// Download links can point at external CDNs. Never append this indexer's key
+// outside its exact configured origin.
+fn authenticated_download_url(config: &IndexerConfigDto, nzb_url: String) -> String {
+    if nzb_url.contains("apikey=")
+        || config.api_key.is_empty()
+        || !http::same_origin(&config.base_url, &nzb_url)
+    {
+        nzb_url
+    } else {
+        let separator = if nzb_url.contains('?') { '&' } else { '?' };
+        format!(
+            "{nzb_url}{separator}apikey={}",
+            newznab::percent_encode(&config.api_key)
+        )
+    }
+}
+
 /// Arama sonucunun NZB'sini geçici dizine indirir ve dosya yolunu döndürür.
 /// Yanıtın gerçekten NZB olduğu kök öğe kokusuyla doğrulanır; HTML hata
 /// sayfaları oynatıcıya kadar ilerleyemez.
@@ -434,18 +451,21 @@ pub fn newznab_download_nzb(
     suggested_name: String,
     download_dir: Option<String>,
 ) -> Result<String, String> {
-    // Bazı indexer'lar feed'deki bağlantıya anahtarı gömmez.
-    let url = if nzb_url.contains("apikey=") || config.api_key.is_empty() {
-        nzb_url
-    } else {
-        let separator = if nzb_url.contains('?') { '&' } else { '?' };
-        format!(
-            "{nzb_url}{separator}apikey={}",
-            newznab::percent_encode(&config.api_key)
-        )
-    };
+    let url = authenticated_download_url(&config, nzb_url);
 
-    let body = fetch_checked(&url, MAX_NZB_BYTES, DOWNLOAD_TIMEOUT)?;
+    let response = RUNTIME
+        .block_on(http::http_get_with_origin(
+            &url,
+            MAX_NZB_BYTES,
+            DOWNLOAD_TIMEOUT,
+            &config.base_url,
+        ))
+        .map_err(map_http_error)?;
+    if !(200..300).contains(&response.status) {
+        return Err(format!("indexer returned HTTP {}", response.status));
+    }
+    let body = String::from_utf8(response.body)
+        .map_err(|_| "indexer response is not UTF-8".to_string())?;
     let head: String = body.chars().take(4096).collect();
     let looks_nzb = head.contains("<nzb") || head.contains("<!DOCTYPE nzb");
     if !looks_nzb {
@@ -511,6 +531,33 @@ mod tests {
             episode: None,
             supported_params: params.iter().map(|p| p.to_string()).collect(),
         }
+    }
+
+    #[test]
+    fn download_credentials_stay_at_configured_origin() {
+        let config = IndexerConfigDto {
+            structured: None,
+            id: None,
+            nickname: "Test".into(),
+            base_url: "https://indexer.example".into(),
+            api_key: "TESTPASS123".into(),
+        };
+        assert_eq!(
+            authenticated_download_url(&config, "https://indexer.example/get?id=1".into()),
+            "https://indexer.example/get?id=1&apikey=TESTPASS123"
+        );
+        for url in [
+            "https://cdn.example/get?id=1",
+            "http://indexer.example/get",
+            "https://indexer.example:444/get",
+        ] {
+            assert_eq!(authenticated_download_url(&config, url.into()), url);
+        }
+        let supplied = "https://indexer.example/get?apikey=TESTPASS123";
+        assert_eq!(
+            authenticated_download_url(&config, supplied.into()),
+            supplied
+        );
     }
 
     #[test]

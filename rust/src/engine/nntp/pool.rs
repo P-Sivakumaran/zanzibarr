@@ -25,6 +25,7 @@ pub trait Connect: Send + Sync + 'static {
 }
 
 pub struct NntpPool<C: Connect> {
+    trace: Option<Arc<crate::engine::telemetry::PlaybackTrace>>,
     connector: C,
     semaphore: Arc<Semaphore>,
     max_connections: usize,
@@ -60,6 +61,7 @@ impl<C: Connect> NntpPool<C> {
     pub fn new(connector: C, max_connections: usize) -> Arc<Self> {
         let max_connections = max_connections.max(1);
         Arc::new(NntpPool {
+            trace: crate::engine::telemetry::current(),
             connector,
             semaphore: Arc::new(Semaphore::new(max_connections)),
             max_connections,
@@ -109,6 +111,9 @@ impl<C: Connect> NntpPool<C> {
                         return Err(limit);
                     };
                     backoff_step += 1;
+                    if let Some(trace) = &self.trace {
+                        trace.record(crate::engine::telemetry::Event::ConnectionRetry);
+                    }
 
                     // Notify gelecekteki drop'u, ikinci idle kontrolü de
                     // notified() kurulurken oluşabilecek yarışı kapsar.

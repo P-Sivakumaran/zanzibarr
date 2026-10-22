@@ -12,10 +12,12 @@ pub mod nntp_source;
 pub mod nzb;
 pub mod par2;
 pub mod rar;
+pub mod rarcompressed;
 pub mod rarcrypt;
 pub mod repair;
 pub mod seekable_decode;
 pub mod server;
 pub mod sevenzip;
 pub mod yenc;
-pub mod rarcompressed;
+
+pub mod telemetry;

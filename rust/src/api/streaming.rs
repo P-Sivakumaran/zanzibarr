@@ -27,6 +27,7 @@ use crate::engine::rar::{self, RarEntrySource, RarError};
 use crate::engine::rarcompressed::CompressedRarEntrySource;
 use crate::engine::server::{self, RangeSource};
 use crate::engine::sevenzip::SevenZipEntrySource;
+use crate::engine::telemetry::{self, Event};
 use crate::engine::yenc;
 
 /// Tüm ağ/stream işleri bu global çok-iş-parçacıklı runtime'da yürür.
@@ -84,7 +85,10 @@ pub fn check_provider(config: ProviderConfigDto) -> Result<(), String> {
                 .authenticate(&config.username, &config.password)
                 .await
                 .map_err(provider_check_error)?;
-            connection.mode_reader().await.map_err(provider_check_error)?;
+            connection
+                .mode_reader()
+                .await
+                .map_err(provider_check_error)?;
             // Dropping the socket closes it immediately, including on timeout.
             Ok(())
         })
@@ -101,6 +105,32 @@ fn provider_check_error(error: crate::engine::nntp::NntpError) -> String {
         _ => "provider connection failed",
     }
     .to_string()
+}
+
+/// A redacted, bounded native event snapshot for a known player session.
+pub struct PlaybackTraceDto {
+    pub events: Vec<PlaybackTraceEventDto>,
+    pub dropped: u64,
+}
+pub struct PlaybackTraceEventDto {
+    pub sequence: u64,
+    pub elapsed_ms: u64,
+    pub event: String,
+}
+pub fn playback_trace(session_id: u64) -> Option<PlaybackTraceDto> {
+    let trace = telemetry::for_session(session_id)?;
+    let (events, dropped) = trace.snapshot();
+    Some(PlaybackTraceDto {
+        dropped,
+        events: events
+            .into_iter()
+            .map(|event| PlaybackTraceEventDto {
+                sequence: event.sequence,
+                elapsed_ms: event.elapsed_ms,
+                event: event.event.into(),
+            })
+            .collect(),
+    })
 }
 
 /// Başlatılan stream'in oynatıcıya verilecek bilgileri.
@@ -155,6 +185,9 @@ fn cancel_active_stream(session_id: u64) -> bool {
     else {
         return false;
     };
+    if let Some(trace) = telemetry::for_session(session_id) {
+        trace.record(Event::Cancelled);
+    }
     let _ = stream.cancel.send(true);
     true
 }
@@ -462,7 +495,9 @@ async fn probe_numbered_set(
     // dosya başlıkları şifrelidir). Son cilt doğrulanmış bir ana ciltse eski
     // usul (.rar sonda) sayılıp set döndürülür.
     let mut volumes = volumes;
-    let last = volumes.pop().expect("numbered set has at least two volumes");
+    let last = volumes
+        .pop()
+        .expect("numbered set has at least two volumes");
     let tail = fetch_first_segment(pool, &last, cancellation).await?;
     let tail_kind = sniff_archive_kind(&tail);
     let tail_is_archive_start = match tail_kind {
@@ -608,7 +643,11 @@ fn implied_number(known: &[u64]) -> Option<u64> {
     }
     let min = known.first().copied()?;
     let max = known.last().copied()?;
-    if min >= 1 { Some(min - 1) } else { Some(max + 1) }
+    if min >= 1 {
+        Some(min - 1)
+    } else {
+        Some(max + 1)
+    }
 }
 
 /// Orta ciltlerin ilk segmentlerini eşzamanlı çeker; dönüş `files` ile aynı
@@ -624,9 +663,11 @@ async fn fetch_middle_first_segments(
         let pool = Arc::clone(pool);
         let file = file.clone();
         let cancellation = cancellation.clone();
-        set.spawn(
-            async move { fetch_first_segment(&pool, &file, &cancellation).await.map(|head| (index, head)) },
-        );
+        set.spawn(async move {
+            fetch_first_segment(&pool, &file, &cancellation)
+                .await
+                .map(|head| (index, head))
+        });
     }
     let mut indexed = Vec::with_capacity(files.len());
     while let Some(result) = set.join_next().await {
@@ -814,20 +855,27 @@ async fn run_stream_session(
     // bekler; sonuçların sırası tersine dönemez.
     let selection =
         match load_stream_selection(nzb_path.clone(), entry_key, cancellation.clone()).await {
-        Ok(selection) if !cancellation_requested(&cancellation) => selection,
-        Ok(_) => {
-            let _ = ready.send(Err("stream startup cancelled".into()));
-            return;
-        }
-        Err(error) => {
-            let _ = ready.send(Err(error));
-            return;
-        }
-    };
+            Ok(selection) if !cancellation_requested(&cancellation) => selection,
+            Ok(_) => {
+                let _ = ready.send(Err("stream startup cancelled".into()));
+                return;
+            }
+            Err(error) => {
+                telemetry::record(Event::SelectionFailed);
+                let _ = ready.send(Err(error));
+                return;
+            }
+        };
 
+    telemetry::record(if matches!(&selection, StreamSelection::Direct(_)) {
+        Event::StreamPreparing
+    } else {
+        Event::ArchivePreparing
+    });
     let source = match prepare_stream_source(config, selection, cancellation.clone()).await {
         Ok(source) => source,
         Err(error) => {
+            telemetry::record(Event::PreparationFailed);
             let _ = ready.send(Err(error));
             return;
         }
@@ -835,9 +883,8 @@ async fn run_stream_session(
 
     // Önceki bir onarım oturumundan kalan katman varsa kur: hasarlı bölgeler
     // artık ağa çıkılmadan yerelden servis edilir.
-    let overlay_dir = crate::engine::repair::RepairOverlay::dir_for_nzb(
-        std::path::Path::new(nzb_path.as_str()),
-    );
+    let overlay_dir =
+        crate::engine::repair::RepairOverlay::dir_for_nzb(std::path::Path::new(nzb_path.as_str()));
     match crate::engine::repair::RepairOverlay::load(&overlay_dir) {
         Ok(Some(overlay)) => source.install_overlay(&overlay),
         Ok(None) => {}
@@ -876,7 +923,13 @@ async fn run_stream_session(
     // kurulamazsa (sandbox, ağ yok) cast bu oturumda kapalı kalır, yerel
     // oynatma etkilenmez.
     let cast_token = generate_cast_token(session_id);
-    let lan_listener = server::bind_lan(0).await.ok();
+    // Fail closed for LAN access if the OS cannot provide fresh entropy.
+    let lan_listener = if cast_token.is_some() {
+        server::bind_lan(0).await.ok()
+    } else {
+        None
+    };
+    let cast_token = cast_token.unwrap_or_default();
     let cast_url = match (&lan_listener, local_lan_ipv4()) {
         (Some(lan), Some(ip)) => match lan.local_addr() {
             Ok(address) => format!(
@@ -898,6 +951,7 @@ async fn run_stream_session(
         compressed,
     };
 
+    telemetry::record(Event::StreamReady);
     if ready.send(Ok(info)).is_err() {
         return;
     }
@@ -922,31 +976,24 @@ async fn run_stream_session(
             );
         }
         None => {
-            let _ = server::serve_until(
-                listener,
-                source,
-                None,
-                wait_for_cancellation(cancellation),
-            )
-            .await;
+            let _ =
+                server::serve_until(listener, source, None, wait_for_cancellation(cancellation))
+                    .await;
         }
     }
 }
 
-/// Cast oturumu için 128-bit rastgele yol token'ı (hex). LAN tehdit modeli
-/// için kriptografik RNG şart değil; zaman + pid + oturum kimliği karması
-/// tahmin edilemezlik açısından yeterlidir.
-fn generate_cast_token(session_id: u64) -> String {
-    use sha2::Digest;
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let hash = sha2::Sha256::digest(format!(
-        "zanzibarr-cast:{session_id}:{nanos}:{}",
-        std::process::id()
-    ));
-    hash[..16].iter().map(|b| format!("{b:02x}")).collect()
+/// A fresh 128-bit OS-random capability; never derived from time, PID or IDs.
+fn generate_cast_token(_session_id: u64) -> Option<String> {
+    cast_token_with_entropy(getrandom::getrandom)
+}
+
+fn cast_token_with_entropy(
+    random: impl FnOnce(&mut [u8]) -> Result<(), getrandom::Error>,
+) -> Option<String> {
+    let mut bytes = [0u8; 16];
+    random(&mut bytes).ok()?;
+    Some(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
 /// Cihazın LAN IPv4 adresini bulur. UDP connect hilesi paket göndermez;
@@ -1244,15 +1291,22 @@ pub fn begin_stream(config: ProviderConfigDto, nzb_path: String, entry_key: Opti
     // ağ I/O'su sırasında hiçbir std::sync::Mutex tutulmaz.
     let mut active = ACTIVE_STREAM.lock().expect("aktif stream kilidi");
     let previous = active.take();
-    let task = RUNTIME.spawn(run_stream_session(
-        session_id,
-        config,
-        nzb_path,
-        entry_key,
-        cancellation,
-        ready,
-        previous,
-    ));
+    let trace = telemetry::create(session_id);
+    let task = RUNTIME.spawn(async move {
+        trace
+            .clone()
+            .scope(run_stream_session(
+                session_id,
+                config,
+                nzb_path,
+                entry_key,
+                cancellation,
+                ready,
+                previous,
+            ))
+            .await;
+        trace.finish();
+    });
     *active = Some(ActiveStream {
         session_id,
         cancel,
@@ -1326,15 +1380,36 @@ fn url_encode_path(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn cast_capabilities_use_os_entropy_and_fail_closed() {
+        let first = super::generate_cast_token(1).unwrap();
+        let second = super::generate_cast_token(1).unwrap();
+        assert_eq!(first.len(), 32);
+        assert!(first.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert_ne!(first, second);
+        assert!(super::cast_token_with_entropy(|_| Err(getrandom::Error::UNSUPPORTED)).is_none());
+    }
+
+    #[test]
     fn provider_check_errors_never_echo_server_text() {
         use crate::engine::nntp::NntpError;
-        assert_eq!(super::provider_check_error(NntpError::AuthFailed {
-            code: 481, text: "echoed TESTPASS123".into(),
-        }), "provider authentication failed");
-        assert_eq!(super::provider_check_error(NntpError::ConnectionLimit {
-            code: 502, text: "echoed TESTPASS123".into(),
-        }), "provider connection limit reached");
-        assert_eq!(super::provider_check_error(NntpError::Malformed("echoed TESTPASS123".into())), "provider connection failed");
+        assert_eq!(
+            super::provider_check_error(NntpError::AuthFailed {
+                code: 481,
+                text: "echoed TESTPASS123".into(),
+            }),
+            "provider authentication failed"
+        );
+        assert_eq!(
+            super::provider_check_error(NntpError::ConnectionLimit {
+                code: 502,
+                text: "echoed TESTPASS123".into(),
+            }),
+            "provider connection limit reached"
+        );
+        assert_eq!(
+            super::provider_check_error(NntpError::Malformed("echoed TESTPASS123".into())),
+            "provider connection failed"
+        );
     }
 
     use super::*;
@@ -1618,9 +1693,21 @@ mod tests {
         let parsed = nzb::Nzb {
             meta: vec![("password".into(), "TESTPASS123".into())],
             files: vec![
-                file("\"33dce3ecfd2d186566653db06253ceba.par2\" yEnc (1/1)", 1, 10),
-                file("\"33dce3ecfd2d186566653db06253ceba.11\" yEnc (1/1)", 1, 1000),
-                file("\"33dce3ecfd2d186566653db06253ceba.10\" yEnc (1/1)", 1, 1000),
+                file(
+                    "\"33dce3ecfd2d186566653db06253ceba.par2\" yEnc (1/1)",
+                    1,
+                    10,
+                ),
+                file(
+                    "\"33dce3ecfd2d186566653db06253ceba.11\" yEnc (1/1)",
+                    1,
+                    1000,
+                ),
+                file(
+                    "\"33dce3ecfd2d186566653db06253ceba.10\" yEnc (1/1)",
+                    1,
+                    1000,
+                ),
             ],
         };
         let selection = select_stream(&parsed).unwrap();

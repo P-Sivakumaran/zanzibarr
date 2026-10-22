@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 435543799;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1059811768;
 
 // Section: executor
 
@@ -656,6 +656,40 @@ fn wire__crate__api__search__newznab_search_many_impl(
         },
     )
 }
+fn wire__crate__api__streaming__playback_trace_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "playback_trace",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok =
+                        Result::<_, ()>::Ok(crate::api::streaming::playback_trace(api_session_id))?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__repair__repair_progress_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -889,6 +923,20 @@ impl SseDecode for Vec<crate::api::streaming::PlayableEntryDto> {
     }
 }
 
+impl SseDecode for Vec<crate::api::streaming::PlaybackTraceEventDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::streaming::PlaybackTraceEventDto>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -967,6 +1015,19 @@ impl SseDecode for Option<i64> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<i64>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::streaming::PlaybackTraceDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::streaming::PlaybackTraceDto>::sse_decode(
+                deserializer,
+            ));
         } else {
             return None;
         }
@@ -1057,6 +1118,33 @@ impl SseDecode for crate::api::streaming::PlayableEntryDto {
             kind: var_kind,
             encoded_bytes: var_encodedBytes,
             part_count: var_partCount,
+        };
+    }
+}
+
+impl SseDecode for crate::api::streaming::PlaybackTraceDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_events =
+            <Vec<crate::api::streaming::PlaybackTraceEventDto>>::sse_decode(deserializer);
+        let mut var_dropped = <u64>::sse_decode(deserializer);
+        return crate::api::streaming::PlaybackTraceDto {
+            events: var_events,
+            dropped: var_dropped,
+        };
+    }
+}
+
+impl SseDecode for crate::api::streaming::PlaybackTraceEventDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_sequence = <u64>::sse_decode(deserializer);
+        let mut var_elapsedMs = <u64>::sse_decode(deserializer);
+        let mut var_event = <String>::sse_decode(deserializer);
+        return crate::api::streaming::PlaybackTraceEventDto {
+            sequence: var_sequence,
+            elapsed_ms: var_elapsedMs,
+            event: var_event,
         };
     }
 }
@@ -1290,9 +1378,10 @@ fn pde_ffi_dispatcher_primary_impl(
         }
         16 => wire__crate__api__search__newznab_search_impl(port, ptr, rust_vec_len, data_len),
         17 => wire__crate__api__search__newznab_search_many_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__repair__repair_progress_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__streaming__start_stream_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__streaming__stop_stream_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__streaming__playback_trace_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__repair__repair_progress_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__streaming__start_stream_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__streaming__stop_stream_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1411,6 +1500,49 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::streaming::PlayableEntryDto>
     for crate::api::streaming::PlayableEntryDto
 {
     fn into_into_dart(self) -> crate::api::streaming::PlayableEntryDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::streaming::PlaybackTraceDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.events.into_into_dart().into_dart(),
+            self.dropped.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::streaming::PlaybackTraceDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::streaming::PlaybackTraceDto>
+    for crate::api::streaming::PlaybackTraceDto
+{
+    fn into_into_dart(self) -> crate::api::streaming::PlaybackTraceDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::streaming::PlaybackTraceEventDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.sequence.into_into_dart().into_dart(),
+            self.elapsed_ms.into_into_dart().into_dart(),
+            self.event.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::streaming::PlaybackTraceEventDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::streaming::PlaybackTraceEventDto>
+    for crate::api::streaming::PlaybackTraceEventDto
+{
+    fn into_into_dart(self) -> crate::api::streaming::PlaybackTraceEventDto {
         self
     }
 }
@@ -1703,6 +1835,16 @@ impl SseEncode for Vec<crate::api::streaming::PlayableEntryDto> {
     }
 }
 
+impl SseEncode for Vec<crate::api::streaming::PlaybackTraceEventDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::streaming::PlaybackTraceEventDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1769,6 +1911,16 @@ impl SseEncode for Option<i64> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <i64>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::streaming::PlaybackTraceDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::streaming::PlaybackTraceDto>::sse_encode(value, serializer);
         }
     }
 }
@@ -1841,6 +1993,23 @@ impl SseEncode for crate::api::streaming::PlayableEntryDto {
         <String>::sse_encode(self.kind, serializer);
         <u64>::sse_encode(self.encoded_bytes, serializer);
         <u32>::sse_encode(self.part_count, serializer);
+    }
+}
+
+impl SseEncode for crate::api::streaming::PlaybackTraceDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<crate::api::streaming::PlaybackTraceEventDto>>::sse_encode(self.events, serializer);
+        <u64>::sse_encode(self.dropped, serializer);
+    }
+}
+
+impl SseEncode for crate::api::streaming::PlaybackTraceEventDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u64>::sse_encode(self.sequence, serializer);
+        <u64>::sse_encode(self.elapsed_ms, serializer);
+        <String>::sse_encode(self.event, serializer);
     }
 }
 

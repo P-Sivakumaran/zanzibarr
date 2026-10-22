@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `download_dir_path`, `fetch_checked_async`, `fetch_checked`, `fetch_search_items_async`, `map_http_error`, `map_item`, `normalize_imdb_id`, `sanitize_filename`, `search_query_params`
+// These functions are ignored because they are not marked as `pub`: `authenticated_download_url`, `download_dir_path`, `fetch_checked_async`, `fetch_checked`, `fetch_search_items_async`, `map_http_error`, `map_item`, `normalize_imdb_id`, `sanitize_filename`, `search_query_params`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`
 
 /// Indexer'ın yeteneklerini sorgular (`?t=caps`). Bağlantı ve API anahtarı

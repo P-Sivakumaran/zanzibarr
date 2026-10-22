@@ -37,6 +37,7 @@ class _AiConnectionsScreenState extends State<AiConnectionsScreen> {
   AiConnections? _saved;
   FilmAiProvider _provider = FilmAiProvider.codex;
   GeminiAuthentication _auth = GeminiAuthentication.apiKey;
+  bool _liveResearch = false;
   bool _allowPop = false;
   bool _confirmingLeave = false;
   bool _busy = false;
@@ -53,6 +54,7 @@ class _AiConnectionsScreenState extends State<AiConnectionsScreen> {
     if (!mounted) return;
     _saved = config;
     _provider = config.provider;
+    _liveResearch = config.liveResearch;
     _auth = config.geminiAuthentication;
     _claudeKey.text = config.claudeKey;
     _claudeModel.text = config.claudeModel;
@@ -65,6 +67,7 @@ class _AiConnectionsScreenState extends State<AiConnectionsScreen> {
 
   AiConnections get _draft => _saved!.copyWith(
     provider: _provider,
+    liveResearch: _liveResearch,
     geminiAuthentication: _auth,
     claudeKey: _claudeKey.text.trim(),
     claudeModel: _claudeModel.text.trim(),
@@ -433,6 +436,24 @@ class _AiConnectionsScreenState extends State<AiConnectionsScreen> {
                   ],
                 ],
                 const SizedBox(height: 16),
+                if (_provider != FilmAiProvider.codex) ...[
+                  SwitchListTile.adaptive(
+                    key: const Key('ai-live-research'),
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Live research'),
+                    subtitle: const Text(
+                      'Check current facts with web sources when useful. Adds API usage and may add search charges.',
+                    ),
+                    value: _liveResearch,
+                    onChanged: _busy
+                        ? null
+                        : (value) => setState(() => _liveResearch = value),
+                  ),
+                  const Text(
+                    'When enabled, one extra research request per reply receives your prompt and recent chat. Claude allows up to 3 searches; Google controls Gemini query counts. Only public research tools are enabled. Sources open in your browser when selected.',
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 if (_status != null)
                   Text(_status!, key: const Key('ai-connection-status')),
                 const SizedBox(height: 12),

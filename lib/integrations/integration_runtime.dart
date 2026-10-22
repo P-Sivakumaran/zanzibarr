@@ -6,6 +6,7 @@ import '../settings/indexer_settings.dart';
 import '../src/rust/api/search.dart';
 import 'integration_settings.dart';
 import 'mcp_transport.dart';
+import 'mcp_call_context.dart';
 
 class IntegrationPlayback {
   IntegrationPlayback({
@@ -15,9 +16,10 @@ class IntegrationPlayback {
     required this.seek,
   });
   final Map<String, Object?> Function() status;
-  final Future<void> Function() pause;
-  final Future<void> Function() resume;
-  final Future<void> Function(Duration position) seek;
+  final Future<void> Function(void Function() authorize) pause;
+  final Future<void> Function(void Function() authorize) resume;
+  final Future<void> Function(Duration position, void Function() authorize)
+  seek;
 }
 
 class IntegrationRuntime extends ChangeNotifier {
@@ -90,7 +92,8 @@ class IntegrationRuntime extends ChangeNotifier {
     final server = LocalMcpServer(
       token: config.token,
       tools: tools,
-      call: call,
+      call: (name, arguments, context) =>
+          call(name, arguments, context: context),
     );
     try {
       await server.start(port: config.port);
@@ -162,7 +165,8 @@ class IntegrationRuntime extends ChangeNotifier {
     ];
   }
 
-  Future<Object?> call(String name, Map<String, dynamic> arguments) async {
+  void _authorize(String name, McpCallContext? context) {
+    context?.check();
     final config = settings;
     if (config?.enabled != true) {
       throw const IntegrationException('MCP access is disabled.');
@@ -170,6 +174,14 @@ class IntegrationRuntime extends ChangeNotifier {
     if (!tools().any((tool) => tool['name'] == name)) {
       throw const IntegrationException('Tool is not allowed.');
     }
+  }
+
+  Future<Object?> call(
+    String name,
+    Map<String, dynamic> arguments, {
+    McpCallContext? context,
+  }) async {
+    _authorize(name, context);
     final allowed = name == 'search_releases'
         ? {'query'}
         : name == 'playback_seek'
@@ -178,24 +190,38 @@ class IntegrationRuntime extends ChangeNotifier {
     if (arguments.keys.any((key) => !allowed.contains(key))) {
       throw const IntegrationException('Unknown tool argument.');
     }
-    if (name == 'library_list') return _library();
+    if (name == 'library_list') {
+      final result = await _library();
+      _authorize(name, context);
+      return result;
+    }
     if (name == 'search_releases') {
       final query = arguments['query'];
       if (query is! String || query.trim().isEmpty || query.length > 200) {
         throw const IntegrationException('Invalid search query.');
       }
-      return _search(query.trim());
+      final result = await _search(query.trim());
+      _authorize(name, context);
+      return result;
     }
     final playback = _playback;
     if (name == 'playback_status') {
       return playback?.status() ?? {'active': false};
     }
     if (playback == null) throw const IntegrationException('No active player.');
+    void authorize() {
+      _authorize(name, context);
+      if (!identical(_playback, playback)) {
+        throw const IntegrationException('Player is no longer active.');
+      }
+    }
+
+    authorize();
     switch (name) {
       case 'playback_pause':
-        await playback.pause();
+        await playback.pause(authorize);
       case 'playback_resume':
-        await playback.resume();
+        await playback.resume(authorize);
       case 'playback_seek':
         final seconds = arguments['seconds'];
         final duration = playback.status()['durationSeconds'];
@@ -209,8 +235,12 @@ class IntegrationRuntime extends ChangeNotifier {
             'Seek must be within the active media duration.',
           );
         }
-        await playback.seek(Duration(milliseconds: (seconds * 1000).round()));
+        await playback.seek(
+          Duration(milliseconds: (seconds * 1000).round()),
+          authorize,
+        );
     }
+    authorize();
     return playback.status();
   }
 

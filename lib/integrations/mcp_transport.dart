@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'integration_settings.dart';
+import 'mcp_call_context.dart';
 
 const mcpProtocolVersion = '2025-11-25';
 const _supportedVersions = ['2025-11-25', '2025-06-18', '2025-03-26'];
@@ -273,7 +274,11 @@ class McpClient {
 }
 
 typedef McpToolCall =
-    Future<Object?> Function(String name, Map<String, dynamic> arguments);
+    Future<Object?> Function(
+      String name,
+      Map<String, dynamic> arguments,
+      McpCallContext context,
+    );
 
 /// Local MCP endpoint is independent of the media/casting HTTP listeners.
 class LocalMcpServer {
@@ -281,12 +286,26 @@ class LocalMcpServer {
     required this.token,
     required this.tools,
     required this.call,
+    this.callTimeout = const Duration(seconds: 30),
   });
   final String token;
   final List<Map<String, Object>> Function() tools;
   final McpToolCall call;
+  final Duration callTimeout;
+  // This endpoint has one bearer authority. Separate assistants sharing that
+  // bearer also share request-ID scope; no per-client identity is implied.
+  final Map<Object, McpCallContext> _calls = {};
+  final List<McpCallOutcome> _audit = [];
+  List<McpCallOutcome> get audit => List.unmodifiable(_audit);
+
+  void _record(McpCallOutcome outcome) {
+    if (_audit.length == 128) _audit.removeAt(0);
+    _audit.add(outcome);
+  }
+
   HttpServer? _server;
   int _active = 0;
+  int _runningTools = 0;
   bool _closing = false;
   int? get port => _server?.port;
 
@@ -300,6 +319,9 @@ class LocalMcpServer {
 
   Future<void> close() async {
     _closing = true;
+    for (final context in _calls.values) {
+      context.cancel(McpCallOutcome.closed);
+    }
     final server = _server;
     _server = null;
     await server?.close(force: true);
@@ -346,6 +368,10 @@ class LocalMcpServer {
           request,
           64 * 1024,
         ).timeout(const Duration(seconds: 5));
+        if (_closing) {
+          request.response.statusCode = 503;
+          return;
+        }
         final message = jsonDecode(utf8.decode(bytes));
         if (message is! Map ||
             message['jsonrpc'] != '2.0' ||
@@ -358,11 +384,24 @@ class LocalMcpServer {
         id = message['id'];
         final method = message['method'];
         if (!message.containsKey('id')) {
+          final params = message['params'];
+          if (method == 'notifications/cancelled' && params is Map) {
+            final target = params['requestId'];
+            if (target is String || target is int) _calls[target]?.cancel();
+          }
           request.response.statusCode = 202;
           return;
         }
         final params = message['params'] ?? <String, dynamic>{};
         if (params is! Map) throw const FormatException('Invalid params');
+        if (_calls.containsKey(id)) {
+          _reply(request, {
+            'jsonrpc': '2.0',
+            'id': id,
+            'error': {'code': -32600, 'message': 'Request ID already active'},
+          });
+          return;
+        }
         Object? result;
         if (method == 'initialize') {
           result = {
@@ -385,17 +424,44 @@ class LocalMcpServer {
           if (name is! String || args is! Map) {
             throw const FormatException('Invalid tool arguments');
           }
+          // Cancellation releases the HTTP response, but native/read-only work
+          // can keep running. Retain its slot until that operation settles.
+          if (_runningTools >= 8) {
+            request.response.statusCode = 503;
+            return;
+          }
+          final context = McpCallContext(timeout: callTimeout);
+          _calls[id!] = context;
+          var outcome = McpCallOutcome.failed;
           try {
-            final output = await call(
-              name,
-              Map<String, dynamic>.from(args),
-            ).timeout(const Duration(seconds: 30));
+            context.check();
+            _runningTools++;
+            final operation =
+                Future.sync(
+                  () => call(name, Map<String, dynamic>.from(args), context),
+                ).whenComplete(() {
+                  _runningTools--;
+                });
+            final output = await Future.any<Object?>([
+              operation,
+              context.cancelled.then<Object?>((_) {
+                throw const IntegrationException('MCP call cancelled.');
+              }),
+            ]);
+            context.check();
             result = {
               'content': [
                 {'type': 'text', 'text': jsonEncode(output)},
               ],
             };
+            outcome = McpCallOutcome.succeeded;
           } catch (_) {
+            outcome = context.outcome ?? McpCallOutcome.failed;
+            if (outcome == McpCallOutcome.cancelled) {
+              // Acknowledge transport only; no JSON-RPC result after cancellation.
+              request.response.statusCode = 202;
+              return;
+            }
             result = {
               'isError': true,
               'content': [
@@ -406,6 +472,10 @@ class LocalMcpServer {
                 },
               ],
             };
+          } finally {
+            context.finish();
+            if (identical(_calls[id], context)) _calls.remove(id);
+            _record(outcome);
           }
         } else {
           _reply(request, {

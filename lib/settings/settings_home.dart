@@ -1,3 +1,4 @@
+import 'series_settings_screen.dart';
 import 'package:flutter/material.dart';
 import '../adult/adult_screen.dart';
 import '../chat/ai_connections_screen.dart';
@@ -106,6 +107,12 @@ class _SettingsHomeScreenState extends State<SettingsHomeScreen> {
                             uiPreferences: widget.uiPreferences,
                           ),
                         ),
+                      ),
+                      _item(
+                        Icons.tv_outlined,
+                        'Series & playback',
+                        'Episode navigation, release choice and spoiler preferences',
+                        () => _open(const SeriesSettingsScreen()),
                       ),
                       _item(
                         Icons.image_outlined,

@@ -69,12 +69,64 @@ Requests use fixed HTTPS endpoints, header credentials, no redirects, bounded
 response sizes and deadlines. Stop cancels the active request. Error messages
 do not include raw provider responses or credentials.
 
-Only your prompt and up to ten recent exchanges (bounded to 48,000 characters)
+Without Live research, your prompt and up to ten recent exchanges (bounded to 48,000 characters)
 are sent to the selected provider. No library, provider passwords, source paths,
 MCP tools or automatic playback are exposed. Switching providers clears the
 conversation. Film descriptions and years remain AI suggestions, not verified
 availability. Named playlists and Find releases work as described in
 [FILM_CHAT.md](FILM_CHAT.md).
+
+## Optional Live research
+
+In Settings -> AI connections, select Claude or Gemini, enable **Live research**
+and Save. It defaults off, including existing saved connections. It is ignored
+for ChatGPT through Codex, whose web and other tools remain disabled.
+
+An enabled reply makes one extra research request. The model decides whether
+current web evidence is useful; ordinary recommendations may need no search.
+Claude uses the basic server web-search tool with a hard maximum of three
+searches. Gemini uses Google Search grounding in one request; this endpoint does
+not expose the same per-query cap, and Google controls the query count. Both
+add API usage and can add search charges to the selected provider account.
+No different provider or separate search key is silently selected.
+
+The research request receives the same bounded prompt/recent-chat context as
+film chat. Providers may derive search queries from it. No library, indexer
+credentials, paths, MCP tools or player controls are added. Public web text is
+untrusted data, not authority to run commands or acquire permissions. The
+research phase has a 45-second deadline and the existing 512 KiB response bound;
+there is no automatic paid retry or continuation loop.
+
+Research is separate from the structured film-card request: Claude citations
+are incompatible with strict JSON output. Only provider citation metadata
+becomes clickable source links, with at most 12 distinct sources. Uncited prose
+is discarded from the factual research context. Search failure stops the reply
+and keeps the draft; absence of citations is labelled unverified. The app cannot
+guarantee that a cited source is correct or that a catalogue is complete.
+
+Google's original research text is shown with its Search Suggestions markup,
+separate from film cards. A supported native web view is checked before a paid
+Gemini research request (WebView2 Runtime on Windows; Linux is unsupported).
+The suggestion view disables JavaScript and local-file access and applies a
+restrictive content policy (only inline styling/data images and Google static
+branding images are allowed). It has no API headers or host command bridge.
+Only user-initiated, validated HTTPS links open externally. If attribution cannot
+load, the researched reply is discarded and its prompt is restored when safe.
+
+Research notes/sources stay in the in-memory conversation and are not added to
+playlist storage, telemetry or a persistent cache. Film descriptions remain
+spoiler-free and evergreen; dated catalogue claims belong in the reply message.
+Criterion edition dates, film original years, Collection releases and Channel
+availability are kept distinct in the research instructions. Research checks
+authorization and configuration between phases and before accepting a result;
+Stop cancels the active HTTP operation. Already issued API usage cannot be undone.
+
+Official contracts checked 2026-10-21:
+
+- [Claude web search](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool)
+- [Claude structured-output compatibility](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
+- [Gemini Generate Content grounding](https://ai.google.dev/gemini-api/docs/generate-content/google-search)
+- [Google grounding display requirements](https://ai.google.dev/gemini-api/terms#grounding-with-google-search)
 
 ## Verification limits
 

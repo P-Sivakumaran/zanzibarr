@@ -9,6 +9,7 @@ import '../integrations/integration_runtime.dart';
 import '../integrations/integration_settings.dart';
 import '../search/release_search_selection.dart';
 import 'film_chat.dart';
+import 'research_panel.dart';
 import 'film_playlist.dart';
 import 'ai_connections.dart';
 import 'ai_connections_screen.dart';
@@ -91,6 +92,7 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
   List<FilmPlaylist> _playlists = [];
   bool _connecting = false;
   bool _sending = false;
+  String? _researchProgress;
   bool _saving = false;
   bool _loaded = false;
   bool _finding = false;
@@ -282,12 +284,21 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
     final restoreComposerFocus = _promptFocus.hasFocus;
     setState(() {
       _sending = true;
+      _researchProgress = null;
       _error = null;
     });
     try {
       final reply = _usesCodex
           ? await chat.send(prompt, _history)
-          : await apiChat.send(prompt, _history);
+          : await apiChat.send(
+              prompt,
+              _history,
+              onProgress: (status) {
+                if (mounted && _sending) {
+                  setState(() => _researchProgress = status);
+                }
+              },
+            );
       if (!mounted) return;
       setState(() {
         _history.add(FilmChatMessage(prompt, reply));
@@ -310,7 +321,10 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
       if (mounted) setState(() => _error = _message(error));
     } finally {
       if (mounted) {
-        setState(() => _sending = false);
+        setState(() {
+          _sending = false;
+          _researchProgress = null;
+        });
         if (restoreComposerFocus) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted &&
@@ -767,12 +781,45 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
         ),
       ),
       const SizedBox(height: 20),
+      if (entry.reply.research != null)
+        ResearchPanel(
+          key: ObjectKey(entry.reply),
+          research: entry.reply.research!,
+          onUnavailable: () => _researchUnavailable(entry),
+          child: _replyContent(entry.reply),
+        )
+      else
+        _replyContent(entry.reply),
+      const SizedBox(height: 28),
+    ],
+    if (_playlistError != null) _playlistWarning(),
+  ];
+
+  void _researchUnavailable(FilmChatMessage entry) {
+    if (!mounted) return;
+    final index = _history.indexOf(entry);
+    if (index < 0) return;
+    setState(() {
+      _history[index] = FilmChatMessage(
+        entry.prompt,
+        const FilmReply(
+          'Live research could not display the required Search Suggestions. Please retry or use Claude; this researched reply was discarded.',
+          [],
+        ),
+      );
+      if (!_sending && _prompt.text.isEmpty) _prompt.text = entry.prompt;
+    });
+  }
+
+  Widget _replyContent(FilmReply reply) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
       SelectableText(
-        entry.reply.message,
+        reply.message,
         style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.5),
       ),
       const SizedBox(height: 12),
-      for (final film in entry.reply.films)
+      for (final film in reply.films)
         _filmCard(film, [
           TextButton.icon(
             onPressed: !_loaded || _saving ? null : () => _add([film]),
@@ -780,21 +827,17 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
             label: const Text('Add to playlist'),
           ),
         ]),
-      if (entry.reply.films.isNotEmpty)
+      if (reply.films.isNotEmpty)
         Align(
           alignment: AlignmentDirectional.centerStart,
           child: OutlinedButton.icon(
-            onPressed: !_loaded || _saving
-                ? null
-                : () => _add(entry.reply.films),
+            onPressed: !_loaded || _saving ? null : () => _add(reply.films),
             icon: const Icon(Icons.playlist_add),
             label: const Text('Save these picks as a playlist'),
           ),
         ),
-      const SizedBox(height: 28),
     ],
-    if (_playlistError != null) _playlistWarning(),
-  ];
+  );
 
   String get _providerName =>
       _usesCodex ? 'ChatGPT' : _connections.provider.label;
@@ -878,6 +921,11 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   spacing: 8,
                   children: [
+                    if (!_usesCodex && _connections.liveResearch)
+                      const Chip(
+                        avatar: Icon(Icons.travel_explore, size: 18),
+                        label: Text('Live research on'),
+                      ),
                     if (_usesCodex && _aiReady)
                       IconButton(
                         key: const Key('chat-advanced-connection'),
@@ -1151,6 +1199,14 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
               ),
               const SizedBox(height: 12),
             ],
+            if (_researchProgress != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  _researchProgress!,
+                  key: const Key('chat-research-progress'),
+                ),
+              ),
             Shortcuts(
               shortcuts: {
                 if (Theme.of(context).platform == TargetPlatform.windows ||
@@ -1269,6 +1325,7 @@ class _FilmChatScreenState extends State<FilmChatScreen> {
           'ChatGPT uses your Codex subscription allowance; Claude and Gemini use API quota and may incur charges.\n\n'
           'Chat clears when you leave this screen. Playlists stay on this device and work offline. '
           'No indexer credentials, library or file paths are sent with your request.\n\n'
+          'Optional Live research in AI connections lets Claude or Gemini search public web sources. It adds API usage and may add search charges; your prompt and recent chat inform searches. Codex web access remains off.\n\n'
           'AI suggestions can be inaccurate. Use Find releases to check your indexers for availability. '
           'This interface currently uses English; the assistant can reply in your language.',
         ),

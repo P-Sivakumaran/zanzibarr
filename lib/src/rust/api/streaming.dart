@@ -17,6 +17,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 Future<void> checkProvider({required ProviderConfigDto config}) =>
     RustLib.instance.api.crateApiStreamingCheckProvider(config: config);
 
+Future<PlaybackTraceDto?> playbackTrace({required BigInt sessionId}) =>
+    RustLib.instance.api.crateApiStreamingPlaybackTrace(sessionId: sessionId);
+
 /// NZB'deki oynatılabilir adayları ağa çıkmadan listeler (yalnız dosya
 /// okuma ve ayrıştırma). Sezon paketi gibi çok parçalı NZB'lerde Flutter bu
 /// listeyle seçici diyalog gösterir; tek adaylı NZB'lerde diyalogsuz doğrudan
@@ -108,6 +111,49 @@ class PlayableEntryDto {
           kind == other.kind &&
           encodedBytes == other.encodedBytes &&
           partCount == other.partCount;
+}
+
+/// A redacted, bounded native event snapshot for a known player session.
+class PlaybackTraceDto {
+  final List<PlaybackTraceEventDto> events;
+  final BigInt dropped;
+
+  const PlaybackTraceDto({required this.events, required this.dropped});
+
+  @override
+  int get hashCode => events.hashCode ^ dropped.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlaybackTraceDto &&
+          runtimeType == other.runtimeType &&
+          events == other.events &&
+          dropped == other.dropped;
+}
+
+class PlaybackTraceEventDto {
+  final BigInt sequence;
+  final BigInt elapsedMs;
+  final String event;
+
+  const PlaybackTraceEventDto({
+    required this.sequence,
+    required this.elapsedMs,
+    required this.event,
+  });
+
+  @override
+  int get hashCode => sequence.hashCode ^ elapsedMs.hashCode ^ event.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlaybackTraceEventDto &&
+          runtimeType == other.runtimeType &&
+          sequence == other.sequence &&
+          elapsedMs == other.elapsedMs &&
+          event == other.event;
 }
 
 /// Dart'tan gelen sağlayıcı yapılandırması.

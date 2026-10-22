@@ -5,6 +5,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:zanzibarr/player/gyuni_player_controls.dart';
 
 import 'l10n_test_helper.dart';
+import 'player_menu_contrast_test.dart' show expectReadable;
 
 Widget _buildChrome({
   double width = 780,
@@ -21,6 +22,9 @@ Widget _buildChrome({
   VoidCallback? onLoadExternalAudio,
   VoidCallback? onLoadExternalSubtitle,
   ValueChanged<Offset>? onShowAdvancedSettings,
+  VoidCallback? onPreviousEpisode,
+  VoidCallback? onNextEpisode,
+  bool episodeNavigationBusy = false,
 }) {
   return l10nTestApp(
     Scaffold(
@@ -42,6 +46,9 @@ Widget _buildChrome({
           selectedTrack: const Track(),
           volume: volume,
           onActivity: () {},
+          onPreviousEpisode: onPreviousEpisode,
+          onNextEpisode: onNextEpisode,
+          episodeNavigationBusy: episodeNavigationBusy,
           onVideoTap: onVideoTap ?? () {},
           onTogglePlay: () {},
           onClose: () {},
@@ -78,6 +85,73 @@ Future<void> _doubleTapAt(WidgetTester tester, Offset location) async {
 }
 
 void main() {
+  for (final width in [360.0, 390.0, 1100.0]) {
+    testWidgets('episode buttons are distinct and usable at $width', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(width, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      var next = 0, previous = 0;
+      await tester.pumpWidget(
+        _buildChrome(
+          width: width,
+          onPreviousEpisode: () => previous++,
+          onNextEpisode: () => next++,
+        ),
+      );
+      final nextButton = find.byTooltip('Next episode');
+      expect(tester.getSize(nextButton).height, greaterThanOrEqualTo(48));
+      await tester.tap(nextButton);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.tap(find.byTooltip('Previous episode'));
+      await tester.pump(const Duration(seconds: 1));
+      expect(next, 1);
+      expect(previous, 1);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(
+        _buildChrome(
+          width: width,
+          episodeNavigationBusy: true,
+          onPreviousEpisode: () => previous++,
+          onNextEpisode: () => next++,
+        ),
+      );
+      final button = tester.widget<IconButton>(
+        find.descendant(
+          of: find.byTooltip('Next episode'),
+          matching: find.byType(IconButton),
+        ),
+      );
+      expect(button.onPressed, isNull);
+    });
+  }
+
+  testWidgets(
+    'audio and speed menus retain contrast under the light app theme',
+    (tester) async {
+      await tester.pumpWidget(
+        _buildChrome(
+          tracks: const Tracks(audio: [AudioTrack('1', 'English audio', 'en')]),
+          onLoadExternalAudio: () {},
+        ),
+      );
+      await tester.tap(find.byType(PopupMenuButton<double>));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expectReadable(tester, find.text('0.5\u00d7'));
+      await tester.tap(find.text('0.5\u00d7'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Ses izi'));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expectReadable(tester, find.textContaining('English audio'));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   for (final width in [360.0, 390.0]) {
     testWidgets('audio selection and touch targets at $width pixels', (
       tester,

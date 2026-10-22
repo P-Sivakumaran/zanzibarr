@@ -12,6 +12,8 @@ class ReleaseSearchSelection {
     this.year,
     this.season,
     this.episode,
+    this.autoPick = false,
+    this.runtimeMinutes,
   });
   final String title;
   final String kind; // movie / tv
@@ -20,6 +22,8 @@ class ReleaseSearchSelection {
   final int? year;
   final int? season;
   final int? episode;
+  final bool autoPick;
+  final int? runtimeMinutes;
 
   factory ReleaseSearchSelection.fromMedia(MediaTitle media) =>
       ReleaseSearchSelection(

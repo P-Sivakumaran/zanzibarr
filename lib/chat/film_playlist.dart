@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'film_research.dart';
 
 import '../integrations/integration_settings.dart';
 import '../player/media_preferences.dart';
@@ -67,7 +68,8 @@ String boundedText(Object? value, int max) {
 }
 
 class FilmReply {
-  const FilmReply(this.message, this.films);
+  const FilmReply(this.message, this.films, {this.research});
+  final FilmResearch? research;
   final String message;
   final List<FilmSuggestion> films;
   factory FilmReply.parse(String text) {

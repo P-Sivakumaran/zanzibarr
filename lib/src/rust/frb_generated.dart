@@ -70,7 +70,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 435543799;
+  int get rustContentHash => 1059811768;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -152,6 +152,10 @@ abstract class RustLibApi extends BaseApi {
     required int limit,
     required int offset,
     Uint32List? offsets,
+  });
+
+  Future<PlaybackTraceDto?> crateApiStreamingPlaybackTrace({
+    required BigInt sessionId,
   });
 
   Future<RepairProgressDto?> crateApiRepairRepairProgress({
@@ -722,7 +726,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<RepairProgressDto?> crateApiRepairRepairProgress({
+  Future<PlaybackTraceDto?> crateApiStreamingPlaybackTrace({
     required BigInt sessionId,
   }) {
     return handler.executeNormal(
@@ -734,6 +738,36 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             generalizedFrbRustBinding,
             serializer,
             funcId: 18,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_box_autoadd_playback_trace_dto,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiStreamingPlaybackTraceConstMeta,
+        argValues: [sessionId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiStreamingPlaybackTraceConstMeta =>
+      const TaskConstMeta(debugName: "playback_trace", argNames: ["sessionId"]);
+
+  @override
+  Future<RepairProgressDto?> crateApiRepairRepairProgress({
+    required BigInt sessionId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 19,
             port: port_,
           );
         },
@@ -768,7 +802,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 19,
+            funcId: 20,
             port: port_,
           );
         },
@@ -799,7 +833,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 20,
+            funcId: 21,
             port: port_,
           );
         },
@@ -853,6 +887,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   IndexerConfigDto dco_decode_box_autoadd_indexer_config_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_indexer_config_dto(raw);
+  }
+
+  @protected
+  PlaybackTraceDto dco_decode_box_autoadd_playback_trace_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_playback_trace_dto(raw);
   }
 
   @protected
@@ -962,6 +1002,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<PlaybackTraceEventDto> dco_decode_list_playback_trace_event_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_playback_trace_event_dto)
+        .toList();
+  }
+
+  @protected
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint32List;
@@ -1005,6 +1055,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_i_64(raw);
+  }
+
+  @protected
+  PlaybackTraceDto? dco_decode_opt_box_autoadd_playback_trace_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_playback_trace_dto(raw);
   }
 
   @protected
@@ -1061,6 +1117,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       kind: dco_decode_String(arr[2]),
       encodedBytes: dco_decode_u_64(arr[3]),
       partCount: dco_decode_u_32(arr[4]),
+    );
+  }
+
+  @protected
+  PlaybackTraceDto dco_decode_playback_trace_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return PlaybackTraceDto(
+      events: dco_decode_list_playback_trace_event_dto(arr[0]),
+      dropped: dco_decode_u_64(arr[1]),
+    );
+  }
+
+  @protected
+  PlaybackTraceEventDto dco_decode_playback_trace_event_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return PlaybackTraceEventDto(
+      sequence: dco_decode_u_64(arr[0]),
+      elapsedMs: dco_decode_u_64(arr[1]),
+      event: dco_decode_String(arr[2]),
     );
   }
 
@@ -1263,6 +1344,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PlaybackTraceDto sse_decode_box_autoadd_playback_trace_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_playback_trace_dto(deserializer));
+  }
+
+  @protected
   ProviderConfigDto sse_decode_box_autoadd_provider_config_dto(
     SseDeserializer deserializer,
   ) {
@@ -1410,6 +1499,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<PlaybackTraceEventDto> sse_decode_list_playback_trace_event_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <PlaybackTraceEventDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_playback_trace_event_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
@@ -1478,6 +1581,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_i_64(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  PlaybackTraceDto? sse_decode_opt_box_autoadd_playback_trace_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_playback_trace_dto(deserializer));
     } else {
       return null;
     }
@@ -1569,6 +1685,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       kind: var_kind,
       encodedBytes: var_encodedBytes,
       partCount: var_partCount,
+    );
+  }
+
+  @protected
+  PlaybackTraceDto sse_decode_playback_trace_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_events = sse_decode_list_playback_trace_event_dto(deserializer);
+    var var_dropped = sse_decode_u_64(deserializer);
+    return PlaybackTraceDto(events: var_events, dropped: var_dropped);
+  }
+
+  @protected
+  PlaybackTraceEventDto sse_decode_playback_trace_event_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_sequence = sse_decode_u_64(deserializer);
+    var var_elapsedMs = sse_decode_u_64(deserializer);
+    var var_event = sse_decode_String(deserializer);
+    return PlaybackTraceEventDto(
+      sequence: var_sequence,
+      elapsedMs: var_elapsedMs,
+      event: var_event,
     );
   }
 
@@ -1808,6 +1947,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_playback_trace_dto(
+    PlaybackTraceDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_playback_trace_dto(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_provider_config_dto(
     ProviderConfigDto self,
     SseSerializer serializer,
@@ -1933,6 +2081,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_playback_trace_event_dto(
+    List<PlaybackTraceEventDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_playback_trace_event_dto(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_prim_u_32_strict(
     Uint32List self,
     SseSerializer serializer,
@@ -2007,6 +2167,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_i_64(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_playback_trace_dto(
+    PlaybackTraceDto? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_playback_trace_dto(self, serializer);
     }
   }
 
@@ -2093,6 +2266,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.kind, serializer);
     sse_encode_u_64(self.encodedBytes, serializer);
     sse_encode_u_32(self.partCount, serializer);
+  }
+
+  @protected
+  void sse_encode_playback_trace_dto(
+    PlaybackTraceDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_list_playback_trace_event_dto(self.events, serializer);
+    sse_encode_u_64(self.dropped, serializer);
+  }
+
+  @protected
+  void sse_encode_playback_trace_event_dto(
+    PlaybackTraceEventDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_64(self.sequence, serializer);
+    sse_encode_u_64(self.elapsedMs, serializer);
+    sse_encode_String(self.event, serializer);
   }
 
   @protected

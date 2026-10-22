@@ -85,6 +85,27 @@ maintainer's Mac, framework compatibility checks and Developer ID signing;
 the vendored framework's effective OS minimum must be checked before advertising
 compatibility. Do not upload an old upstream macOS package as a fork build.
 
+## Independent platform candidates
+
+Run **Platform candidate** (`platform-candidate.yml`) with an existing source
+version tag and one platform. It resolves the tag once, runs shared source
+verification, then builds only the selected platform from that SHA. A Windows
+candidate does not require Android signing secrets. Existing combined release
+behaviour remains unchanged.
+
+The downloadable candidate artifact contains the platform packages, SOURCE.json
+and SHA256SUMS. SOURCE.json records the exact source/tag/run and explicitly
+unverified clean-install and device-playback gates. These records and checksums
+are provenance and consistency evidence, not publisher authentication. Nothing
+is tagged, merged, installed or published by this workflow.
+
+Candidates can be reviewed independently. Promotion still needs the selected
+platform's installation, playback, accessibility and signing checks. Android
+needs its persistent signing secrets; iOS output remains unsigned. Keep an
+ineligible platform out of a distribution claim. Do not promote a partial
+candidate to the current stable channel without checking updater eligibility
+for every supported platform; this workflow does not change update channels.
+
 ## Draft and promote
 
 1. Update `pubspec.yaml` and `docs/releases/vX.Y.md`; run

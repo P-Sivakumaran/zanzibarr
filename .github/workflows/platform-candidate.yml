@@ -1,0 +1,127 @@
+name: Platform candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing source tag matching pubspec and release notes (for example v1.28)'
+        type: string
+        required: true
+      platform:
+        description: 'Build one candidate after shared source verification'
+        type: choice
+        required: true
+        options: [windows, linux, android, ios]
+
+permissions:
+  contents: read
+
+jobs:
+  revision:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ format('refs/tags/{0}', inputs.tag) }}
+      - id: source
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          python3 tools/validate_release.py "$RELEASE_TAG"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  verify:
+    needs: revision
+    uses: ./.github/workflows/verify.yml
+    with:
+      ref: ${{ needs.revision.outputs.sha }}
+
+  windows:
+    if: inputs.platform == 'windows'
+    needs: [revision, verify]
+    uses: ./.github/workflows/windows-build.yml
+    with:
+      ref: ${{ needs.revision.outputs.sha }}
+
+  linux:
+    if: inputs.platform == 'linux'
+    needs: [revision, verify]
+    uses: ./.github/workflows/linux-build.yml
+    with:
+      ref: ${{ needs.revision.outputs.sha }}
+
+  android:
+    if: inputs.platform == 'android'
+    needs: [revision, verify]
+    uses: ./.github/workflows/android-build.yml
+    with:
+      ref: ${{ needs.revision.outputs.sha }}
+    secrets: inherit
+
+  ios:
+    if: inputs.platform == 'ios'
+    needs: [revision, verify]
+    uses: ./.github/workflows/ios-build.yml
+    with:
+      ref: ${{ needs.revision.outputs.sha }}
+
+  candidate:
+    needs: [revision, verify, windows, linux, android, ios]
+    if: >-
+      always() && !cancelled() && needs.verify.result == 'success' &&
+      (needs.windows.result == 'success' || needs.linux.result == 'success' ||
+       needs.android.result == 'success' || needs.ios.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: zanzibarr-*
+          merge-multiple: true
+          path: candidate
+      - name: Record immutable source and candidate checksums
+        env:
+          SOURCE_SHA: ${{ needs.revision.outputs.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          SOURCE_TAG: ${{ inputs.tag }}
+          CANDIDATE_PLATFORM: ${{ inputs.platform }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path('candidate')
+          expected = {
+              'windows': {'zanzibarr-windows-x64.zip', 'zanzibarr-windows-x64-setup.exe'},
+              'linux': {'zanzibarr-linux-x64.tar.gz', 'zanzibarr-linux-x64.deb'},
+              'android': {'zanzibarr-android.zip'},
+              'ios': {'zanzibarr-ios-unsigned.ipa'},
+          }[os.environ['CANDIDATE_PLATFORM']]
+          assert {p.name for p in root.iterdir()} == expected, 'Missing or unexpected platform artifacts'
+          (root / 'SOURCE.json').write_text(json.dumps({
+              'schemaVersion': 1,
+              'sourceSha': os.environ['SOURCE_SHA'],
+              'workflowSha': os.environ['WORKFLOW_SHA'],
+              'sourceTag': os.environ['SOURCE_TAG'],
+              'platform': os.environ['CANDIDATE_PLATFORM'],
+              'workflowRun': os.environ['RUN_URL'],
+              'state': 'built-candidate-not-published',
+              'cleanInstall': 'unverified',
+              'devicePlayback': 'unverified',
+              'publisherAuthentication': 'not-established',
+          }, indent=2) + '\n')
+          lines = []
+          for path in sorted(root.iterdir()):
+              assert path.is_file(), 'Unexpected nested artifact directory'
+              with path.open('rb') as stream:
+                  digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+              lines.append(f'{digest}  {path.name}\n')
+          (root / 'SHA256SUMS').write_text(''.join(lines))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candidate-${{ inputs.platform }}-${{ needs.revision.outputs.sha }}
+          path: candidate/*
+          if-no-files-found: error
+          retention-days: 14

@@ -13,6 +13,7 @@
 //!   `bytes=-suffix` (dosya sonu / moov atom).
 //! - `Accept-Ranges: bytes` her yanıtta ilan edilir.
 
+use super::telemetry::{self, Event};
 use std::io;
 use std::ops::Range;
 use std::sync::Arc;
@@ -78,6 +79,7 @@ where
     S: RangeSource,
     F: std::future::Future<Output = ()> + Send,
 {
+    let trace = telemetry::current();
     let mut connections = JoinSet::new();
     let mut shutdown = Box::pin(shutdown);
 
@@ -95,9 +97,16 @@ where
 
                 let source = Arc::clone(&source);
                 let required_prefix = required_prefix.clone();
+                let trace = trace.clone();
                 connections.spawn(async move {
                     // Bağlantı hatalarını (player erken kapatması vb.) yut.
-                    let _ = handle_connection(stream, source, required_prefix).await;
+                    if let Some(trace) = trace {
+                        trace.clone().scope(async {
+                            let _ = handle_connection(stream, source, required_prefix).await;
+                        }).await;
+                    } else {
+                        let _ = handle_connection(stream, source, required_prefix).await;
+                    }
                 });
             }
         }
@@ -177,7 +186,14 @@ async fn handle_connection<S: RangeSource>(
             stream.write_all(header.as_bytes()).await?;
             stream.flush().await?;
             if !is_head && total > 0 {
-                source.write_range(0..total, &mut stream).await?;
+                telemetry::record(Event::RangeRequested);
+                let result = source.write_range(0..total, &mut stream).await;
+                telemetry::record(if result.is_ok() {
+                    Event::RangeCompleted
+                } else {
+                    Event::RangeFailed
+                });
+                result?;
             }
             stream.flush().await?;
             Ok(())
@@ -198,7 +214,14 @@ async fn handle_connection<S: RangeSource>(
             stream.write_all(header.as_bytes()).await?;
             stream.flush().await?;
             if !is_head {
-                source.write_range(range, &mut stream).await?;
+                telemetry::record(Event::RangeRequested);
+                let result = source.write_range(range, &mut stream).await;
+                telemetry::record(if result.is_ok() {
+                    Event::RangeCompleted
+                } else {
+                    Event::RangeFailed
+                });
+                result?;
             }
             stream.flush().await?;
             Ok(())
@@ -539,6 +562,54 @@ mod tests {
             out.write_all(&self.data[range.start as usize..range.end as usize])
                 .await
         }
+    }
+
+    #[tokio::test]
+    async fn native_range_events_observe_only_body_reads() {
+        let trace = telemetry::create(u64::MAX - 1);
+        let source = Arc::new(InMemorySource {
+            data: b"abcdef".to_vec(),
+            content_type: "video/mp4".into(),
+        });
+        let listener = bind_local(0).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (stop, stopped) = oneshot::channel::<()>();
+        let task = tokio::spawn(
+            trace
+                .clone()
+                .scope(serve_until(listener, source, None, async {
+                    let _ = stopped.await;
+                })),
+        );
+        let (_, body) = request(
+            port,
+            "GET /fixture HTTP/1.1\r\nHost: localhost\r\nRange: bytes=1-2\r\n\r\n",
+        )
+        .await;
+        assert_eq!(body, b"bc");
+        let _ = request(
+            port,
+            "HEAD /fixture HTTP/1.1\r\nHost: localhost\r\nRange: bytes=1-2\r\n\r\n",
+        )
+        .await;
+        stop.send(()).unwrap();
+        task.await.unwrap().unwrap();
+        let (events, _) = trace.snapshot();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.event == "range_requested")
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.event == "range_completed")
+                .count(),
+            1
+        );
+        trace.finish();
     }
 
     async fn start_test_server(data: Vec<u8>) -> u16 {

@@ -1,3 +1,4 @@
+import 'package:zanzibarr/player/series_preferences.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -387,6 +388,9 @@ void main() {
                       .push<ReleaseSearchSelection>(
                         MaterialPageRoute(
                           builder: (_) => TitleDetailsScreen(
+                            seriesPreferences: SeriesPreferences(
+                              storage: MemoryStorage(),
+                            ),
                             title: show,
                             service: service,
                             apiKey: 'TESTPASS123',
@@ -407,9 +411,10 @@ void main() {
       );
       await tester.tap(find.text('Open'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Season 2'));
+      await tester.ensureVisible(find.byType(DropdownButtonFormField<int>));
+      await tester.tap(find.byType(DropdownButtonFormField<int>));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Season 2'));
+      await tester.tap(find.text('Season 2').last);
       await tester.pumpAndSettle();
       expect(service.selectedSeason, 2);
       expect(
@@ -443,6 +448,7 @@ void main() {
     await tester.pumpWidget(
       app(
         TitleDetailsScreen(
+          seriesPreferences: SeriesPreferences(storage: MemoryStorage()),
           title: show,
           service: service,
           apiKey: 'TESTPASS123',
@@ -483,6 +489,7 @@ void main() {
     await tester.pumpWidget(
       app(
         TitleDetailsScreen(
+          seriesPreferences: SeriesPreferences(storage: MemoryStorage()),
           title: show,
           service: service,
           apiKey: 'TESTPASS123',
@@ -496,9 +503,10 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    await tester.ensureVisible(find.text('Season 2'));
+    await tester.ensureVisible(find.byType(DropdownButtonFormField<int>));
+    await tester.tap(find.byType(DropdownButtonFormField<int>));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Season 2'));
+    await tester.tap(find.text('Season 2').last);
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     await TitleLibraryStore(storage: storage).save(show);
@@ -606,6 +614,7 @@ void main() {
           RepaintBoundary(
             key: const ValueKey('preview'),
             child: TitleDetailsScreen(
+              seriesPreferences: SeriesPreferences(storage: MemoryStorage()),
               title: show,
               service: service,
               apiKey: 'TESTPASS123',

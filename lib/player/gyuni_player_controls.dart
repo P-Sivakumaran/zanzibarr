@@ -1,3 +1,4 @@
+import 'player_menu_theme.dart';
 import 'track_language.dart';
 import 'dart:typed_data';
 
@@ -61,6 +62,9 @@ class GyuniPlayerChrome extends StatelessWidget {
     this.onLoadExternalAudio,
     this.onLoadExternalSubtitle,
     this.playButtonFocusNode,
+    this.onPreviousEpisode,
+    this.onNextEpisode,
+    this.episodeNavigationBusy = false,
   });
 
   final bool visible;
@@ -133,6 +137,8 @@ class GyuniPlayerChrome extends StatelessWidget {
   /// oynat/duraklat düğmesinin düğümü; null bırakılırsa odak yönetimi
   /// yapılmaz (masaüstü/test).
   final FocusNode? playButtonFocusNode;
+  final VoidCallback? onPreviousEpisode, onNextEpisode;
+  final bool episodeNavigationBusy;
 
   void _handleVideoDoubleTap(BuildContext context, Offset? position) {
     final size = context.size;
@@ -158,110 +164,116 @@ class GyuniPlayerChrome extends StatelessWidget {
     // ve aynı build'in closure'ını paylaşır; çift tık konumu state tutmadan
     // güvenle okunur.
     Offset? doubleTapPosition;
-    return MouseRegion(
-      cursor: editorActive
-          ? MouseCursor.defer
-          : chromeVisible
-          ? SystemMouseCursors.basic
-          : SystemMouseCursors.none,
-      onEnter: (_) => onActivity(),
-      onHover: (_) => onActivity(),
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: editorActive ? null : onVideoTap,
-        onDoubleTapDown: editorActive
-            ? null
-            : (details) => doubleTapPosition = details.localPosition,
-        onDoubleTap: editorActive
-            ? null
-            : () => _handleVideoDoubleTap(context, doubleTapPosition),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (!ready) _StartupStatus(status: status, buffering: buffering),
-            ?editorOverlay,
-            // YouTube tarzı: ara belleğe alma göstergesi videonun ortasında
-            // belirir; alt çubuk temiz kalır.
-            if (ready && buffering)
-              const Center(
-                child: SizedBox.square(
-                  dimension: 46,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 3,
-                    color: Colors.white70,
+    return PlayerMenuTheme(
+      child: MouseRegion(
+        cursor: editorActive
+            ? MouseCursor.defer
+            : chromeVisible
+            ? SystemMouseCursors.basic
+            : SystemMouseCursors.none,
+        onEnter: (_) => onActivity(),
+        onHover: (_) => onActivity(),
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: editorActive ? null : onVideoTap,
+          onDoubleTapDown: editorActive
+              ? null
+              : (details) => doubleTapPosition = details.localPosition,
+          onDoubleTap: editorActive
+              ? null
+              : () => _handleVideoDoubleTap(context, doubleTapPosition),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (!ready) _StartupStatus(status: status, buffering: buffering),
+              ?editorOverlay,
+              // YouTube tarzı: ara belleğe alma göstergesi videonun ortasında
+              // belirir; alt çubuk temiz kalır.
+              if (ready && buffering)
+                const Center(
+                  child: SizedBox.square(
+                    dimension: 46,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      color: Colors.white70,
+                    ),
                   ),
                 ),
-              ),
-            if (seekFlashDirection case final direction?)
-              _SeekFlash(direction: direction),
-            if (periodicInfoVisible && !chromeVisible)
-              _PeriodicPlaybackInfo(position: position, duration: duration),
-            IgnorePointer(
-              ignoring: !chromeVisible,
-              child: ExcludeFocus(
-                excluding: !chromeVisible,
-                child: ExcludeSemantics(
+              if (seekFlashDirection case final direction?)
+                _SeekFlash(direction: direction),
+              if (periodicInfoVisible && !chromeVisible)
+                _PeriodicPlaybackInfo(position: position, duration: duration),
+              IgnorePointer(
+                ignoring: !chromeVisible,
+                child: ExcludeFocus(
                   excluding: !chromeVisible,
-                  child: AnimatedOpacity(
-                    opacity: chromeVisible ? 1 : 0,
-                    duration: const Duration(milliseconds: 180),
-                    curve: Curves.easeOutCubic,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        _TopToolbar(
-                          filename: filename,
-                          engineBadge: engineBadge,
-                          ready: ready,
-                          canvasActive: canvasActive,
-                          subtitleControlsActive: subtitleControlsActive,
-                          videoFill: videoFill,
-                          pictureInPictureSupported: pictureInPictureSupported,
-                          castAvailable: castAvailable,
-                          casting: casting,
-                          onCast: onCast,
-                          isPictureInPicture: isPictureInPicture,
-                          onClose: onClose,
-                          onToggleCanvas: onToggleCanvas,
-                          onToggleSubtitleControls: onToggleSubtitleControls,
-                          onToggleVideoFit: onToggleVideoFit,
-                          onTogglePictureInPicture: onTogglePictureInPicture,
-                          onToggleFullscreen: onToggleFullscreen,
-                        ),
-                        _BottomControls(
-                          ready: ready,
-                          playing: playing,
-                          position: position,
-                          duration: duration,
-                          rate: rate,
-                          tracks: tracks,
-                          selectedTrack: selectedTrack,
-                          previewImage: previewImage,
-                          previewPosition: previewPosition,
-                          volume: volume,
-                          playButtonFocusNode: playButtonFocusNode,
-                          onTogglePlay: onTogglePlay,
-                          onToggleMute: onToggleMute,
-                          onVolumeChanged: onVolumeChanged,
-                          onFrameBackward: onFrameBackward,
-                          onFrameForward: onFrameForward,
-                          onScrubStart: onScrubStart,
-                          onScrubUpdate: onScrubUpdate,
-                          onScrubEnd: onScrubEnd,
-                          onRateSelected: onRateSelected,
-                          onSubtitleSelected: onSubtitleSelected,
-                          onAudioSelected: onAudioSelected,
-                          onLoadExternalAudio: onLoadExternalAudio,
-                          onLoadExternalSubtitle: onLoadExternalSubtitle,
-                          onShowAdvancedSettings: onShowAdvancedSettings,
-                        ),
-                      ],
+                  child: ExcludeSemantics(
+                    excluding: !chromeVisible,
+                    child: AnimatedOpacity(
+                      opacity: chromeVisible ? 1 : 0,
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          _TopToolbar(
+                            filename: filename,
+                            engineBadge: engineBadge,
+                            ready: ready,
+                            canvasActive: canvasActive,
+                            subtitleControlsActive: subtitleControlsActive,
+                            videoFill: videoFill,
+                            pictureInPictureSupported:
+                                pictureInPictureSupported,
+                            castAvailable: castAvailable,
+                            casting: casting,
+                            onCast: onCast,
+                            isPictureInPicture: isPictureInPicture,
+                            onClose: onClose,
+                            onToggleCanvas: onToggleCanvas,
+                            onToggleSubtitleControls: onToggleSubtitleControls,
+                            onToggleVideoFit: onToggleVideoFit,
+                            onTogglePictureInPicture: onTogglePictureInPicture,
+                            onToggleFullscreen: onToggleFullscreen,
+                          ),
+                          _BottomControls(
+                            ready: ready,
+                            playing: playing,
+                            position: position,
+                            duration: duration,
+                            rate: rate,
+                            tracks: tracks,
+                            selectedTrack: selectedTrack,
+                            previewImage: previewImage,
+                            previewPosition: previewPosition,
+                            volume: volume,
+                            playButtonFocusNode: playButtonFocusNode,
+                            onTogglePlay: onTogglePlay,
+                            onPreviousEpisode: onPreviousEpisode,
+                            onNextEpisode: onNextEpisode,
+                            episodeNavigationBusy: episodeNavigationBusy,
+                            onToggleMute: onToggleMute,
+                            onVolumeChanged: onVolumeChanged,
+                            onFrameBackward: onFrameBackward,
+                            onFrameForward: onFrameForward,
+                            onScrubStart: onScrubStart,
+                            onScrubUpdate: onScrubUpdate,
+                            onScrubEnd: onScrubEnd,
+                            onRateSelected: onRateSelected,
+                            onSubtitleSelected: onSubtitleSelected,
+                            onAudioSelected: onAudioSelected,
+                            onLoadExternalAudio: onLoadExternalAudio,
+                            onLoadExternalSubtitle: onLoadExternalSubtitle,
+                            onShowAdvancedSettings: onShowAdvancedSettings,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -663,6 +675,9 @@ class _BottomControls extends StatelessWidget {
     this.onLoadExternalAudio,
     this.onLoadExternalSubtitle,
     this.playButtonFocusNode,
+    this.onPreviousEpisode,
+    this.onNextEpisode,
+    this.episodeNavigationBusy = false,
   });
 
   final bool ready;
@@ -690,6 +705,8 @@ class _BottomControls extends StatelessWidget {
   final VoidCallback? onLoadExternalAudio;
   final VoidCallback? onLoadExternalSubtitle;
   final FocusNode? playButtonFocusNode;
+  final VoidCallback? onPreviousEpisode, onNextEpisode;
+  final bool episodeNavigationBusy;
 
   @override
   Widget build(BuildContext context) {
@@ -783,8 +800,19 @@ class _BottomControls extends StatelessWidget {
                   builder: (context, constraints) {
                     final showAudio = constraints.maxWidth >= 700;
                     final showFrameControls = constraints.maxWidth >= 1000;
-                    return Row(
+                    final compactEpisodes =
+                        onNextEpisode != null && constraints.maxWidth < 500;
+                    final transport = Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (onPreviousEpisode != null)
+                          _CompactIconButton(
+                            icon: Icons.skip_previous_rounded,
+                            tooltip: 'Previous episode',
+                            onPressed: ready && !episodeNavigationBusy
+                                ? onPreviousEpisode
+                                : null,
+                          ),
                         _CompactIconButton(
                           icon: playing
                               ? Icons.pause_rounded
@@ -793,111 +821,144 @@ class _BottomControls extends StatelessWidget {
                           focusNode: playButtonFocusNode,
                           onPressed: ready ? onTogglePlay : null,
                         ),
-                        if (showFrameControls) ...[
-                          _CompactIconButton(
-                            icon: Icons.skip_previous_rounded,
-                            tooltip: l10n.previousFrame,
-                            onPressed: ready ? onFrameBackward : null,
-                          ),
+                        if (onNextEpisode != null)
                           _CompactIconButton(
                             icon: Icons.skip_next_rounded,
-                            tooltip: l10n.nextFrame,
-                            onPressed: ready ? onFrameForward : null,
+                            tooltip: 'Next episode',
+                            onPressed: ready && !episodeNavigationBusy
+                                ? onNextEpisode
+                                : null,
                           ),
-                        ],
-                        PopupMenuButton<double>(
-                          tooltip: l10n.playbackSpeedTooltip,
-                          color: const Color(0xF2242427),
-                          onSelected: onRateSelected,
-                          itemBuilder: (context) =>
-                              const [
-                                    0.5,
-                                    0.75,
-                                    1.0,
-                                    1.25,
-                                    1.5,
-                                    2.0,
-                                    4.0,
-                                    8.0,
-                                    16.0,
-                                  ]
-                                  .map(
-                                    (value) => PopupMenuItem<double>(
-                                      value: value,
-                                      child: Text(
-                                        '${formatPlayerRate(value)}×',
+                        if (episodeNavigationBusy)
+                          const SizedBox.square(
+                            dimension: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              semanticsLabel: 'Finding adjacent episode',
+                            ),
+                          ),
+                      ],
+                    );
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (compactEpisodes) transport,
+                        Row(
+                          children: [
+                            if (!compactEpisodes) transport,
+                            if (showFrameControls && onNextEpisode == null) ...[
+                              _CompactIconButton(
+                                icon: Icons.skip_previous_rounded,
+                                tooltip: l10n.previousFrame,
+                                onPressed: ready ? onFrameBackward : null,
+                              ),
+                              _CompactIconButton(
+                                icon: Icons.skip_next_rounded,
+                                tooltip: l10n.nextFrame,
+                                onPressed: ready ? onFrameForward : null,
+                              ),
+                            ],
+                            PopupMenuButton<double>(
+                              tooltip: l10n.playbackSpeedTooltip,
+                              color: PlayerMenuTheme.surface,
+                              onSelected: onRateSelected,
+                              itemBuilder: (context) =>
+                                  const [
+                                        0.5,
+                                        0.75,
+                                        1.0,
+                                        1.25,
+                                        1.5,
+                                        2.0,
+                                        4.0,
+                                        8.0,
+                                        16.0,
+                                      ]
+                                      .map(
+                                        (value) => PopupMenuItem<double>(
+                                          value: value,
+                                          child: Text(
+                                            '${formatPlayerRate(value)}×',
+                                          ),
+                                        ),
+                                      )
+                                      .toList(growable: false),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  minWidth: 48,
+                                  minHeight: 48,
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 6,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      '${formatPlayerRate(rate)}×',
+                                      style: const TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
                                       ),
                                     ),
-                                  )
-                                  .toList(growable: false),
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(
-                              minWidth: 48,
-                              minHeight: 48,
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 6,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  '${formatPlayerRate(rate)}×',
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                        ),
-                        const Spacer(),
-                        if (showAudio) ...[
-                          _VolumeControl(
-                            volume: volume,
-                            onToggleMute: onToggleMute,
-                            onChanged: onVolumeChanged,
-                          ),
-                        ],
-                        _TrackMenu<AudioTrack>(
-                          tooltip: l10n.audioTrack,
-                          icon: Icons.graphic_eq_rounded,
-                          tracks: tracks.audio,
-                          selectedId: selectedTrack.audio.id,
-                          label: (track) =>
-                              trackLabel(track, auto: l10n.auto, off: l10n.off),
-                          onSelected: onAudioSelected,
-                          onLoadExternal: onLoadExternalAudio,
-                        ),
-                        _TrackMenu<SubtitleTrack>(
-                          tooltip: l10n.subtitleTrack,
-                          icon: Icons.subtitles_rounded,
-                          tracks: tracks.subtitle,
-                          selectedId: selectedTrack.subtitle.id,
-                          label: (track) =>
-                              trackLabel(track, auto: l10n.auto, off: l10n.off),
-                          onSelected: onSubtitleSelected,
-                          onLoadExternal: onLoadExternalSubtitle,
-                        ),
-                        // Gelişmiş ayarlar menüsünün tek giriş noktası;
-                        // dar ekranlarda bile gizlenmez (mobil/TV erişimi).
-                        Builder(
-                          builder: (buttonContext) => _CompactIconButton(
-                            icon: Icons.tune_rounded,
-                            tooltip: l10n.advancedSettings,
-                            onPressed: () {
-                              final box = buttonContext.findRenderObject();
-                              if (box is RenderBox && box.hasSize) {
-                                onShowAdvancedSettings(
-                                  box.localToGlobal(
-                                    box.size.topRight(Offset.zero),
-                                  ),
-                                );
-                              }
-                            },
-                          ),
+                            const Spacer(),
+                            if (showAudio) ...[
+                              _VolumeControl(
+                                volume: volume,
+                                onToggleMute: onToggleMute,
+                                onChanged: onVolumeChanged,
+                              ),
+                            ],
+                            _TrackMenu<AudioTrack>(
+                              tooltip: l10n.audioTrack,
+                              icon: Icons.graphic_eq_rounded,
+                              tracks: tracks.audio,
+                              selectedId: selectedTrack.audio.id,
+                              label: (track) => trackLabel(
+                                track,
+                                auto: l10n.auto,
+                                off: l10n.off,
+                              ),
+                              onSelected: onAudioSelected,
+                              onLoadExternal: onLoadExternalAudio,
+                            ),
+                            _TrackMenu<SubtitleTrack>(
+                              tooltip: l10n.subtitleTrack,
+                              icon: Icons.subtitles_rounded,
+                              tracks: tracks.subtitle,
+                              selectedId: selectedTrack.subtitle.id,
+                              label: (track) => trackLabel(
+                                track,
+                                auto: l10n.auto,
+                                off: l10n.off,
+                              ),
+                              onSelected: onSubtitleSelected,
+                              onLoadExternal: onLoadExternalSubtitle,
+                            ),
+                            // Gelişmiş ayarlar menüsünün tek giriş noktası;
+                            // dar ekranlarda bile gizlenmez (mobil/TV erişimi).
+                            Builder(
+                              builder: (buttonContext) => _CompactIconButton(
+                                icon: Icons.tune_rounded,
+                                tooltip: l10n.advancedSettings,
+                                onPressed: () {
+                                  final box = buttonContext.findRenderObject();
+                                  if (box is RenderBox && box.hasSize) {
+                                    onShowAdvancedSettings(
+                                      box.localToGlobal(
+                                        box.size.topRight(Offset.zero),
+                                      ),
+                                    );
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     );
@@ -1201,7 +1262,7 @@ class _TrackMenu<T> extends StatelessWidget {
     final loadExternal = onLoadExternal;
     return PopupMenuButton<T>(
       tooltip: tooltip,
-      color: const Color(0xF2242427),
+      color: PlayerMenuTheme.surface,
       onSelected: onSelected,
       itemBuilder: (context) => [
         // Yükleme girişi listenin BAŞINDA durur: popup menüler seçili öğeyi

@@ -82,8 +82,44 @@ class MetadataEnrichment {
   bool _closed = false;
   String? status;
   bool trailersConfigured = false;
+  final _settingsWaiters = <Completer<EnrichmentSettings>, Timer>{};
+  Future<EnrichmentSettings> _readSettings() {
+    if (_closed || _settingsWaiters.length >= 4) {
+      return Future.error(const MetadataException('settings'));
+    }
+    final result = Completer<EnrichmentSettings>();
+    final timer = Timer(const Duration(seconds: 3), () {
+      _settingsWaiters.remove(result);
+      if (!result.isCompleted) {
+        result.completeError(const MetadataException('settings'));
+      }
+    });
+    _settingsWaiters[result] = timer;
+    _settings.load().then(
+      (value) {
+        if (!result.isCompleted) result.complete(value);
+      },
+      onError: (Object error, StackTrace stack) {
+        if (!result.isCompleted) {
+          result.completeError(const MetadataException('settings'));
+        }
+      },
+    );
+    return result.future.whenComplete(() {
+      _settingsWaiters.remove(result)?.cancel();
+      timer.cancel();
+    });
+  }
+
   void close() {
     _closed = true;
+    for (final waiter in _settingsWaiters.entries) {
+      waiter.value.cancel();
+      if (!waiter.key.isCompleted) {
+        waiter.key.completeError(const MetadataException('settings'));
+      }
+    }
+    _settingsWaiters.clear();
     _client.close();
     for (final service in _reviewServices) {
       service.close();
@@ -228,7 +264,7 @@ class MetadataEnrichment {
     status = null;
     EnrichmentSettings config;
     try {
-      config = await _settings.load();
+      config = await _readSettings();
     } catch (_) {
       status = 'Additional metadata settings could not be loaded.';
       return title;
@@ -334,6 +370,128 @@ class MetadataEnrichment {
     return value != null &&
         value >= 0 &&
         value <= (source == 'IMDb' ? 10 : 100);
+  }
+
+  /// One lazy request per selected season, reusing verified series identity and
+  /// the bounded persistent cache. No title-search guess or per-episode fan-out.
+  Future<List<MediaEpisode>> seasonEpisodes(
+    MediaTitle title,
+    int season,
+    List<MediaEpisode> base,
+  ) async {
+    if (_closed ||
+        title.kind != 'series' ||
+        season < 0 ||
+        season > 100 ||
+        normalizeImdbId(title.imdbId) == null) {
+      return base;
+    }
+    EnrichmentSettings config;
+    try {
+      config = await _readSettings();
+    } catch (_) {
+      return base;
+    }
+    if (config.tmdbToken.isEmpty) return base;
+    final patch = await _cached(
+      'tmdb-season-v1:${title.imdbId}:$season',
+      const Duration(hours: 24),
+      () async {
+        final mappingKey = 'tmdb-id:series:${title.imdbId}';
+        final mapping = _cache[mappingKey];
+        if (mapping is! Map ||
+            mapping['expires'] is! int ||
+            mapping['expires'] <= _now().millisecondsSinceEpoch) {
+          await _tmdb(title, config.tmdbToken);
+        }
+        final verified = _cache[mappingKey];
+        if (verified is! Map || verified['id'] is! int) return {};
+        final id = verified['id'] as int;
+        final data = await _get(
+          Uri.https('api.themoviedb.org', '/3/tv/$id/season/$season', {
+            'language': 'en-US',
+          }),
+          headers: {'Authorization': 'Bearer ${config.tmdbToken}'},
+        );
+        if (data['season_number'] != season ||
+            data['episodes'] is! List ||
+            (data['episodes'] as List).length > 500) {
+          throw const MetadataException('response');
+        }
+        return {
+          'episodes': [
+            for (final row in data['episodes'])
+              if (row is Map &&
+                  row['season_number'] == season &&
+                  (row['show_id'] == null || row['show_id'] == id) &&
+                  row['episode_number'] is int &&
+                  row['episode_number'] >= 0 &&
+                  row['episode_number'] <= 9999 &&
+                  row['name'] is String &&
+                  (row['name'] as String).length <= 500)
+                {
+                  'number': row['episode_number'],
+                  'title': row['name'],
+                  'aired': row['air_date'],
+                  'runtime':
+                      row['runtime'] is int &&
+                          row['runtime'] > 0 &&
+                          row['runtime'] <= 600
+                      ? row['runtime']
+                      : null,
+                  'overview': row['overview'] is String
+                      ? (row['overview'] as String).substring(
+                          0,
+                          (row['overview'] as String).length.clamp(0, 5000),
+                        )
+                      : '',
+                  'still':
+                      row['still_path'] is String &&
+                          RegExp(
+                            r'^/[A-Za-z0-9_.-]+$',
+                          ).hasMatch(row['still_path'])
+                      ? 'https://image.tmdb.org/t/p/w500${row['still_path']}'
+                      : '',
+                },
+          ],
+        };
+      },
+    );
+    final rows = patch['episodes'];
+    if (rows is! List) return base;
+    final extras = <int, MediaEpisode>{};
+    for (final row in rows) {
+      if (row is! Map || row['number'] is! int || row['title'] is! String) {
+        continue;
+      }
+      extras.putIfAbsent(
+        row['number'],
+        () => MediaEpisode(
+          number: row['number'],
+          title: row['title'],
+          aired: DateTime.tryParse('${row['aired']}'),
+          runtimeMinutes: row['runtime'] as int?,
+          still: row['still'] as String? ?? '',
+          overview: row['overview'] as String? ?? '',
+        ),
+      );
+    }
+    if (base.isEmpty) {
+      return extras.values.toList()
+        ..sort((a, b) => a.number.compareTo(b.number));
+    }
+    return [
+      for (final episode in base)
+        MediaEpisode(
+          number: episode.number,
+          title: episode.title,
+          aired: episode.aired ?? extras[episode.number]?.aired,
+          imdbId: episode.imdbId,
+          runtimeMinutes: extras[episode.number]?.runtimeMinutes,
+          still: extras[episode.number]?.still ?? '',
+          overview: extras[episode.number]?.overview ?? '',
+        ),
+    ];
   }
 
   Future<Map<String, dynamic>> _tmdb(MediaTitle title, String token) async {

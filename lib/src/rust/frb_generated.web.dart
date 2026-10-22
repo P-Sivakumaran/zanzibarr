@@ -43,6 +43,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   IndexerConfigDto dco_decode_box_autoadd_indexer_config_dto(dynamic raw);
 
   @protected
+  PlaybackTraceDto dco_decode_box_autoadd_playback_trace_dto(dynamic raw);
+
+  @protected
   ProviderConfigDto dco_decode_box_autoadd_provider_config_dto(dynamic raw);
 
   @protected
@@ -79,6 +82,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<PlayableEntryDto> dco_decode_list_playable_entry_dto(dynamic raw);
 
   @protected
+  List<PlaybackTraceEventDto> dco_decode_list_playback_trace_event_dto(
+    dynamic raw,
+  );
+
+  @protected
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
 
   @protected
@@ -100,6 +108,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
+
+  @protected
+  PlaybackTraceDto? dco_decode_opt_box_autoadd_playback_trace_dto(dynamic raw);
 
   @protected
   RepairProgressDto? dco_decode_opt_box_autoadd_repair_progress_dto(
@@ -125,6 +136,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlayableEntryDto dco_decode_playable_entry_dto(dynamic raw);
+
+  @protected
+  PlaybackTraceDto dco_decode_playback_trace_dto(dynamic raw);
+
+  @protected
+  PlaybackTraceEventDto dco_decode_playback_trace_event_dto(dynamic raw);
 
   @protected
   ProviderConfigDto dco_decode_provider_config_dto(dynamic raw);
@@ -188,6 +205,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  PlaybackTraceDto sse_decode_box_autoadd_playback_trace_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ProviderConfigDto sse_decode_box_autoadd_provider_config_dto(
     SseDeserializer deserializer,
   );
@@ -236,6 +258,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<PlaybackTraceEventDto> sse_decode_list_playback_trace_event_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
 
   @protected
@@ -259,6 +286,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
+  PlaybackTraceDto? sse_decode_opt_box_autoadd_playback_trace_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   RepairProgressDto? sse_decode_opt_box_autoadd_repair_progress_dto(
@@ -286,6 +318,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlayableEntryDto sse_decode_playable_entry_dto(SseDeserializer deserializer);
+
+  @protected
+  PlaybackTraceDto sse_decode_playback_trace_dto(SseDeserializer deserializer);
+
+  @protected
+  PlaybackTraceEventDto sse_decode_playback_trace_event_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ProviderConfigDto sse_decode_provider_config_dto(
@@ -365,6 +405,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_playback_trace_dto(
+    PlaybackTraceDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_provider_config_dto(
     ProviderConfigDto self,
     SseSerializer serializer,
@@ -425,6 +471,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_playback_trace_event_dto(
+    List<PlaybackTraceEventDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_32_strict(
     Uint32List self,
     SseSerializer serializer,
@@ -461,6 +513,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_playback_trace_dto(
+    PlaybackTraceDto? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_repair_progress_dto(
     RepairProgressDto? self,
     SseSerializer serializer,
@@ -490,6 +548,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_playable_entry_dto(
     PlayableEntryDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_playback_trace_dto(
+    PlaybackTraceDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_playback_trace_event_dto(
+    PlaybackTraceEventDto self,
     SseSerializer serializer,
   );
 

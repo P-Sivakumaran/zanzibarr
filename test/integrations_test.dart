@@ -130,7 +130,7 @@ void main() {
             'inputSchema': {'type': 'object'},
           },
         ],
-        call: (name, args) async => {'ok': args['value']},
+        call: (name, args, context) async => {'ok': args['value']},
       );
       await server.start();
       addTearDown(server.close);
@@ -218,9 +218,16 @@ void main() {
           'durationSeconds': 100,
           'positionSeconds': position,
         },
-        pause: () async {},
-        resume: () async {},
-        seek: (value) async => position = value.inSeconds,
+        pause: (authorize) async {
+          authorize();
+        },
+        resume: (authorize) async {
+          authorize();
+        },
+        seek: (value, authorize) async {
+          authorize();
+          position = value.inSeconds;
+        },
       );
       final old = player();
       final current = player();

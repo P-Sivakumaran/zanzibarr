@@ -98,6 +98,45 @@ void main() {
     },
   );
 
+  test(
+    'native diagnostic snapshots cross the bridge without source data',
+    () async {
+      final dir = await Directory.systemTemp.createTemp(
+        'zanzibarr-trace-bridge-',
+      );
+      try {
+        final file = File('${dir.path}/private-title-TESTPASS123.nzb');
+        await file.writeAsString('<nzb/>');
+        final session = await beginStream(
+          config: const ProviderConfigDto(
+            host: 'unused.invalid',
+            port: 563,
+            username: 'test',
+            password: 'TESTPASS123',
+            maxConnections: 1,
+          ),
+          nzbPath: file.path,
+        );
+        await expectLater(awaitStream(sessionId: session), throwsA(anything));
+        final snapshot = await playbackTrace(sessionId: session);
+        expect(snapshot, isNotNull);
+        expect(
+          snapshot!.events.map((event) => event.event),
+          contains('selection_failed'),
+        );
+        expect(snapshot.events.length, lessThanOrEqualTo(128));
+        expect(
+          snapshot.events.map((event) => event.event).join(','),
+          isNot(contains('TESTPASS123')),
+        );
+        expect(await playbackTrace(sessionId: BigInt.zero), isNull);
+        await stopStream(sessionId: session);
+      } finally {
+        await dir.delete(recursive: true);
+      }
+    },
+  );
+
   testWidgets('Ana ekran medya açma akışını sunuyor', (tester) async {
     await tester.pumpWidget(
       ZanzibarrApp(uiPreferences: turkishUiPreferences()),

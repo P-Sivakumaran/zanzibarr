@@ -26,6 +26,7 @@ use super::locator::{LocatorError, SegmentLocator};
 use super::nntp::{NntpError, NntpPool, TlsNntpConnector};
 use super::nzb::NzbFile;
 use super::server::{content_type_for, RangeSource};
+use super::telemetry::{self, Event, PlaybackTrace};
 use super::yenc;
 
 pub(crate) const BODY_READ_TIMEOUT: Duration = Duration::from_secs(30);
@@ -95,6 +96,7 @@ impl SegmentCache {
 /// bağlamın bir klonuyla (referans sayaçlı) yaşar, kaynak düşse bile görev
 /// gövdesi geçerli kalır — oturum iptali watch kanalından duyurulur.
 struct FetchContext {
+    trace: Option<Arc<PlaybackTrace>>,
     pool: Arc<NntpPool<TlsNntpConnector>>,
     locator: Mutex<SegmentLocator>,
     cache: Mutex<SegmentCache>,
@@ -180,6 +182,9 @@ impl FetchContext {
     /// Segmenti havuzdan çeker, yEnc çözer, konumunu eşleyiciye kaydeder ve
     /// önbelleğe koyar. Çağıranın inflight hakkını önceden aldığı varsayılır.
     async fn fetch(&self, index: usize) -> io::Result<Arc<Vec<u8>>> {
+        if let Some(trace) = &self.trace {
+            trace.record(Event::SegmentRequested);
+        }
         let message_id = {
             let loc = self.locator.lock().expect("kilit");
             loc.message_id(index)
@@ -188,11 +193,12 @@ impl FetchContext {
         };
 
         let work = async {
-            let mut conn = self
-                .pool
-                .checkout()
-                .await
-                .map_err(|e| io::Error::other(e.to_string()))?;
+            let mut conn = self.pool.checkout().await.map_err(|e| {
+                if let Some(trace) = &self.trace {
+                    trace.record(Event::NetworkFailed);
+                }
+                io::Error::other(e.to_string())
+            })?;
             let body_result =
                 read_body_with_timeout(BODY_READ_TIMEOUT, conn.body_by_message_id(&message_id))
                     .await;
@@ -204,11 +210,21 @@ impl FetchContext {
                     conn.mark_reusable();
                     body
                 }
-                Err(err) => return Err(io::Error::other(err.to_string())),
+                Err(err) => {
+                    if let Some(trace) = &self.trace {
+                        trace.record(Event::NetworkFailed);
+                    }
+                    return Err(io::Error::other(err.to_string()));
+                }
             };
             drop(conn); // bağlantı havuza döner
 
-            yenc::decode(&body).map_err(|e| io::Error::other(e.to_string()))
+            yenc::decode(&body).map_err(|e| {
+                if let Some(trace) = &self.trace {
+                    trace.record(Event::DecodeFailed);
+                }
+                io::Error::other(e.to_string())
+            })
         };
 
         let part = match &self.cancellation {
@@ -228,6 +244,9 @@ impl FetchContext {
             None => work.await?,
         };
 
+        if let Some(trace) = &self.trace {
+            trace.record(Event::SegmentDecoded);
+        }
         let data = Arc::new(part.data.clone());
         {
             let mut loc = self.locator.lock().expect("kilit");
@@ -293,6 +312,7 @@ impl NntpByteSource {
         let content_type = content_type_for(&filename);
         let source = NntpByteSource {
             ctx: Arc::new(FetchContext {
+                trace: telemetry::current(),
                 pool,
                 locator: Mutex::new(SegmentLocator::from_nzb_file(file)),
                 cache: Mutex::new(SegmentCache::new(cache_segments)),
@@ -313,7 +333,9 @@ impl NntpByteSource {
             ctx.fetch_and_cache(0).await?;
         }
         if source.file_size().is_none() {
-            return Err(io::Error::other("could not learn file size from the first segment"));
+            return Err(io::Error::other(
+                "could not learn file size from the first segment",
+            ));
         }
         Ok(source)
     }
@@ -595,6 +617,7 @@ mod tests {
     #[tokio::test]
     async fn cancelled_fetch_releases_inflight_claim() {
         let ctx = Arc::new(FetchContext {
+            trace: None,
             pool: TlsNntpConnector::new(super::super::nntp::ProviderConfig {
                 host: "unused.invalid".into(),
                 port: 563,

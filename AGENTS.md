@@ -431,7 +431,94 @@ workarounds; details remain in the historical archive.
   diagnostics and obtain a fixture/trace before changing parsing. Archive-set
   selection does not select inner files within a single archive.
 
+**2026-10-21 reliability working changes:** Preserved unfinished 1.27 work.
+Implemented URL/redirect/DNS destination and download-key origin hardening,
+player-side Playback Doctor with typed bounded redacted reports, and independent
+platform-candidate preparation. Fresh gate: 277 Rust tests, Clippy, analysis,
+host build, 426 Flutter tests (10 opt-in skips), whitespace passed. Four focused
+diagnostic tests, actionlint and four platform-manifest fixture cases passed.
+Not built as an installer, committed, pushed or published. Engine-wide telemetry,
+cessation/RAR4 reproduction, signing/trust roots, cooperative local MCP
+cancellation and physical/clean-user gates remain open. Details:
+[reliability implementation](docs/RELIABILITY_IMPLEMENTATION_2026-10-21.md).
+
+**2026-10-21 reliability follow-up:** Added per-session typed bounded native
+telemetry and Doctor bridge snapshots (FRB 2.12.0 regenerated), cancellable repair
+coordination with stale-result suppression, and OS-random cast tokens that fail
+closed for LAN access on entropy failure. Publisher-verification helper and
+policy tests added; zero usable current-user signing certificates were present.
+Final ordered gate: 280 Rust, Clippy, analysis, native build and 434 Flutter tests
+(10 opt-in skips) passed. Uncommitted, no new installer/push/publication. MCP
+patch was initially rejected by automatic approval review; the narrower change
+was subsequently approved and implemented as recorded below. Real signing/manifest trust root, cessation/RAR4 fixture and physical/
+clean-user evidence remain required. See
+[follow-up](docs/RELIABILITY_FOLLOWUP_2026-10-21.md).
+
+**2026-10-21 MCP cancellation follow-up:** User approved the narrower proposal.
+Implemented monotonic 30-second call scopes, authenticated typed-ID cancellation,
+shutdown/configuration invalidation, duplicate-ID rejection, bounded fixed-label
+audit and live permission/player checks immediately before pause/resume/seek.
+Credentials, tools, defaults and eight-request cap are unchanged; shared bearer
+clients still share authority. Cancellation is cooperative and cannot undo an
+issued command. Added 27 regressions; fresh ordered gate passed: 280 Rust tests,
+Clippy, analysis, native build and 461 Flutter tests (10 opt-in skips), whitespace.
+No installer, commit, push or publication. Signing/trust roots, RAR4/cessation
+reproducer and physical/clean-user validation remain external gates. Details:
+[reliability follow-up](docs/RELIABILITY_FOLLOWUP_2026-10-21.md).
+
+**2026-10-21 Windows reliability installer:** Local unsigned 1.28.0+29 setup
+and portable ZIP are ready under `dist/windows/v1.28`. Built an isolated source
+snapshot (857 file hashes, base 3080da6 plus reliability changes), preserving and
+excluding unfinished v1.27 catalog WIP. Fresh snapshot gate: 280 Rust, Clippy,
+analysis, native build and 445 Flutter tests (9 opt-in skips) passed; Windows
+release build passed in 381.4s. Package hashes, ZIP CRC/file hashes, runtime/AOT
+components and source inventory passed. Smoke refused existing registration;
+installation preserved, clean-user/VM and device checks still pending. Not
+installed, committed, pushed or published. See
+[installer evidence](docs/WINDOWS_RELIABILITY_INSTALLER_2026-10-21.md).
+
+**2026-10-21 Optional research and player menus:** Local unsigned 1.29.0+30
+setup/portable packages are ready at `dist/windows/v1.29`. Added off-by-default
+Claude/Gemini cited web research with explicit cost/privacy controls, bounded
+requests, consent rechecks and restricted Google attribution rendering. Fixed
+subtitle/audio/speed/advanced menu contrast across app themes; 390 px/200% font
+preview inspected. Fresh working-tree gate: 280 Rust, Clippy, analysis, host
+build, 484 Flutter (10 skips) and whitespace passed; 18 focused player checks.
+Windows build passed (100.7s); hashes, ZIP CRC/64 file hashes and source inventory
+verified. Existing installation preserved by smoke guard. Live paid-provider
+requests, native Google attribution and clean-user installation remain unverified.
+Preserved/excluded unrelated v1.27 WIP; root version unchanged. Not committed,
+pushed or published. See [evidence](docs/LIVE_RESEARCH_MENU_CONTRAST_2026-10-21.md).
+
+**2026-10-21 Series navigation:** Local unsigned 1.30.0+31 setup/portable
+packages are ready at `dist/windows/v1.30`. Episodes now precede trailers/details,
+with Browse episodes focus, a compact season selector, responsive graphics and
+optional verified TMDB stills/runtime. Episode names default visible; independent
+names/stills/summary preferences and opt-in size/quality/connection-budget release
+selection live in Series & playback settings. Player Previous/Next resolves actual
+catalog neighbours, preserves checkpoints and stops the old stream before route
+replacement; failures/cancellation preserve original playback. Exact single-episode
+matches only for auto choice; uncertainty stays manual. User supplies Mbps budget;
+no automatic speed test, EOF advance or live availability guarantee. Fresh gate:
+280 Rust, Clippy, analysis, host build, 510 Flutter (10 skips), whitespace passed.
+52 focused tests (one existing skip), two refreshed rendered previews passed.
+Windows build101.4s; hashes/ZIP CRC/all64 bundle hashes/875 source hashes passed.
+Smoke preserved existing installation. Live catalog/NNTP transitions, devices and
+clean-user install unverified. Root version/unrelated v1.27 WIP preserved/excluded;
+not committed, pushed or published. See [review and evidence](docs/SERIES_NAVIGATION_2026-10-21.md).
+
 ## 8. Next work and handoff
+
+**2026-10-22 - Completed-work review:** Reviewed against 3080da6, preserving and
+excluding unfinished v1.27 hosted-catalog work. Corrected cancelled MCP operation
+budget leakage, NxNN multi-episode matching and mixed uncited research context.
+The isolated staged application tree passed 280 Rust tests, Clippy, analysis,
+native build and 498 Flutter tests (9 optional skips); 72 focused tests,
+actionlint, publisher helper and whitespace checks passed. Existing installers
+predate these corrections. Installed playback was left running; no install,
+push or publication. See [review](docs/COMMIT_REVIEW_2026-10-22.md) and
+[user costs](docs/USER_COSTS_2026-10-22.md). Signing, real-provider/device and
+clean-user validation remain open.
 
 The artwork-led browsing, title library, provider-backed seasons/episodes,
 ratings/review links and separate app/media-language controls now have a Flutter

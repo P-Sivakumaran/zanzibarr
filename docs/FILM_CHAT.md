@@ -69,10 +69,12 @@ reply. Provider-side data handling follows the selected provider's terms and
 the user's account settings.
 
 Replies contain at most twelve film or TV cards with descriptions and reasons. They
-are AI-generated suggestions and may be inaccurate. No current web lookup is
-performed. Codex chat uses read-only sandbox settings, disables shell tools, web
+are AI-generated suggestions and may be inaccurate. Optional Live research for Claude/Gemini can check current facts with provider
+citations. It defaults off; configure it in AI connections and Save. Search
+adds API usage and may add charges. [Controls and limits](AI_CONNECTIONS.md#optional-live-research). Codex chat uses read-only sandbox settings, disables shell tools, web
 search, apps, remote plugins and delegation, and rejects server tool/approval
-requests. Claude and Gemini receive no tools. Chat does not automatically run
+requests. Claude and Gemini receive no tools by default. With Live research enabled, a
+separate bounded research request receives only the provider web-search tool. Chat does not automatically run
 external MCP tools or control playback.
 
 Claude's external MCP integration remains available; in-app Claude subscription

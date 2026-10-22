@@ -1,3 +1,11 @@
+import '../settings/series_settings_screen.dart';
+import '../metadata/metadata_service.dart';
+import '../metadata/metadata_enrichment.dart';
+import '../search/search_screen.dart';
+import '../search/episode_release_ranker.dart';
+import 'episode_catalog.dart';
+import 'series_preferences.dart';
+import 'player_menu_theme.dart';
 import 'track_language.dart';
 import 'dart:async';
 import 'dart:collection';
@@ -27,6 +35,9 @@ import 'media_preferences.dart';
 import 'picture_in_picture_window.dart';
 import 'playback_history.dart';
 import 'playback_startup_guard.dart';
+import 'playback_diagnostics.dart';
+import 'repair_coordinator.dart';
+import 'playback_doctor_screen.dart';
 import 'player_keyboard_controls.dart';
 import 'download_screen.dart';
 import 'local_media.dart';
@@ -53,6 +64,7 @@ class PlayerScreen extends StatefulWidget {
     this.imdbId,
     this.season,
     this.episode,
+    this.seriesTitle,
     this.sourceId,
     this.nzbUrl,
     this.localFilePath,
@@ -73,6 +85,7 @@ class PlayerScreen extends StatefulWidget {
   final String? imdbId;
   final int? season;
   final int? episode;
+  final String? seriesTitle;
 
   /// Aramadan geldiyse indirmenin kaynağı; `nzbPath`'teki geçici dosya
   /// kaybolursa aynı NZB'nin yeniden indirilebilmesi için izleme geçmişine
@@ -119,6 +132,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// neredeyse tam çözüm turu gereken devasa içerikleri de kapsar.
   static const _compressedOpenTimeout = Duration(minutes: 10);
 
+  final _diagnostics = PlaybackDiagnostics();
+  Timer? _tracePollTimer;
+  bool _tracePolling = false;
   late final Player _player;
   late final IntegrationPlayback _integrationPlayback;
   late final VideoController _videoController;
@@ -206,11 +222,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _startupFailed = false;
   bool _playbackReady = false;
   // PAR2 onarım oturumu (hata ekranından başlatılır).
-  BigInt? _repairSessionId;
+  late final RepairCoordinator<RepairProgressDto, RepairReportDto> _repair;
   bool _repairActive = false;
   RepairProgressDto? _repairProgress;
   String? _repairError;
-  Timer? _repairPollTimer;
   HdrMode _hdrMode = HdrMode.sdr;
   bool _hardwareDecoding = true;
   bool _buffering = false;
@@ -354,17 +369,24 @@ class _PlayerScreenState extends State<PlayerScreen>
         'positionSeconds': _position.inMilliseconds / 1000,
         'durationSeconds': _duration.inMilliseconds / 1000,
       },
-      pause: () async {
+      pause: (authorize) async {
+        authorize();
         _checkIntegrationPlayback();
         await _player.pause();
       },
-      resume: () async {
+      resume: (authorize) async {
+        authorize();
         _checkIntegrationPlayback();
         await _player.play();
       },
-      seek: (position) async {
+      seek: (position, authorize) async {
+        authorize();
         _checkIntegrationPlayback();
-        await _player.seek(position);
+        await _diagnosticSeek(() {
+          authorize();
+          _checkIntegrationPlayback();
+          return _player.seek(position);
+        });
       },
     );
     IntegrationRuntime.instance.attachPlayback(_integrationPlayback);
@@ -388,6 +410,36 @@ class _PlayerScreenState extends State<PlayerScreen>
     _historyStore = widget.historyStore ?? PlaybackHistoryStore();
     _castService = widget.castService ?? AppCastService();
     _startupGuard = PlaybackStartupGuard(widget.startupTimeout);
+    _repair = RepairCoordinator<RepairProgressDto, RepairReportDto>(
+      begin: (isCurrent) async {
+        final settings = await (widget.store ?? ProviderSettingsStore()).load();
+        if (!settings.isComplete) {
+          throw StateError('Provider configuration required');
+        }
+        if (!isCurrent()) throw StateError('Repair attempt cancelled');
+        return beginRepair(
+          config: ProviderConfigDto(
+            host: settings.host,
+            port: settings.port,
+            username: settings.username,
+            password: settings.password,
+            maxConnections: settings.maxConnections,
+          ),
+          nzbPath: widget.nzbPath,
+          entryKey: _resolvedEntryKey,
+        );
+      },
+      progressFor: (id) async {
+        final progress = await repairProgress(sessionId: id);
+        if (progress == null) throw StateError('Repair session unavailable');
+        return progress;
+      },
+      resultFor: (id) => awaitRepair(sessionId: id),
+      cancelSession: (id) async {
+        await cancelRepair(sessionId: id);
+      },
+    )..addListener(_onRepairChanged);
+
     _positionSubscription = _player.stream.position.listen((position) {
       if (!mounted || _scrubbing) return;
       setState(() => _position = position);
@@ -398,6 +450,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
     _playingSubscription = _player.stream.playing.listen((playing) {
       if (!mounted) return;
+      _diagnostics.playing(playing);
       setState(() => _playing = playing);
       if (!playing) unawaited(_saveHistoryPosition());
       _revealControls();
@@ -459,6 +512,19 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _start() async {
+    _diagnostics.beginAttempt();
+    if (_diagnostics.attempt == 1) {
+      final attempt = _diagnostics.attempt;
+      unawaited(
+        _videoController.waitUntilFirstFrameRendered
+            .then((_) {
+              if (!_disposing && _diagnostics.attempt == attempt) {
+                _diagnostics.firstFrame();
+              }
+            })
+            .catchError((Object _) {}),
+      );
+    }
     try {
       await _configureNativeEngine();
       await _loadPreferences();
@@ -472,6 +538,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       final store = widget.store ?? ProviderSettingsStore();
       final settings = await store.load();
       if (!settings.isComplete) {
+        _diagnostics.fail(PlaybackFailure.configuration);
         if (!mounted) return;
         setState(
           () => _error = AppLocalizations.of(
@@ -484,6 +551,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       // Çok parçalı (sezon paketi gibi) NZB'lerde oynatılacak dosyayı
       // kullanıcı seçer (issue #5). Geçmişten belirli bir bölümle
       // gelindiyse (initialEntryKey) diyalog atlanır.
+      _diagnostics.record(
+        PlaybackEvent.selectingMedia,
+        PlaybackStage.selectingMedia,
+      );
       var entryKey = _resolvedEntryKey ?? widget.initialEntryKey;
       if (entryKey == null) {
         try {
@@ -522,6 +593,10 @@ class _PlayerScreenState extends State<PlayerScreen>
         after: widget.streamPreparationTimeout,
       );
 
+      _diagnostics.record(
+        PlaybackEvent.providerConnecting,
+        PlaybackStage.connecting,
+      );
       final sessionId = await beginStream(
         config: ProviderConfigDto(
           host: settings.host,
@@ -534,6 +609,11 @@ class _PlayerScreenState extends State<PlayerScreen>
         entryKey: entryKey,
       );
       _pendingSessionId = sessionId;
+      _tracePollTimer?.cancel();
+      _tracePollTimer = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => unawaited(_captureNativeTrace(sessionId)),
+      );
 
       if (!mounted || _startupFailed) {
         await _releaseNativeStream();
@@ -543,6 +623,12 @@ class _PlayerScreenState extends State<PlayerScreen>
       final info = await awaitStream(sessionId: sessionId);
       _pendingSessionId = null;
       _nativeStream = info;
+      _diagnostics.record(
+        info.compressed
+            ? PlaybackEvent.archivePrepared
+            : PlaybackEvent.streamPrepared,
+        PlaybackStage.openingDecoder,
+      );
 
       if (!mounted || _startupFailed) {
         await _releaseNativeStream();
@@ -578,6 +664,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       _onVideoWidth(_player.state.width);
       _onTracks(_player.state.tracks);
     } catch (error) {
+      _diagnostics.fail(PlaybackDiagnostics.classify(error));
       await _releaseNativeStream();
       if (_startupFailed) return;
       _startupGuard.cancel();
@@ -594,6 +681,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _startLocalFile() async {
+    _diagnostics.record(
+      PlaybackEvent.localFileOpening,
+      PlaybackStage.openingDecoder,
+    );
     final path = widget.localFilePath ?? widget.nzbPath;
     _resolvedEntryKey = localFileEntryKey;
     await _playback.resetForNewMedia();
@@ -745,6 +836,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _startupGuard.cancel();
     _startupActive = false;
     _playbackReady = true;
+    _diagnostics.decoderReady();
     if (!mounted) return;
     final l10n = AppLocalizations.of(context);
     setState(() {
@@ -871,11 +963,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
-  Future<void> _saveHistoryPosition() async {
-    if (_disposing || !_playbackReady || !_historyLoaded) return;
+  Future<bool> _saveHistoryPosition() async {
+    if (_disposing || !_playbackReady || !_historyLoaded) return false;
     final duration = _duration;
     final position = _position;
-    if (position <= const Duration(seconds: 3)) return;
+    if (position <= const Duration(seconds: 3)) return true;
     try {
       await _historyStore.save(
         PlaybackHistoryEntry(
@@ -895,6 +987,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           favorite: _persistedFavorite,
         ),
       );
+      return true;
     } catch (_) {
       if (mounted && !_disposing && !_historySaveErrorShown) {
         _historySaveErrorShown = true;
@@ -905,6 +998,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         );
       }
     }
+    return false;
   }
 
   /// Yalnız entegrasyon testleri içindir: oynatma hazır mı, açılış hatası
@@ -926,6 +1020,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   void _onPlayerError(String message) {
     unawaited(_saveHistoryPosition());
     if (!_startupActive && !_playbackReady) return;
+    _diagnostics.fail(PlaybackDiagnostics.classify(message));
     final description = describePlayerError(
       message,
       AppLocalizations.of(context),
@@ -945,6 +1040,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   void _onBuffering(bool buffering) {
+    _diagnostics.buffering(buffering);
     _buffering = buffering;
     if (!mounted || _startupFailed || _info == null) return;
     final l10n = AppLocalizations.of(context);
@@ -977,6 +1073,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _onStartupTimeout() {
     if (!_startupActive || _startupFailed || _playbackReady) return;
+    _diagnostics.record(PlaybackEvent.startupTimeout, PlaybackStage.failed);
     if (_info == null) {
       _failStartup(
         AppLocalizations.of(
@@ -994,6 +1091,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _failStartup(String message) {
     if (_startupFailed || _playbackReady) return;
+    if (_diagnostics.failure == null) {
+      _diagnostics.fail(PlaybackFailure.unknown);
+    }
     _startupGuard.cancel();
     _startupActive = false;
     _startupFailed = true;
@@ -1009,8 +1109,32 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// Rust tarafındaki localhost server yalnız bu ekranın session kimliğiyle
   /// kapatılır. Böylece eski bir ekranın gecikmiş dispose'u daha yeni bir
   /// oynatıcı oturumunu yanlışlıkla durduramaz.
+  Future<void> _captureNativeTrace(BigInt sessionId) async {
+    if (_tracePolling || _disposing) return;
+    _tracePolling = true;
+    try {
+      final trace = await playbackTrace(sessionId: sessionId);
+      if (trace != null &&
+          !_disposing &&
+          (sessionId == _nativeStream?.sessionId ||
+              sessionId == _pendingSessionId)) {
+        _diagnostics.updateNative(trace);
+      }
+    } catch (_) {
+      // Diagnostics are observational and cannot interrupt playback or cleanup.
+    } finally {
+      _tracePolling = false;
+    }
+  }
+
   Future<void> _releaseNativeStream() async {
     final sessionId = _nativeStream?.sessionId ?? _pendingSessionId;
+    _tracePollTimer?.cancel();
+    if (sessionId != null) {
+      await _captureNativeTrace(
+        sessionId,
+      ).timeout(const Duration(milliseconds: 250), onTimeout: () {});
+    }
     _nativeStream = null;
     _pendingSessionId = null;
     if (sessionId == null) return;
@@ -1384,6 +1508,8 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   @override
   void dispose() {
+    _episodeMetadata?.close();
+    _episodeEnrichment?.close();
     IntegrationRuntime.instance.detachPlayback(_integrationPlayback);
     WidgetsBinding.instance.removeObserver(this);
     // Son izleme konumu kapanışta kaydedilir; _disposing bayrağından önce
@@ -1397,6 +1523,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     _castStateSubscription?.cancel();
     unawaited(_castService.dispose());
     _disposing = true;
+    _tracePollTimer?.cancel();
+    _diagnostics.dispose();
     _scrubGeneration++;
     _canvasGeneration++;
     _queuedPreviewTarget = null;
@@ -1406,14 +1534,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     _queuedSubtitlePosition = null;
     _queuedSubtitleDelay = null;
     _startupGuard.dispose();
-    _repairPollTimer?.cancel();
-    // Ekran kapanırken onarım oturumu da iptal edilir; oturum Rust tarafında
-    // watch sinyaliyle güvenli durur.
-    if (_repairActive) {
-      final sessionId = _repairSessionId;
-      if (sessionId != null) unawaited(cancelRepair(sessionId: sessionId));
-      _repairActive = false;
-    }
+    _repair.removeListener(_onRepairChanged);
+    _repair.dispose();
     _playButtonFocusNode.dispose();
     _keyboardFocusNode.dispose();
     _controlsTimer?.cancel();
@@ -1572,6 +1694,21 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  Future<void> _diagnosticSeek(Future<void> Function() action) async {
+    final stage = _diagnostics.stage;
+    _diagnostics.record(PlaybackEvent.seekRequested, stage);
+    try {
+      await action();
+      _diagnostics.record(
+        PlaybackEvent.seekCommandCompleted,
+        _diagnostics.stage,
+      );
+    } catch (_) {
+      _diagnostics.record(PlaybackEvent.seekFailed, _diagnostics.stage);
+      rethrow;
+    }
+  }
+
   Future<void> _seekRelative(Duration offset, {bool exact = true}) async {
     if (!_playbackReady) return;
     _revealControls();
@@ -1590,7 +1727,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
     try {
-      await _playback.seekRelative(offset, exact: exact);
+      await _diagnosticSeek(() => _playback.seekRelative(offset, exact: exact));
     } catch (error) {
       _showControlError(error);
     }
@@ -2232,7 +2369,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       final previewDrain = _previewDrainFuture;
       if (previewDrain != null) await previewDrain;
       if (_disposing || generation != _scrubGeneration) return;
-      await _player.seek(target);
+      await _diagnosticSeek(() => _player.seek(target));
       if (_wasPlayingBeforeScrub) await _player.play();
     } catch (error) {
       _showControlError(error);
@@ -2497,6 +2634,131 @@ class _PlayerScreenState extends State<PlayerScreen>
     _revealControls();
   }
 
+  bool _episodeNavigating = false;
+  MetadataService? _episodeMetadata;
+  MetadataEnrichment? _episodeEnrichment;
+  bool get _hasEpisodeIdentity =>
+      (widget.imdbId ?? _persistedImdbId) != null &&
+      (_effectiveSeason ?? _persistedSeason) != null &&
+      (_effectiveEpisode ?? _persistedEpisode) != null &&
+      widget.localFilePath == null &&
+      !_casting;
+
+  Future<void> _navigateEpisode(int direction) async {
+    if (_episodeNavigating || !_hasEpisodeIdentity || !_playbackReady) return;
+    setState(() => _episodeNavigating = true);
+    final wasPlaying = _playing;
+    var handedOff = false;
+    final service = MetadataService();
+    final enrichment = MetadataEnrichment();
+    _episodeMetadata = service;
+    _episodeEnrichment = enrichment;
+    try {
+      await _player.pause();
+      if (!await _saveHistoryPosition()) {
+        throw const EpisodeNavigationException(
+          'Could not save this episode checkpoint. Retry before moving to another episode.',
+        );
+      }
+      final prefs = SeriesPreferences.shared;
+      await prefs.load();
+      if (!mounted || _disposing) return;
+      final key = await MetadataSettingsStore().load().timeout(
+        const Duration(seconds: 3),
+      );
+      if (!mounted || _disposing) return;
+      if (key.isEmpty) {
+        throw const EpisodeNavigationException(
+          'Add your OMDb key in Artwork & ratings to resolve episode order. Current playback is unchanged.',
+        );
+      }
+      final selection =
+          await EpisodeCatalog(
+            service: service,
+            enrichment: enrichment,
+            apiKey: key,
+          ).adjacent(
+            (widget.imdbId ?? _persistedImdbId)!,
+            (_effectiveSeason ?? _persistedSeason)!,
+            (_effectiveEpisode ?? _persistedEpisode)!,
+            direction,
+            autoPick: prefs.ready && prefs.value.autoSelect,
+          );
+      if (!mounted || _disposing) return;
+      final release = await Navigator.of(context).push<SelectedEpisodeRelease>(
+        MaterialPageRoute(
+          builder: (_) => SearchScreen(
+            initialSelection: selection,
+            autoSearchInitialSelection: true,
+            pickEpisodeReleaseOnly: true,
+          ),
+        ),
+      );
+      if (!mounted || _disposing || release == null) return;
+      if (release.selection.imdbId != selection.imdbId ||
+          release.selection.season != selection.season ||
+          release.selection.episode != selection.episode) {
+        throw const EpisodeNavigationException(
+          'The chosen release no longer matches this episode. Current playback is unchanged.',
+        );
+      }
+      if (!await _saveHistoryPosition()) {
+        throw const EpisodeNavigationException(
+          'Could not save this episode checkpoint. Current playback is unchanged.',
+        );
+      }
+      final video = _videoKey.currentState;
+      if (video?.isFullscreen() ?? false) await video!.exitFullscreen();
+      if (_isPictureInPicture) await _togglePictureInPicture();
+      await _player.stop();
+      await _releaseNativeStream();
+      if (!mounted || _disposing) return;
+      handedOff = true;
+      Navigator.of(context).pushReplacement<void, void>(
+        MaterialPageRoute(
+          builder: (_) => PlayerScreen(
+            nzbPath: release.path,
+            imdbId: selection.imdbId,
+            seriesTitle: selection.title,
+            season: selection.season,
+            episode: selection.episode,
+            sourceId: release.sourceId,
+            nzbUrl: release.nzbUrl,
+            store: widget.store,
+            preferenceStore: widget.preferenceStore,
+            historyStore: widget.historyStore,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted && !_disposing) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error is EpisodeNavigationException
+                  ? error.message
+                  : 'Episode information or release search is unavailable. Current playback is unchanged.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      service.close();
+      enrichment.close();
+      if (identical(_episodeMetadata, service)) _episodeMetadata = null;
+      if (identical(_episodeEnrichment, enrichment)) _episodeEnrichment = null;
+      if (mounted && !_disposing && !handedOff) {
+        setState(() => _episodeNavigating = false);
+        _revealControls();
+        if (wasPlaying) {
+          try {
+            await _player.play();
+          } catch (_) {}
+        }
+      }
+    }
+  }
+
   Future<void> _closePlayer() async {
     final state = _videoKey.currentState;
     if (state?.isFullscreen() ?? false) {
@@ -2508,78 +2770,46 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// Hata ekranındaki "PAR2 ile onar" akışı: oturum başlatılır, ilerleme
   /// yoklanır, başarıda katman kurulmuş olarak oynatma yeniden denenir.
-  Future<void> _startRepair() async {
-    if (_repairActive) return;
-    final store = widget.store ?? ProviderSettingsStore();
-    final settings = await store.load();
-    if (!settings.isComplete || !mounted) return;
-
-    setState(() {
-      _repairActive = true;
-      _repairError = null;
-      _repairProgress = null;
-    });
-
-    final sessionId = await beginRepair(
-      config: ProviderConfigDto(
-        host: settings.host,
-        port: settings.port,
-        username: settings.username,
-        password: settings.password,
-        maxConnections: settings.maxConnections,
-      ),
-      nzbPath: widget.nzbPath,
-      entryKey: _resolvedEntryKey,
-    );
-    _repairSessionId = sessionId;
-    _repairPollTimer?.cancel();
-    _repairPollTimer = Timer.periodic(const Duration(milliseconds: 500), (
-      _,
-    ) async {
-      final progress = await repairProgress(sessionId: sessionId);
-      if (!mounted || !_repairActive) return;
-      setState(() => _repairProgress = progress);
-    });
-
-    try {
-      final report = await awaitRepair(sessionId: sessionId);
-      if (!mounted) return;
-      _repairPollTimer?.cancel();
-      final l10n = AppLocalizations.of(context);
-      setState(() => _repairActive = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            report.clean
-                ? l10n.repairClean
-                : l10n.repairSuccess(report.repairedSlices),
-          ),
-        ),
-      );
-      // Katman kuruldu (veya set temiz çıktı): oynatmayı yeniden dene.
-      setState(() {
-        _error = null;
-        _startupFailed = false;
-        _status = l10n.statusPreparing;
-      });
-      unawaited(_start());
-    } catch (error) {
-      if (!mounted) return;
-      _repairPollTimer?.cancel();
-      setState(() {
-        _repairActive = false;
-        _repairError = '$error';
-      });
+  void _onRepairChanged() {
+    if (!mounted || _disposing) return;
+    if (_repair.state == RepairState.failed) {
+      _diagnostics.record(PlaybackEvent.repairFailed, PlaybackStage.failed);
+    } else if (_repair.state == RepairState.cancelled) {
+      _diagnostics.record(PlaybackEvent.repairCancelled, PlaybackStage.failed);
     }
+    setState(() {
+      _repairActive = _repair.active;
+      _repairProgress = _repair.progress;
+      _repairError = _repair.error;
+    });
   }
 
-  void _cancelRepair() {
-    final sessionId = _repairSessionId;
-    if (sessionId != null) unawaited(cancelRepair(sessionId: sessionId));
-    _repairPollTimer?.cancel();
-    if (!mounted) return;
-    setState(() => _repairActive = false);
+  Future<void> _startRepair() async {
+    if (_repair.active) return;
+    _diagnostics.record(PlaybackEvent.repairStarted, PlaybackStage.repairing);
+    final report = await _repair.start();
+    if (!mounted || _disposing || report == null) return;
+    _diagnostics.record(PlaybackEvent.repairCompleted, PlaybackStage.preparing);
+    final l10n = AppLocalizations.of(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          report.clean
+              ? l10n.repairClean
+              : l10n.repairSuccess(report.repairedSlices),
+        ),
+      ),
+    );
+    setState(() {
+      _error = null;
+      _startupFailed = false;
+      _status = l10n.statusPreparing;
+    });
+    // Reopen only the same release/entry. Existing durable history owns resume.
+    await _start();
   }
+
+  void _cancelRepair() => _repair.cancel();
 
   Future<void> _togglePictureInPicture() async {
     final enter = !_isPictureInPicture;
@@ -2607,6 +2837,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
+  void _showPlaybackDoctor() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PlaybackDoctorScreen(diagnostics: _diagnostics),
+      ),
+    );
+  }
+
   Future<void> _showAdvancedSettings(Offset globalPosition) async {
     _revealControls();
     final overlay = Overlay.of(context).context.findRenderObject();
@@ -2615,14 +2853,29 @@ class _PlayerScreenState extends State<PlayerScreen>
     final local = overlay.globalToLocal(globalPosition);
     final selected = await showMenu<_PlayerContextAction>(
       context: context,
-      color: const Color(0xF2242427),
+      color: PlayerMenuTheme.surface,
+      surfaceTintColor: Colors.transparent,
       elevation: 18,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       position: RelativeRect.fromRect(
         Rect.fromLTWH(local.dx, local.dy, 1, 1),
         Offset.zero & overlay.size,
       ),
-      items: [
+      items: <PopupMenuEntry<_PlayerContextAction>>[
+        _contextItem(
+          _PlayerContextAction.doctor,
+          'Playback Doctor',
+          Icons.health_and_safety_outlined,
+          '',
+        ),
+        if (_hasEpisodeIdentity)
+          _contextItem(
+            _PlayerContextAction.seriesSettings,
+            'Series & playback',
+            Icons.tv_outlined,
+            '',
+          ),
+        const PopupMenuDivider(),
         _contextItem(
           _PlayerContextAction.togglePlay,
           _playing ? l10n.pause : l10n.play,
@@ -2713,7 +2966,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           Icons.fullscreen_rounded,
           'F',
         ),
-      ],
+      ].map((entry) => PlayerMenuEntry(entry: entry)).toList(),
     );
     if (!mounted) return;
     if (selected != null) await _dispatchContextAction(selected);
@@ -2737,7 +2990,10 @@ class _PlayerScreenState extends State<PlayerScreen>
         if (shortcut.isNotEmpty)
           Text(
             shortcut,
-            style: const TextStyle(color: Colors.white38, fontSize: 11),
+            style: const TextStyle(
+              color: PlayerMenuTheme.secondary,
+              fontSize: 11,
+            ),
           ),
       ],
     ),
@@ -2745,6 +3001,14 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   Future<void> _dispatchContextAction(_PlayerContextAction action) async {
     switch (action) {
+      case _PlayerContextAction.seriesSettings:
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const SeriesSettingsScreen()),
+        );
+        return;
+      case _PlayerContextAction.doctor:
+        _showPlaybackDoctor();
+        return;
       case _PlayerContextAction.togglePlay:
         await _togglePlay();
         return;
@@ -3352,6 +3616,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       body: _error != null
           ? _ErrorView(
               message: _error.toString(),
+              onDiagnostics: _showPlaybackDoctor,
               onClose: () => unawaited(_closePlayer()),
               onSettings: () => unawaited(_editProvider()),
               repairActive: _repairActive,
@@ -3400,9 +3665,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                 buffering: _buffering,
                 volume: _volume,
                 periodicInfoVisible: _periodicInfoVisible,
-                filename:
-                    _info?.filename ??
-                    AppLocalizations.of(context).videoPreparing,
+                filename: widget.seriesTitle != null && _hasEpisodeIdentity
+                    ? '${widget.seriesTitle} / S${_effectiveSeason ?? _persistedSeason} E${_effectiveEpisode ?? _persistedEpisode}'
+                    : _info?.filename ??
+                          AppLocalizations.of(context).videoPreparing,
                 status: _status,
                 engineBadge: _engineStatus,
                 position: _position,
@@ -3440,6 +3706,13 @@ class _PlayerScreenState extends State<PlayerScreen>
                 onToggleMute: _toggleMute,
                 onFrameBackward: () => unawaited(_stepBackward()),
                 onFrameForward: () => unawaited(_stepForward()),
+                onPreviousEpisode: _hasEpisodeIdentity
+                    ? () => unawaited(_navigateEpisode(-1))
+                    : null,
+                onNextEpisode: _hasEpisodeIdentity
+                    ? () => unawaited(_navigateEpisode(1))
+                    : null,
+                episodeNavigationBusy: _episodeNavigating,
                 onScrubStart: _onScrubStart,
                 onScrubUpdate: _onScrubUpdate,
                 onScrubEnd: _onScrubEnd,
@@ -3494,6 +3767,8 @@ class _PlayerScreenState extends State<PlayerScreen>
 }
 
 enum _PlayerContextAction {
+  doctor,
+  seriesSettings,
   togglePlay,
   seekBack,
   seekForward,
@@ -3599,6 +3874,7 @@ class _ErrorView extends StatelessWidget {
     this.onRepair,
     this.onCancelRepair,
     this.onDownload,
+    this.onDiagnostics,
   });
 
   final String message;
@@ -3612,6 +3888,7 @@ class _ErrorView extends StatelessWidget {
   final VoidCallback? onRepair;
   final VoidCallback? onCancelRepair;
   final VoidCallback? onDownload;
+  final VoidCallback? onDiagnostics;
 
   @override
   Widget build(BuildContext context) {
@@ -3691,6 +3968,12 @@ class _ErrorView extends StatelessWidget {
                       label: Text(l10n.repairButton),
                     ),
                   ],
+                  if (onDiagnostics != null)
+                    OutlinedButton.icon(
+                      onPressed: onDiagnostics,
+                      icon: const Icon(Icons.health_and_safety_outlined),
+                      label: const Text('Playback Doctor'),
+                    ),
                   if (onDownload != null)
                     OutlinedButton.icon(
                       onPressed: onDownload,

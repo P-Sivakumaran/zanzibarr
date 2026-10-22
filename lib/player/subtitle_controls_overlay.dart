@@ -1,3 +1,4 @@
+import 'player_menu_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
@@ -91,170 +92,176 @@ class _SubtitleControlsOverlayState extends State<SubtitleControlsOverlay> {
     final l10n = AppLocalizations.of(context);
     final vertical = ((_position.clamp(0, 100).toDouble() / 100) * 1.4 - 0.45)
         .clamp(-0.45, 0.95);
-    return SafeArea(
-      child: AnimatedAlign(
-        alignment: Alignment(0, vertical.toDouble()),
-        duration: const Duration(milliseconds: 120),
-        curve: Curves.easeOutCubic,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: GestureDetector(
-              onVerticalDragStart: (_) => _draggingPosition = true,
-              onVerticalDragUpdate: (details) {
-                final height = MediaQuery.sizeOf(context).height;
-                if (height <= 0) return;
-                _changePosition(_position + details.delta.dy / height * 100);
-              },
-              onVerticalDragEnd: (_) {
-                _draggingPosition = false;
-                widget.onPositionChanged(_position);
-              },
-              onVerticalDragCancel: () => _draggingPosition = false,
-              onHorizontalDragStart: (_) => _draggingDelay = true,
-              onHorizontalDragUpdate: (details) {
-                final nextMicros =
-                    _delay.inMicroseconds + (details.delta.dx * 18000).round();
-                _changeDelay(Duration(microseconds: nextMicros));
-              },
-              onHorizontalDragEnd: (_) {
-                _draggingDelay = false;
-                widget.onDelayChanged(_delay);
-              },
-              onHorizontalDragCancel: () => _draggingDelay = false,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: const Color(0xE61C1C1F),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white12),
-                  boxShadow: const [
-                    BoxShadow(color: Colors.black54, blurRadius: 18),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 6,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      PopupMenuButton<SubtitleTrack>(
-                        tooltip: l10n.subtitleTrack,
-                        color: const Color(0xF2242427),
-                        onSelected: widget.onTrackSelected,
-                        itemBuilder: (context) => widget.tracks
-                            .map(
-                              (track) => PopupMenuItem<SubtitleTrack>(
-                                value: track,
-                                child: Row(
-                                  children: [
-                                    SizedBox(
-                                      width: 20,
-                                      child: track.id == widget.selectedTrack.id
-                                          ? const Icon(Icons.check, size: 16)
-                                          : null,
-                                    ),
-                                    Text(
-                                      _subtitleLabel(
-                                        track,
-                                        auto: l10n.auto,
-                                        off: l10n.off,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            )
-                            .toList(growable: false),
-                        child: const Padding(
-                          padding: EdgeInsets.all(7),
-                          child: Icon(
-                            Icons.closed_caption_rounded,
-                            color: Colors.white70,
-                            size: 18,
-                          ),
-                        ),
-                      ),
-                      _OverlayButton(
-                        icon: Icons.text_decrease_rounded,
-                        tooltip: l10n.subtitleDecreaseTooltip,
-                        onPressed: () => _changeScale(_scale - 0.1),
-                      ),
-                      SizedBox(
-                        width: 42,
-                        child: Text(
-                          '${(_scale * 100).round()}%',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 10,
-                          ),
-                        ),
-                      ),
-                      _OverlayButton(
-                        icon: Icons.text_increase_rounded,
-                        tooltip: l10n.subtitleIncreaseTooltip,
-                        onPressed: () => _changeScale(_scale + 0.1),
-                      ),
-                      const _Divider(),
-                      _OverlayButton(
-                        icon: Icons.keyboard_arrow_up_rounded,
-                        tooltip: l10n.subtitleMoveUpTooltip,
-                        onPressed: () => _changePosition(_position - 2),
-                      ),
-                      _OverlayButton(
-                        icon: Icons.keyboard_arrow_down_rounded,
-                        tooltip: l10n.subtitleMoveDownTooltip,
-                        onPressed: () => _changePosition(_position + 2),
-                      ),
-                      const _Divider(),
-                      _OverlayButton(
-                        icon: Icons.chevron_left_rounded,
-                        tooltip: l10n.subtitleEarlierTooltip,
-                        onPressed: () => _changeDelay(
-                          _delay - const Duration(milliseconds: 100),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 62,
-                        child: Text(
-                          _formatDelay(_delay, l10n.secondsUnitShort),
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 10,
-                            fontFeatures: [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      ),
-                      _OverlayButton(
-                        icon: Icons.chevron_right_rounded,
-                        tooltip: l10n.subtitleLaterTooltip,
-                        onPressed: () => _changeDelay(
-                          _delay + const Duration(milliseconds: 100),
-                        ),
-                      ),
-                      const _Divider(),
-                      _ColorMenu(
-                        tooltip: l10n.subtitleColor,
-                        selected: widget.color,
-                        onSelected: widget.onColorChanged,
-                      ),
-                      const _Divider(),
-                      _FontMenu(
-                        tooltip: l10n.subtitleFont,
-                        selected: widget.font,
-                        onSelected: widget.onFontChanged,
-                      ),
-                      const _Divider(),
-                      _OverlayButton(
-                        icon: Icons.close_rounded,
-                        tooltip: l10n.closeSubtitleControlsTooltip,
-                        onPressed: widget.onClose,
-                      ),
+    return PlayerMenuTheme(
+      child: SafeArea(
+        child: AnimatedAlign(
+          alignment: Alignment(0, vertical.toDouble()),
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOutCubic,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: GestureDetector(
+                onVerticalDragStart: (_) => _draggingPosition = true,
+                onVerticalDragUpdate: (details) {
+                  final height = MediaQuery.sizeOf(context).height;
+                  if (height <= 0) return;
+                  _changePosition(_position + details.delta.dy / height * 100);
+                },
+                onVerticalDragEnd: (_) {
+                  _draggingPosition = false;
+                  widget.onPositionChanged(_position);
+                },
+                onVerticalDragCancel: () => _draggingPosition = false,
+                onHorizontalDragStart: (_) => _draggingDelay = true,
+                onHorizontalDragUpdate: (details) {
+                  final nextMicros =
+                      _delay.inMicroseconds +
+                      (details.delta.dx * 18000).round();
+                  _changeDelay(Duration(microseconds: nextMicros));
+                },
+                onHorizontalDragEnd: (_) {
+                  _draggingDelay = false;
+                  widget.onDelayChanged(_delay);
+                },
+                onHorizontalDragCancel: () => _draggingDelay = false,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: PlayerMenuTheme.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white12),
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black54, blurRadius: 18),
                     ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        PopupMenuButton<SubtitleTrack>(
+                          tooltip: l10n.subtitleTrack,
+                          color: PlayerMenuTheme.surface,
+                          onSelected: widget.onTrackSelected,
+                          itemBuilder: (context) => widget.tracks
+                              .map(
+                                (track) => PopupMenuItem<SubtitleTrack>(
+                                  value: track,
+                                  child: Row(
+                                    children: [
+                                      SizedBox(
+                                        width: 20,
+                                        child:
+                                            track.id == widget.selectedTrack.id
+                                            ? const Icon(Icons.check, size: 16)
+                                            : null,
+                                      ),
+                                      Flexible(
+                                        child: Text(
+                                          _subtitleLabel(
+                                            track,
+                                            auto: l10n.auto,
+                                            off: l10n.off,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                              .toList(growable: false),
+                          child: const Padding(
+                            padding: EdgeInsets.all(7),
+                            child: Icon(
+                              Icons.closed_caption_rounded,
+                              color: Colors.white70,
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                        _OverlayButton(
+                          icon: Icons.text_decrease_rounded,
+                          tooltip: l10n.subtitleDecreaseTooltip,
+                          onPressed: () => _changeScale(_scale - 0.1),
+                        ),
+                        SizedBox(
+                          width: 42,
+                          child: Text(
+                            '${(_scale * 100).round()}%',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                        _OverlayButton(
+                          icon: Icons.text_increase_rounded,
+                          tooltip: l10n.subtitleIncreaseTooltip,
+                          onPressed: () => _changeScale(_scale + 0.1),
+                        ),
+                        const _Divider(),
+                        _OverlayButton(
+                          icon: Icons.keyboard_arrow_up_rounded,
+                          tooltip: l10n.subtitleMoveUpTooltip,
+                          onPressed: () => _changePosition(_position - 2),
+                        ),
+                        _OverlayButton(
+                          icon: Icons.keyboard_arrow_down_rounded,
+                          tooltip: l10n.subtitleMoveDownTooltip,
+                          onPressed: () => _changePosition(_position + 2),
+                        ),
+                        const _Divider(),
+                        _OverlayButton(
+                          icon: Icons.chevron_left_rounded,
+                          tooltip: l10n.subtitleEarlierTooltip,
+                          onPressed: () => _changeDelay(
+                            _delay - const Duration(milliseconds: 100),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 62,
+                          child: Text(
+                            _formatDelay(_delay, l10n.secondsUnitShort),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 10,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ),
+                        _OverlayButton(
+                          icon: Icons.chevron_right_rounded,
+                          tooltip: l10n.subtitleLaterTooltip,
+                          onPressed: () => _changeDelay(
+                            _delay + const Duration(milliseconds: 100),
+                          ),
+                        ),
+                        const _Divider(),
+                        _ColorMenu(
+                          tooltip: l10n.subtitleColor,
+                          selected: widget.color,
+                          onSelected: widget.onColorChanged,
+                        ),
+                        const _Divider(),
+                        _FontMenu(
+                          tooltip: l10n.subtitleFont,
+                          selected: widget.font,
+                          onSelected: widget.onFontChanged,
+                        ),
+                        const _Divider(),
+                        _OverlayButton(
+                          icon: Icons.close_rounded,
+                          tooltip: l10n.closeSubtitleControlsTooltip,
+                          onPressed: widget.onClose,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -331,7 +338,7 @@ class _ColorMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     return PopupMenuButton<String>(
       tooltip: tooltip,
-      color: const Color(0xF2242427),
+      color: PlayerMenuTheme.surface,
       onSelected: onSelected,
       itemBuilder: (context) => colors
           .map(
@@ -361,11 +368,7 @@ class _ColorMenu extends StatelessWidget {
           .toList(growable: false),
       child: Padding(
         padding: const EdgeInsets.all(7),
-        child: Icon(
-          Icons.palette_rounded,
-          color: _toColor(selected),
-          size: 18,
-        ),
+        child: Icon(Icons.palette_rounded, color: _toColor(selected), size: 18),
       ),
     );
   }
@@ -390,7 +393,7 @@ class _FontMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     return PopupMenuButton<String>(
       tooltip: tooltip,
-      color: const Color(0xF2242427),
+      color: PlayerMenuTheme.surface,
       onSelected: onSelected,
       itemBuilder: (context) => kSubtitleFonts
           .map(
@@ -404,9 +407,11 @@ class _FontMenu extends StatelessWidget {
                         ? const Icon(Icons.check, size: 16)
                         : null,
                   ),
-                  Text(
-                    font.family,
-                    style: TextStyle(fontFamily: font.family, fontSize: 14),
+                  Flexible(
+                    child: Text(
+                      font.family,
+                      style: TextStyle(fontFamily: font.family, fontSize: 14),
+                    ),
                   ),
                 ],
               ),

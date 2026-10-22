@@ -500,10 +500,21 @@ class MetadataService {
 }
 
 class MediaEpisode {
-  const MediaEpisode({required this.number, required this.title, this.aired});
+  const MediaEpisode({
+    required this.number,
+    required this.title,
+    this.aired,
+    this.still = '',
+    this.overview = '',
+    this.runtimeMinutes,
+    this.imdbId,
+  });
   final int number;
   final String title;
   final DateTime? aired;
+  final String still, overview;
+  final int? runtimeMinutes;
+  final String? imdbId;
   bool isFuture(DateTime now) => aired != null && aired!.isAfter(now);
 }
 
@@ -532,6 +543,7 @@ List<MediaEpisode> parseSeason(Map<String, dynamic> data, int season) {
         number: number,
         title: title,
         aired: DateTime.tryParse('${row['Released']}'),
+        imdbId: row['imdbID'] is String ? normalizeImdbId(row['imdbID']) : null,
       ),
     );
   }

@@ -23,7 +23,32 @@ revokes the old token. Closing Zanzibarr stops the endpoint.
 
 No tool installs software, reads credentials, opens arbitrary files, downloads
 NZBs or starts new media. Cast playback control is rejected. Tool permissions
-are rechecked on every invocation. Casting/media listeners remain independent.
+are rechecked on every invocation and immediately before player effects.
+Casting/media listeners remain independent.
+
+Local tool calls expire after 30 seconds and support
+[`notifications/cancelled`](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/cancellation).
+Cancellation, endpoint shutdown and configuration/token changes invalidate the
+call context. A deferred player handler must check this context and the current
+permission/player immediately before acting. Already issued native commands
+cannot be undone; read-only native/provider work may finish after cancellation,
+but its result is discarded. This is cooperative cancellation, not forced
+termination of arbitrary asynchronous work.
+
+The eight-active-HTTP-request limit is unchanged. At saturation, even a
+cancellation request can receive 503; the local deadline still invalidates each
+call. Request IDs are scoped to the endpoint's existing bearer authority.
+Assistants sharing a bearer share authority and must use distinct active IDs;
+there is no per-client token isolation. Unknown or malformed cancellations are
+ignored. Initialize cannot be cancelled. A cancelled call closes with HTTP 202
+without a JSON-RPC result. A fixed-label in-memory outcome audit retains at most
+128 entries, without arguments, IDs, provider content or raw failures.
+
+Each server also permits at most eight underlying tool operations. Cancelled or
+expired operations retain their slot until the callback actually finishes, even
+though the HTTP response returns promptly. This prevents repeated cancellation
+from accumulating unbounded read-only native work. This is a per-server bound;
+reconfiguring the endpoint can overlap old read-only work with its replacement.
 
 For an HTTP MCP client, source the bearer token from an environment variable.
 Codex configuration:
