@@ -1,9 +1,10 @@
+import 'publisher_verification.dart';
+import '../editions/edition_paths.dart';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
 
 /// Download only this fork's installer, verify its release checksum, then open
 /// the interactive installer. Windows Setup handles closing the running app.
@@ -12,12 +13,15 @@ class WindowsUpdateInstaller {
     required this.client,
     Future<Directory> Function()? temporaryDirectory,
     Future<void> Function(String)? launch,
-  }) : temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory,
-       launch = launch ?? _launch;
+    Future<void> Function(String)? verifyPublisher,
+  }) : temporaryDirectory = temporaryDirectory ?? editionTemporaryDirectory,
+       launch = launch ?? _launch,
+       verifyPublisher = verifyPublisher ?? verifyWindowsPublisher;
 
   final http.Client client;
   final Future<Directory> Function() temporaryDirectory;
   final Future<void> Function(String) launch;
+  final Future<void> Function(String) verifyPublisher;
   static const installerName = 'zanzibarr-windows-x64-setup.exe';
 
   static Future<void> _launch(String path) async {
@@ -121,6 +125,7 @@ class WindowsUpdateInstaller {
       if (digest.toString() != expected) {
         throw StateError('Installer checksum verification failed');
       }
+      await verifyPublisher(file.absolute.path);
       await launch(file.absolute.path);
       launched = true;
     } finally {

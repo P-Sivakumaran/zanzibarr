@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:zanzibarr/l10n/app_localizations.dart';
+import '../l10n/app_localizations.dart';
 
 /// Oynatıcının medya yapısını tanımasını sonsuza kadar beklememek için
 /// yeniden kurulabilir, dispose-güvenli bir zaman aşımı bekçisi.

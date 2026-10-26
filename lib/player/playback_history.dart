@@ -1,4 +1,4 @@
-import 'dart:convert';
+import 'library_repository.dart';
 
 import 'media_preferences.dart';
 
@@ -168,6 +168,13 @@ class PlaybackHistoryStore {
     : _storage = storage ?? FlutterSecurePlayerPreferenceStorage();
 
   final PlayerPreferenceStorage _storage;
+  late final LibraryRepository<PlaybackHistoryEntry> _repository =
+      SecureJsonLibraryRepository<PlaybackHistoryEntry>(
+        storage: _storage,
+        key: storageKey,
+        decode: PlaybackHistoryEntry.fromJson,
+        encode: (entry) => entry.toJson(),
+      );
 
   static const storageKey = 'zanzibarr.playback_history.v1';
   static const _maxEntries = 25;
@@ -184,19 +191,7 @@ class PlaybackHistoryStore {
 
   Future<List<PlaybackHistoryEntry>> load() => _serialized(_load);
 
-  Future<List<PlaybackHistoryEntry>> _load() async {
-    final encoded = await _storage.read(storageKey);
-    if (encoded == null || encoded.isEmpty) return const [];
-    try {
-      final decoded = jsonDecode(encoded);
-      if (decoded is! Map) return const [];
-      final list = decoded['entries'];
-      if (list is! List) return const [];
-      return [for (final item in list) ?PlaybackHistoryEntry.fromJson(item)];
-    } on FormatException {
-      return const [];
-    }
-  }
+  Future<List<PlaybackHistoryEntry>> _load() => _repository.read();
 
   /// Look up the exact file, or the same release after a fresh download.
   /// Source and URL must both match; titles alone cannot identify a release.
@@ -324,7 +319,7 @@ class PlaybackHistoryStore {
         entries.removeWhere(
           (e) => e.nzbPath == nzbPath && e.entryKey == entryKey,
         );
-        await _write(entries);
+        await _repository.write(entries, forgetPrevious: true);
       });
 
   /// Bir kaydın kimliğini ([oldPath]/`entryKey`) aynı listede yerinde
@@ -460,11 +455,6 @@ class PlaybackHistoryStore {
         await _write(entries);
       });
 
-  Future<void> _write(List<PlaybackHistoryEntry> entries) => _storage.write(
-    storageKey,
-    jsonEncode(<String, Object>{
-      'version': 1,
-      'entries': [for (final e in entries) e.toJson()],
-    }),
-  );
+  Future<void> _write(List<PlaybackHistoryEntry> entries) =>
+      _repository.write(entries);
 }

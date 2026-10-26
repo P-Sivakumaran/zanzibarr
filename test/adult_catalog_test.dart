@@ -239,7 +239,12 @@ void main() {
       expect(calls, 0);
       await tester.tap(find.text('Enable adult catalog'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Save source settings'));
+      await tester.scrollUntilVisible(
+        find.text('Save source settings'),
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Save source settings'));
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(

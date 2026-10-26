@@ -1,9 +1,9 @@
+import '../editions/edition_paths.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'film_research.dart';
@@ -48,7 +48,7 @@ class _ResearchSuggestionsState extends State<ResearchSuggestions> {
     if (!await ResearchSuggestions.available()) return false;
     if (defaultTargetPlatform == TargetPlatform.windows) {
       try {
-        final directory = await getApplicationSupportDirectory();
+        final directory = await editionSupportDirectory();
         final environment = await WebViewEnvironment.create(
           settings: WebViewEnvironmentSettings(
             userDataFolder: '${directory.path}/research-suggestions-webview',

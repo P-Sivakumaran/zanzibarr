@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "flutter": "3.44.6",
+  "dart": "3.12.2",
+  "rust": "1.99.0",
+  "androidNdk": "28.2.13676358",
+  "androidNativeManifest": "vendor/media_kit_libs_android_video/native-artifacts.json"
+}

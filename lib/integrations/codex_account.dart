@@ -1,9 +1,9 @@
+import '../editions/edition_paths.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import 'integration_settings.dart';
 
 /// Managed Codex RPC. Zanzibarr never reads, exports or stores OAuth tokens.
@@ -48,7 +48,7 @@ class CodexRpc {
         'Choose the official Codex executable first.',
       );
     }
-    final support = await getApplicationSupportDirectory();
+    final support = await editionSupportDirectory();
     final home = await Directory(
       '${support.path}/codex-account',
     ).create(recursive: true);

@@ -64,7 +64,9 @@ class _TitleDetailsScreenState extends State<TitleDetailsScreen> {
     if (mounted) setState(() => _base = title);
     final enriched = await _enrichment.enrich(title);
     if (mounted && enriched.kind == 'series' && _episodes == null) {
-      setState(() => _episodes = _loadSeason(enriched, _season));
+      setState(() {
+        _episodes = _loadSeason(enriched, _season);
+      });
     }
     return enriched;
   }
@@ -260,8 +262,9 @@ class _TitleDetailsScreenState extends State<TitleDetailsScreen> {
                           children: [
                             Text(l.metadataFailed),
                             TextButton(
-                              onPressed: () =>
-                                  setState(() => _details = _loadDetails()),
+                              onPressed: () => setState(() {
+                                _details = _loadDetails();
+                              }),
                               child: Text(l.retry),
                             ),
                           ],
@@ -524,12 +527,9 @@ class _TitleDetailsScreenState extends State<TitleDetailsScreen> {
                                       'Episode catalog unavailable. This provider may not support seasons.',
                                     ),
                                     TextButton(
-                                      onPressed: () => setState(
-                                        () => _episodes = _loadSeason(
-                                          media,
-                                          _season,
-                                        ),
-                                      ),
+                                      onPressed: () => setState(() {
+                                        _episodes = _loadSeason(media, _season);
+                                      }),
                                       child: Text(l.retry),
                                     ),
                                   ],
@@ -573,8 +573,9 @@ class _TitleDetailsScreenState extends State<TitleDetailsScreen> {
                         loading:
                             snapshot.connectionState != ConnectionState.done,
                         configured: _enrichment.trailersConfigured,
-                        onConfigured: () =>
-                            setState(() => _details = _loadDetails()),
+                        onConfigured: () => setState(() {
+                          _details = _loadDetails();
+                        }),
                       ),
                       if (_storageError != null)
                         Wrap(

@@ -17,9 +17,9 @@ once_cell = "1.21.4"
 quick-xml = "0.41.0"
 sha2 = "0.10.9"
 thiserror = "2.0.18"
-tokio = { version = "1.52.4", features = ["net", "fs", "io-util", "sync", "time", "macros", "rt-multi-thread"] }
+tokio = { version = "1.53.3", features = ["net", "fs", "io-util", "sync", "time", "macros", "rt-multi-thread"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring", "logging", "tls12"] }
-webpki-roots = "1.0.8"
+webpki-roots = "1.0.10"
 zesven = { version = "1.1.0", default-features = false, features = ["aes", "lzma"] }
 zeroize = "1.8.2"
 url = "=2.5.8"
@@ -45,4 +45,4 @@ debug = 2
 codegen-units = 256
 
 [dev-dependencies]
-tokio = { version = "1.52.4", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.53.3", features = ["macros", "rt-multi-thread"] }

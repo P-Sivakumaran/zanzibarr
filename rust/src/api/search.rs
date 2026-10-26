@@ -113,6 +113,7 @@ fn fetch_checked(url: &str, max_bytes: usize, timeout: Duration) -> Result<Strin
 /// Indexer'ın yeteneklerini sorgular (`?t=caps`). Bağlantı ve API anahtarı
 /// doğrulaması için de kullanılır.
 pub fn newznab_check_caps(config: IndexerConfigDto) -> Result<IndexerCapsDto, String> {
+    crate::edition::require_media_access()?;
     let url = newznab::build_api_url(
         &config.base_url,
         &[("t", "caps"), ("apikey", &config.api_key)],
@@ -140,6 +141,7 @@ pub fn newznab_search(
     limit: u32,
     offset: u32,
 ) -> Result<SearchPageDto, String> {
+    crate::edition::require_media_access()?;
     let limit = limit.clamp(1, 100).to_string();
     let offset = offset.to_string();
     let mut params = search_query_params(&query, config.structured.as_ref())?;
@@ -215,6 +217,7 @@ async fn fetch_search_items_async(
     limit: u32,
     offset: u32,
 ) -> Result<newznab::SearchPage, String> {
+    crate::edition::require_media_access()?;
     let limit = limit.clamp(1, 100).to_string();
     let offset = offset.to_string();
     let mut params = search_query_params(query, config.structured.as_ref())?;
@@ -339,6 +342,14 @@ pub fn newznab_search_many(
     offset: u32,
     offsets: Option<Vec<u32>>,
 ) -> SearchManyResultDto {
+    if crate::edition::require_media_access().is_err() {
+        return SearchManyResultDto {
+            page: SearchPageDto { total: None, items: Vec::new() },
+            failed_indexers: Vec::new(),
+            next_offsets: Some(vec![u32::MAX; configs.len()]),
+            has_more: Some(false),
+        };
+    }
     RUNTIME.block_on(async move {
         let mut set = tokio::task::JoinSet::new();
         let mut tasks = std::collections::HashMap::new();
@@ -451,6 +462,8 @@ pub fn newznab_download_nzb(
     suggested_name: String,
     download_dir: Option<String>,
 ) -> Result<String, String> {
+    crate::edition::require_media_access()?;
+    let generation = crate::edition::generation();
     let url = authenticated_download_url(&config, nzb_url);
 
     let response = RUNTIME
@@ -472,6 +485,10 @@ pub fn newznab_download_nzb(
         return Err("downloaded content is not an NZB".to_string());
     }
 
+    let _access = crate::edition::lock_media_access()?;
+    if generation != crate::edition::generation() {
+        return Err("edition access changed".to_owned());
+    }
     let dir = download_dir_path(download_dir);
     std::fs::create_dir_all(&dir)
         .map_err(|error| format!("could not create temp directory: {error}"))?;
@@ -494,7 +511,7 @@ fn download_dir_path(download_dir: Option<String>) -> std::path::PathBuf {
     download_dir
         .filter(|dir| !dir.trim().is_empty())
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::env::temp_dir().join("zanzibarr-nzb"))
+        .unwrap_or_else(|| crate::edition::temporary_root().join("zanzibarr-nzb"))
 }
 
 /// Dosya adını platform-güvenli karakterlere indirger (en çok 60 karakter).
@@ -801,7 +818,7 @@ mod tests {
             std::path::PathBuf::from("/data/user/0/app/cache")
         );
         // Boş/boşluklu dizin ve None sistem temp'ine düşer.
-        let fallback = std::env::temp_dir().join("zanzibarr-nzb");
+        let fallback = crate::edition::temporary_root().join("zanzibarr-nzb");
         assert_eq!(download_dir_path(None), fallback);
         assert_eq!(download_dir_path(Some("   ".into())), fallback);
     }

@@ -1,6 +1,7 @@
 import 'series_settings_screen.dart';
+import 'legal_screen.dart';
 import 'package:flutter/material.dart';
-import '../adult/adult_screen.dart';
+import '../editions/catalog_routes.dart';
 import '../chat/ai_connections_screen.dart';
 import '../integrations/integrations_screen.dart';
 import '../metadata/artwork.dart';
@@ -48,17 +49,49 @@ class _SettingsHomeScreenState extends State<SettingsHomeScreen> {
     String subtitle,
     VoidCallback onTap, {
     bool autofocus = false,
-  }) => Card(
-    margin: EdgeInsets.zero,
-    child: ListTile(
-      autofocus: autofocus,
-      contentPadding: const EdgeInsets.all(16),
-      leading: Icon(icon),
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: onTap,
+  }) => ListTile(
+    autofocus: autofocus,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+    leading: Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Icon(icon, size: 22),
     ),
+    title: Text(title, style: Theme.of(context).textTheme.titleMedium),
+    subtitle: Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(subtitle),
+    ),
+    trailing: const Icon(Icons.chevron_right, size: 20),
+    onTap: onTap,
+  );
+
+  Widget _group(String title, String description, List<Widget> items) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Semantics(
+        header: true,
+        child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+      ),
+      const SizedBox(height: 6),
+      Text(description, style: Theme.of(context).textTheme.bodySmall),
+      const SizedBox(height: 16),
+      Card(
+        margin: EdgeInsets.zero,
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            for (var i = 0; i < items.length; i++) ...[
+              if (i > 0) const Divider(height: 1, indent: 20, endIndent: 20),
+              items[i],
+            ],
+          ],
+        ),
+      ),
+    ],
   );
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -73,19 +106,16 @@ class _SettingsHomeScreenState extends State<SettingsHomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Preferences & connections',
+                  'Make it yours',
                   style: Theme.of(context).textTheme.headlineMedium,
                 ),
                 const SizedBox(height: 8),
-                const Text('Personalize viewing and manage your services.'),
+                const Text(
+                  'Viewing preferences, your services and optional connections.',
+                ),
                 const SizedBox(height: 24),
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    final width =
-                        constraints.maxWidth >= 800 &&
-                            MediaQuery.textScalerOf(context).scale(16) < 26
-                        ? (constraints.maxWidth - 16) / 2
-                        : constraints.maxWidth;
                     final items = <Widget>[
                       _item(
                         Icons.palette_outlined,
@@ -123,8 +153,8 @@ class _SettingsHomeScreenState extends State<SettingsHomeScreen> {
                       _item(
                         Icons.video_library_outlined,
                         'Adult library & sources',
-                        'Separate catalog, saved matches and adult release search',
-                        () => _open(const AdultLibraryScreen()),
+                        'Metadata, artwork and title matching',
+                        () => _open(createCatalogSettings()),
                       ),
                       _item(
                         Icons.auto_awesome,
@@ -162,13 +192,69 @@ class _SettingsHomeScreenState extends State<SettingsHomeScreen> {
                         'Optional assistant access and metadata providers',
                         () => _open(const IntegrationsScreen()),
                       ),
+                      _item(
+                        Icons.policy_outlined,
+                        'Terms & privacy',
+                        'Your data, provider services, rights and draft terms',
+                        () => _open(const LegalScreen()),
+                      ),
                     ];
-                    return Wrap(
-                      spacing: 16,
-                      runSpacing: 16,
+                    final viewing = _group(
+                      'Viewing',
+                      'How Zanzibarr looks and plays.',
+                      items.sublist(0, 4),
+                    );
+                    final services = _group(
+                      'Playback services',
+                      'Your Usenet connection and release search.',
+                      [items[6], items[7]],
+                    );
+                    final optional = _group(
+                      'Optional connections',
+                      'Add discovery, metadata and assistant tools.',
+                      [items[5], items[8], items[4]],
+                    );
+                    final application = _group(
+                      'About & privacy',
+                      'Understand your data and provider services.',
+                      [items[9]],
+                    );
+                    if (constraints.maxWidth >= 900 &&
+                        MediaQuery.textScalerOf(context).scale(16) < 26) {
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              children: [
+                                viewing,
+                                const SizedBox(height: 32),
+                                application,
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 32),
+                          Expanded(
+                            child: Column(
+                              children: [
+                                services,
+                                const SizedBox(height: 32),
+                                optional,
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                    return Column(
                       children: [
-                        for (final item in items)
-                          SizedBox(width: width, child: item),
+                        viewing,
+                        const SizedBox(height: 32),
+                        services,
+                        const SizedBox(height: 32),
+                        optional,
+                        const SizedBox(height: 32),
+                        application,
                       ],
                     );
                   },
@@ -190,7 +276,7 @@ class _SettingsHomeScreenState extends State<SettingsHomeScreen> {
                 ],
                 const SizedBox(height: 16),
                 const Text(
-                  'Some settings use English fallback. Credentials stay in your device secure storage.',
+                  'Some settings use English fallback. Connection credentials are stored securely on this device.',
                 ),
               ],
             ),

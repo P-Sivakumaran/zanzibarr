@@ -1267,4 +1267,25 @@ mod tests {
             Some("33dce3ecfd2d186566653db06253ceba.51")
         );
     }
+    #[test]
+    fn malformed_generated_inputs_and_extreme_volume_numbers_do_not_panic() {
+        let mut state = 0x5a17_u32;
+        for size in 0..512 {
+            let input: String = (0..size).map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                char::from((state % 128) as u8)
+            }).collect();
+            let _ = parse_nzb(&input);
+            let _ = crate::engine::yenc::decode(input.as_bytes());
+            let _ = split_rar_volume_name(&input);
+            let _ = split_7z_volume_name(&input);
+        }
+        for input in ["<nzb><file", "<!DOCTYPE nzb [<!ENTITY a 'x'>]><nzb>&a;</nzb>",
+            "film.part999999999999999999999999999999999.rar", "film.7z.999999999999999999999999999999999"] {
+            let _ = parse_nzb(input);
+            let _ = split_rar_volume_name(input);
+            let _ = split_7z_volume_name(input);
+        }
+    }
+
 }

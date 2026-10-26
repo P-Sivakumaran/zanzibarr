@@ -24,6 +24,8 @@ class _Storage implements PlayerPreferenceStorage {
 }
 
 class _Updates extends UpdateService {
+  @override
+  bool get canAutoInstall => true;
   final result = Completer<ReleaseInfo?>();
   final checks = <bool>[];
   final installed = <ReleaseInfo>[];

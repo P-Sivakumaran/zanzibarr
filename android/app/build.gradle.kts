@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -16,7 +18,7 @@ val hasReleaseSigning = releaseSigning.values.all { !it.isNullOrBlank() }
 android {
     namespace = "com.zanzibarr.zanzibarr"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -73,13 +75,14 @@ kotlin {
 // unrar C++ runtime paylaşımlı libc++ kullanır; libc++_shared.so NDK'dan
 // her ABI için jniLibs'e kopyalanır (yoksa dlopen "libc++_shared.so not
 // found" ile düşer). NDK dizini sürümden bağımsız çözülür.
+val localSdkProperties = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.isFile }?.inputStream()?.use { load(it) }
+}
+val pinnedSdkHome = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
+    ?: localSdkProperties.getProperty("sdk.dir")
 val ndkHome: String? = System.getenv("ANDROID_NDK_HOME")
     ?: System.getenv("ANDROID_NDK_ROOT")
-    ?: System.getenv("ANDROID_HOME")?.let { home ->
-        File("$home/ndk").takeIf { it.isDirectory }
-            ?.listFiles()?.filter { it.isDirectory }?.maxByOrNull { it.name }
-            ?.absolutePath
-    }
+    ?: pinnedSdkHome?.let { home -> File("$home/ndk/${android.ndkVersion}").absolutePath }
 val llvmHostTag = when {
     System.getProperty("os.name").startsWith("Windows", true) -> "windows-x86_64"
     System.getProperty("os.name").startsWith("Mac", true) ->
@@ -96,6 +99,11 @@ val libcxxAbis = mapOf(
 val libcxxOut = layout.buildDirectory.dir("libcxx/jniLibs").get().asFile
 val copyLibcxxShared = tasks.register("copyLibcxxShared") {
     doLast {
+        check(ndkHome != null) { "The pinned Android NDK is required; see docs/BUILD_TOOLCHAINS.md" }
+        val properties = Properties().apply {
+            File("$ndkHome/source.properties").inputStream().use { load(it) }
+        }
+        check(properties.getProperty("Pkg.Revision") == android.ndkVersion) { "ANDROID_NDK_HOME differs from the pinned NDK" }
         libcxxAbis.forEach { (abi, triple) ->
             val src = File(
                 "$ndkHome/toolchains/llvm/prebuilt/$llvmHostTag/sysroot/usr/lib/$triple/libc++_shared.so",

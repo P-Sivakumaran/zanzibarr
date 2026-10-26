@@ -1,3 +1,4 @@
+import '../editions/edition_storage.dart';
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -23,7 +24,7 @@ abstract interface class PlayerPreferenceStorage {
 /// is reused only as a cross-platform persistence backend.
 class FlutterSecurePlayerPreferenceStorage implements PlayerPreferenceStorage {
   FlutterSecurePlayerPreferenceStorage({FlutterSecureStorage? storage})
-    : _storage = storage ?? const FlutterSecureStorage();
+    : _storage = storage ?? const EditionSecureStorage();
 
   final FlutterSecureStorage _storage;
 
@@ -363,8 +364,8 @@ class MediaPreferences {
 
   static String _sanitizeSubtitleColor(String value) =>
       _subtitleColorPattern.hasMatch(value.trim())
-          ? value.trim().toUpperCase()
-          : defaultSubtitleColor;
+      ? value.trim().toUpperCase()
+      : defaultSubtitleColor;
 
   static String _sanitizeSubtitleFont(String value) =>
       subtitleFontFor(value.trim()).id;

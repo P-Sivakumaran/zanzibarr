@@ -13,6 +13,11 @@ on:
       tag:
         description: 'Yayınlanacak tag (ör. v1.4)'
         required: true
+      platform:
+        description: 'Prepare an independent platform draft, or all platforms'
+        type: choice
+        default: all
+        options: [all, windows, linux, android, ios]
 
 permissions:
   contents: write
@@ -23,7 +28,7 @@ jobs:
     outputs:
       sha: ${{ steps.revision.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.sha }}
       - id: revision
@@ -40,61 +45,64 @@ jobs:
       ref: ${{ needs.revision.outputs.sha }}
 
   android:
+    if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'android'
     needs: revision
     uses: ./.github/workflows/android-build.yml
     with:
       ref: ${{ needs.revision.outputs.sha }}
     secrets: inherit
   windows:
+    if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows'
     needs: revision
     uses: ./.github/workflows/windows-build.yml
     with:
       ref: ${{ needs.revision.outputs.sha }}
   linux:
+    if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux'
     needs: revision
     uses: ./.github/workflows/linux-build.yml
     with:
       ref: ${{ needs.revision.outputs.sha }}
   ios:
+    if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios'
     needs: revision
     uses: ./.github/workflows/ios-build.yml
     with:
       ref: ${{ needs.revision.outputs.sha }}
 
   publish:
+    if: >-
+      always() && !cancelled() && needs.revision.result == 'success' &&
+      needs.verify.result == 'success' &&
+      contains(fromJSON('["success","skipped"]'), needs.android.result) &&
+      contains(fromJSON('["success","skipped"]'), needs.windows.result) &&
+      contains(fromJSON('["success","skipped"]'), needs.linux.result) &&
+      contains(fromJSON('["success","skipped"]'), needs.ios.result) &&
+      (needs.android.result == 'success' || needs.windows.result == 'success' ||
+       needs.linux.result == 'success' || needs.ios.result == 'success')
     needs: [revision, verify, android, windows, linux, ios]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ needs.revision.outputs.sha }}
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: zanzibarr-*
           merge-multiple: true
 
-      # Android tek zip taşır; bölünmüş APK'lar açığa çıkarılır.
-      - name: Paketleri hazırla
-        run: |
-          unzip -o zanzibarr-android.zip -d .
-          rm zanzibarr-android.zip
-          sha256sum zanzibarr-android-*.apk zanzibarr-windows-x64.zip \
-            zanzibarr-windows-x64-setup.exe zanzibarr-linux-x64.tar.gz \
-            zanzibarr-linux-x64.deb zanzibarr-ios-unsigned.ipa > SHA256SUMS
-          ls -la
+      - name: Prepare only selected draft assets
+        id: assets
+        env:
+          CANDIDATE_PLATFORM: ${{ inputs.platform || 'all' }}
+          SOURCE_SHA: ${{ needs.revision.outputs.sha }}
+        run: python3 tools/prepare_release_assets.py --platform "$CANDIDATE_PLATFORM" --source-sha "$SOURCE_SHA"
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           draft: true
           body_path: docs/releases/${{ inputs.tag || github.ref_name }}.md
-          files: |
-            zanzibarr-android-*.apk
-            zanzibarr-windows-x64.zip
-            zanzibarr-windows-x64-setup.exe
-            zanzibarr-linux-x64.tar.gz
-            zanzibarr-linux-x64.deb
-            zanzibarr-ios-unsigned.ipa
-            SHA256SUMS
+          files: ${{ steps.assets.outputs.files }}
           fail_on_unmatched_files: true

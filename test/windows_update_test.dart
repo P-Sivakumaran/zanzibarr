@@ -27,6 +27,7 @@ void main() {
   WindowsUpdateInstaller create({
     String? sums,
     int status = 200,
+    Future<void> Function(String)? publisher,
   }) => WindowsUpdateInstaller(
     client: MockClient((request) async {
       if (request.url.path.endsWith('/SHA256SUMS')) {
@@ -39,8 +40,22 @@ void main() {
       return http.Response.bytes(payload, status);
     }),
     temporaryDirectory: () async => temporary,
+    verifyPublisher: publisher ?? (_) async {},
     launch: (path) async => launched.add(path),
   );
+
+  test('a correct checksum cannot bypass publisher rejection', () async {
+    await expectLater(
+      create(
+        publisher: (_) async {
+          throw StateError('Untrusted publisher');
+        },
+      ).install(installerUrl: installerUrl, checksumsUrl: checksumsUrl),
+      throwsStateError,
+    );
+    expect(launched, isEmpty);
+    expect(await temporary.list().toList(), isEmpty);
+  });
 
   test('launches only the fully downloaded, verified installer', () async {
     final progress = <double>[];

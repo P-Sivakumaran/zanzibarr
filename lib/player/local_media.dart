@@ -1,3 +1,4 @@
+import '../editions/edition.dart';
 import 'dart:io';
 import '../src/rust/api/streaming.dart';
 
@@ -5,6 +6,9 @@ const localFileEntryKey = 'local-file';
 
 /// Reuse player controls/history without creating a native streaming session.
 Future<StreamInfo> prepareLocalPlayback(String path) async {
+  if (Edition.current == AppEdition.clean) {
+    throw StateError("Clean requires verified media provenance");
+  }
   final file = File(path).absolute;
   if (!await file.exists()) {
     throw StateError('Local video is no longer available');

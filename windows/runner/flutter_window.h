@@ -9,6 +9,7 @@
 #include <memory>
 
 #include "win32_window.h"
+#include "edition_auth.h"
 
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
@@ -40,6 +41,8 @@ class FlutterWindow : public Win32Window {
   // Platform channel shared with the existing macOS implementation.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       window_channel_;
+
+  std::unique_ptr<EditionAuthentication> edition_auth_;
 
   bool is_picture_in_picture_ = false;
   WINDOWPLACEMENT picture_in_picture_restore_placement_{};

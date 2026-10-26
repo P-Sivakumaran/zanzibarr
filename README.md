@@ -49,7 +49,7 @@ repeatable packaging. You supply your own Usenet provider account and NZB source
 
 Archive compatibility is not universal; a reported RAR4 parsing issue remains
 under investigation. Device playback, casting and accessibility checks for the
-latest candidate are still pending. See the [release notes](docs/releases/v1.25.md).
+latest candidate are still pending. See the [release notes](docs/releases/v1.31.md).
 
 ## Get started
 
@@ -66,14 +66,19 @@ The executable is not a standalone single-file application.
 
 **Updates:** open **Settings → Check for updates**. When a newer published
 release is available, Windows **Update now** downloads and verifies the installer,
-then opens Setup to upgrade the app. Builds made before this button was added
+then opens Setup only after publisher verification. Automatic Windows installation
+remains unavailable until the real publisher trust pins are configured; use the
+release-page action to inspect available downloads. Builds made before this button was added
 need one manual upgrade. Your settings and history are retained; portable users
 are offered a per-user installation.
 
 ## Platforms and release status
 
-The current local candidate is **1.25.0+26**. A local build does not imply a
-published GitHub release or validation on every platform.
+The next candidate is **1.31.0+32**, with interface refinement and reliability
+improvements. Its release commit and packages exclude unfinished hosted-catalogue
+work retained locally. Each artifact's source manifest and verification record
+identify what was actually built. Local builds and draft releases do not
+establish stable availability or validation on every platform.
 
 | Platform | Packaging and current requirements |
 |---|---|
@@ -84,8 +89,10 @@ published GitHub release or validation on every platform.
 | **macOS arm64** | Requires a Mac, compatible media frameworks and signing/notarization work. No current fork package is claimed. |
 | **Web** | Unsupported: the engine depends on native networking and libraries. |
 
-Read the [v1.25 notes](docs/releases/v1.25.md) and [release runbook](docs/RELEASING.md)
-for verification results. Published assets are the source of truth for downloads;
+Read the [v1.31 notes](docs/releases/v1.31.md),
+[candidate verification](docs/RELEASE_CANDIDATE_1.31.md) and
+[release runbook](docs/RELEASING.md) for verification results.
+Published assets are the source of truth for downloads;
 upstream releases are separate from this fork.
 
 ## How it works
@@ -154,6 +161,16 @@ For questions while Issues is disabled, use contact options on the
 **If zanzibarr is useful to you, give the repository a star.** It helps other
 Usenet users discover the project. Testing a candidate and sharing actionable
 feedback also helps move releases forward.
+
+## Terms and privacy (draft)
+
+Settings → **Terms & privacy** provides offline, versioned draft documents and
+package notices. Read the [terms draft](docs/legal/TERMS_DRAFT.md),
+[privacy draft](docs/legal/PRIVACY_DRAFT.md),
+[legal assessment](docs/LEGAL_REGULATORY_ASSESSMENT_2026-10-22.md) and
+[verified data map](docs/PRIVACY_DATA_MAP_2026-10-22.md).
+Publisher/contact details, distribution scope and software-licence permissions
+still need confirmation before these drafts are adopted as final policies.
 
 ## Credits
 

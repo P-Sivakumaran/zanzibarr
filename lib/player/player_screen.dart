@@ -1,3 +1,6 @@
+import 'native_playback_session.dart';
+import '../editions/edition.dart';
+import '../editions/playback_lock.dart';
 import '../settings/series_settings_screen.dart';
 import '../metadata/metadata_service.dart';
 import '../metadata/metadata_enrichment.dart';
@@ -188,8 +191,11 @@ class _PlayerScreenState extends State<PlayerScreen>
   String _status = '';
   String _engineStatus = '';
   StreamInfo? _info;
-  StreamInfo? _nativeStream;
-  BigInt? _pendingSessionId;
+  late final _nativeSession = NativePlaybackSession(
+    stop: (id) => stopStream(sessionId: id),
+  );
+  StreamInfo? get _nativeStream => _nativeSession.info;
+  BigInt? get _pendingSessionId => _nativeSession.pendingId;
   Object? _error;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
@@ -340,6 +346,15 @@ class _PlayerScreenState extends State<PlayerScreen>
   // Video sığdırma kipi: false=contain (oran korunur), true=cover (doldur).
   bool _videoFill = false;
 
+  void _stopForEditionLock() {
+    // Do not queue behind visual controls or secure-storage writes.
+    unawaited(_player.stop().catchError((Object _) {}));
+    final cast = _castSession;
+    if (cast != null) {
+      unawaited(_castService.stopCasting().catchError((Object _) {}));
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -361,6 +376,9 @@ class _PlayerScreenState extends State<PlayerScreen>
         libassAndroidFontName: 'Noto Sans',
       ),
     );
+    if (Edition.current == AppEdition.restricted) {
+      EditionPlaybackLock.stop = _stopForEditionLock;
+    }
     _integrationPlayback = IntegrationPlayback(
       status: () => {
         'active': _playbackReady && !_disposing,
@@ -597,18 +615,20 @@ class _PlayerScreenState extends State<PlayerScreen>
         PlaybackEvent.providerConnecting,
         PlaybackStage.connecting,
       );
-      final sessionId = await beginStream(
-        config: ProviderConfigDto(
-          host: settings.host,
-          port: settings.port,
-          username: settings.username,
-          password: settings.password,
-          maxConnections: settings.maxConnections,
+      final sessionId = await _nativeSession.begin(
+        () => beginStream(
+          config: ProviderConfigDto(
+            host: settings.host,
+            port: settings.port,
+            username: settings.username,
+            password: settings.password,
+            maxConnections: settings.maxConnections,
+          ),
+          nzbPath: widget.nzbPath,
+          entryKey: entryKey,
         ),
-        nzbPath: widget.nzbPath,
-        entryKey: entryKey,
       );
-      _pendingSessionId = sessionId;
+      if (sessionId == null) return;
       _tracePollTimer?.cancel();
       _tracePollTimer = Timer.periodic(
         const Duration(seconds: 1),
@@ -621,8 +641,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
 
       final info = await awaitStream(sessionId: sessionId);
-      _pendingSessionId = null;
-      _nativeStream = info;
+      if (!_nativeSession.adopt(info)) return;
       _diagnostics.record(
         info.compressed
             ? PlaybackEvent.archivePrepared
@@ -1135,14 +1154,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         sessionId,
       ).timeout(const Duration(milliseconds: 250), onTimeout: () {});
     }
-    _nativeStream = null;
-    _pendingSessionId = null;
-    if (sessionId == null) return;
-    try {
-      await stopStream(sessionId: sessionId);
-    } catch (_) {
-      // Ekran kapanırken temizlik hatası kullanıcı akışını engellememeli.
-    }
+    await _nativeSession.release(expectedId: sessionId);
   }
 
   // --- Cast (TV'ye yansıtma) ---
@@ -1508,6 +1520,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   @override
   void dispose() {
+    if (EditionPlaybackLock.stop == _stopForEditionLock) {
+      EditionPlaybackLock.stop = null;
+    }
     _episodeMetadata?.close();
     _episodeEnrichment?.close();
     IntegrationRuntime.instance.detachPlayback(_integrationPlayback);
@@ -1523,6 +1538,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     _castStateSubscription?.cancel();
     unawaited(_castService.dispose());
     _disposing = true;
+    // Revoke native ownership before waiting for visual/preference queues.
+    unawaited(_nativeSession.close());
     _tracePollTimer?.cancel();
     _diagnostics.dispose();
     _scrubGeneration++;

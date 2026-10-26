@@ -162,7 +162,7 @@ impl RepairOverlay {
     pub fn dir_for_nzb(nzb_path: &Path) -> PathBuf {
         let key = sha2::Sha256::digest(nzb_path.to_string_lossy().as_bytes());
         let short: String = key[..8].iter().map(|b| format!("{b:02x}")).collect();
-        std::env::temp_dir().join("zanzibarr-repair").join(short)
+        crate::edition::temporary_root().join("zanzibarr-repair").join(short)
     }
 
     /// Katmanı diske yazar. Dizin yapısı: manifest.tsv + <özet>/<dilim>.bin.
@@ -819,7 +819,7 @@ mod tests {
     }
 
     fn overlay_dir(tag: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("zanzibarr-repair-test-{tag}"))
+        crate::edition::temporary_root().join(format!("zanzibarr-repair-test-{tag}"))
     }
 
     fn report_progress() -> (Box<RepairProgressFn>, Arc<AtomicU64>) {

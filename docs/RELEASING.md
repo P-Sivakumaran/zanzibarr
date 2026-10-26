@@ -124,3 +124,20 @@ for every supported platform; this workflow does not change update channels.
 The updater consumes the fork's latest published release; drafts do not trigger
 updates. To roll back a bad distribution, remove its latest-release status and
 publish a corrected higher version; do not reuse tags or Android version codes.
+
+
+## Independent platform drafts and source inventory
+
+The manual Release workflow now accepts a platform selection (`all`, `windows`,
+`linux`, `android`, `ios`). A selected platform still uses shared verification
+and one resolved source SHA, but unrelated platform signing/build jobs are
+skipped. Asset preparation requires the exact selected filenames, writes
+`SOURCE.json` and `SHA256SUMS`, and creates a draft only. Tag-triggered builds
+still prepare all platforms. Do not silently replace already published assets.
+
+Builds retain separate `audit-*` artifacts with dependency/artifact inventory
+and Android ELF/ZIP alignment evidence. These do not establish publisher
+authentication, complete native licensing or device acceptance. See
+[build inputs](BUILD_TOOLCHAINS.md) and the
+[stack remediation ledger](STACK_REMEDIATION_2026-10-26.md). Public promotion
+still requires the applicable real signing and clean-user/device gates.

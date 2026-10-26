@@ -180,7 +180,7 @@ class _TitleArtworkState extends State<TitleArtwork> {
   void initState() {
     super.initState();
     ArtworkPreferences.shared.addListener(_policyChanged);
-    unawaited(ArtworkPreferences.shared.load());
+    if (widget.loader == null) unawaited(ArtworkPreferences.shared.load());
   }
 
   void _policyChanged() {
@@ -200,6 +200,9 @@ class _TitleArtworkState extends State<TitleArtwork> {
   @override
   void didUpdateWidget(TitleArtwork old) {
     super.didUpdateWidget(old);
+    if (widget.loader == null && old.loader != null) {
+      unawaited(ArtworkPreferences.shared.load());
+    }
     if (widget.url != old.url || widget.loader != old.loader) {
       _image = _loadImage();
     }
@@ -290,21 +293,23 @@ class ArtworkPreferences extends ChangeNotifier {
 }
 
 class ArtworkSettings extends StatefulWidget {
-  const ArtworkSettings({super.key});
+  const ArtworkSettings({super.key, this.preferences});
+  final ArtworkPreferences? preferences;
   @override
   State<ArtworkSettings> createState() => _ArtworkSettingsState();
 }
 
 class _ArtworkSettingsState extends State<ArtworkSettings> {
+  late final _preferences = widget.preferences ?? ArtworkPreferences.shared;
   @override
   void initState() {
     super.initState();
-    unawaited(ArtworkPreferences.shared.load());
+    unawaited(_preferences.load());
   }
 
   @override
   Widget build(BuildContext context) {
-    final prefs = ArtworkPreferences.shared;
+    final prefs = _preferences;
     return ListenableBuilder(
       listenable: prefs,
       builder: (context, _) => Column(

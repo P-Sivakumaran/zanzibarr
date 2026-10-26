@@ -97,7 +97,7 @@ impl CompressedRarEntrySource {
             ));
         };
 
-        let temp_dir = std::env::temp_dir().join(format!(
+        let temp_dir = crate::edition::temporary_root().join(format!(
             "zanzibarr-rar-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
@@ -499,7 +499,7 @@ mod tests {
                 ("set.part02.rar".into(), vec![2u8; 10]),
             ],
         };
-        let dir = std::env::temp_dir().join(format!("zanzibarr-spool-test-{}", std::process::id()));
+        let dir = crate::edition::temporary_root().join(format!("zanzibarr-spool-test-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
 
         let first = spool_volumes(&volumes, &dir, &shared).await.unwrap();
@@ -533,7 +533,7 @@ mod tests {
             eprintln!("fixture yok, test atlanıyor: {}", fixture.display());
             return;
         }
-        let out = std::env::temp_dir().join(format!("zanzibarr-decode-test-{}.mkv", std::process::id()));
+        let out = crate::edition::temporary_root().join(format!("zanzibarr-decode-test-{}.mkv", std::process::id()));
         decode_member(&fixture, "movie.mkv", &out, None).unwrap();
         let data = fs::read(&out).unwrap();
         assert_eq!(sha256_hex(&data), MOVIE_SHA256);
@@ -542,7 +542,7 @@ mod tests {
 
     #[test]
     fn decode_handles_multipart_compressed_set() {
-        let out = std::env::temp_dir()
+        let out = crate::edition::temporary_root()
             .join(format!("zanzibarr-split-test-{}.mkv", std::process::id()));
         let first = fixture_path("compressed-split.part01.rar");
         decode_member(&first, "movie.mkv", &out, None).unwrap();
@@ -553,7 +553,7 @@ mod tests {
 
     #[test]
     fn decode_extracts_hp_encrypted_with_password() {
-        let out = std::env::temp_dir()
+        let out = crate::edition::temporary_root()
             .join(format!("zanzibarr-enc-test-{}.mkv", std::process::id()));
         let first = fixture_path("encrypted-movie.rar");
         decode_member(&first, "movie.mkv", &out, Some("TESTPASS123")).unwrap();
@@ -564,7 +564,7 @@ mod tests {
 
     #[test]
     fn decode_rejects_wrong_password() {
-        let out = std::env::temp_dir()
+        let out = crate::edition::temporary_root()
             .join(format!("zanzibarr-encw-test-{}.mkv", std::process::id()));
         let first = fixture_path("encrypted-movie.rar");
         let result = decode_member(&first, "movie.mkv", &out, Some("YANLIS"));
@@ -577,7 +577,7 @@ mod tests {
         let (_sender, shared) = shared_running();
         let fixture = fs::read(fixture_path("compressed-movie.rar")).unwrap();
         let volumes = MemoryVolumes::single("film.rar", fixture);
-        let dir = std::env::temp_dir()
+        let dir = crate::edition::temporary_root()
             .join(format!("zanzibarr-e2e-test-{}", std::process::id()));
         let output = dir.join("video.out");
 
@@ -595,7 +595,7 @@ mod tests {
     async fn write_range_waits_for_growing_output() {
         // Çözülmüş çıktıyı taklit eden, yavaş büyüyen bir dosya: okuyucu
         // henüz yazılmamış aralığı beklemeli, sonra servis etmeli.
-        let dir = std::env::temp_dir()
+        let dir = crate::edition::temporary_root()
             .join(format!("zanzibarr-grow-test-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let output = dir.join("video.out");

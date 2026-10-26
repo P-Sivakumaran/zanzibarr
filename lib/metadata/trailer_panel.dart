@@ -1,10 +1,10 @@
+import '../editions/edition_paths.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:path_provider/path_provider.dart';
 import '../settings/enrichment_settings.dart';
 import 'title_trailer.dart';
 import 'trailer_navigation.dart';
@@ -185,7 +185,7 @@ class _EmbeddedTrailerState extends State<_EmbeddedTrailer>
         _deadline?.cancel();
         return false;
       }
-      final directory = await getApplicationSupportDirectory();
+      final directory = await editionSupportDirectory();
       final environment = await WebViewEnvironment.create(
         settings: WebViewEnvironmentSettings(
           userDataFolder: '${directory.path}/trailer-webview',

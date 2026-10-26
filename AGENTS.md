@@ -509,6 +509,20 @@ not committed, pushed or published. See [review and evidence](docs/SERIES_NAVIGA
 
 ## 8. Next work and handoff
 
+**2026-10-22 - Terms/privacy drafts:** Added offline Settings legal pages with
+versioned JSON drafts, readable Markdown exports, contents navigation, package
+notices, provider links and TMDB credit. Assessed actual data flows and primary
+AU/conditional overseas legal sources. Top-level application redistribution
+permission, native licence provenance, adult-service scope/provider terms and
+publisher/private-contact/territories remain unresolved; do not present drafts
+as finalized compliance or invent a licence. Fresh gate: 280 Rust, Clippy,
+analysis, host build, 519 Flutter tests (10 skips); five focused checks and
+document/whitespace validation passed. Preserved catalog WIP; no installer,
+installation, process shutdown, commit/push/publication. See
+[implementation](docs/LEGAL_INTERFACE_IMPLEMENTATION_2026-10-22.md),
+[assessment](docs/LEGAL_REGULATORY_ASSESSMENT_2026-10-22.md) and
+[data map](docs/PRIVACY_DATA_MAP_2026-10-22.md).
+
 **2026-10-22 - Completed-work review:** Reviewed against 3080da6, preserving and
 excluding unfinished v1.27 hosted-catalog work. Corrected cancelled MCP operation
 budget leakage, NxNN multi-episode matching and mixed uncited research context.
@@ -587,3 +601,49 @@ control/client tools, metadata-provider plugins and official Codex managed
 account sign-in. Setup and authentication boundaries are documented in
 [INTEGRATIONS.md](docs/INTEGRATIONS.md); verification and platform limits are in
 the dated integration handoff above. No live OAuth or inference was initiated.
+
+
+**2026-10-26 edition split development:** Added isolated Windows Clean/Restricted
+source profiles, secure storage/browser/temp scopes, native edition verification
+and admission, Restricted OS authentication/relock/cancellation and separate
+installer identities. Clean stays closed with an empty approved library until a
+trusted catalogue and media provenance are implemented. Root defaults Legacy;
+unfinished hosted-catalogue/legal WIP and the installed app were preserved.
+Shared gate: 284 Rust tests, Clippy, analysis, host build, 535 Flutter tests
+(10 opt-in skips), whitespace; ten preparation tests and actionlint passed.
+Both actual profiles passed four native admission tests each. Both Windows
+builds and unsigned setup/ZIP packages passed identity/hash/ZIP
+audits under `dist/editions/artifacts/{clean,restricted}-08/`. Do not describe
+these as a completed two-edition release. Clean catalogue/playback, signed update
+channels, legal/provider/age-assurance decisions, icon badges, clean-user/live
+Windows authentication and other-platform validation remain. No install,
+commit, push or publication. See
+[implementation/evidence](docs/EDITION_SPLIT_IMPLEMENTATION_2026-10-26.md).
+
+
+**2026-10-26 stack remediation:** Implemented bounded media HTTP admission
+(32 tasks/listener, 10s headers, 60s stalled writes), decoded-cache residency
+limits (32 MiB/source, shared 256 MiB reservations), atomic secure provider
+records, native-session ownership/stale-result and stale-error protection,
+and corruption-aware encrypted history/watchlist recovery with deletion-aware
+retention cleanup. Explicit edition route composition replaces main/settings
+text rewrites. Android media JARs are source-pinned by size/SHA256; four actual
+downloads and eight ELF checks passed. Added APK native audit, backup exclusions,
+pinned NDK/CI Rust/Actions, retained build inventories, advisory/dependency
+maintenance and independently selectable platform draft preparation. Windows
+installer launch now requires trusted Authenticode identity; no publisher pins
+exist, so the UI offers manual release viewing. Signed-manifest/channel and
+trust provisioning remain unfinished; do not claim authenticated public updates.
+Actual scans found/fixed six TLS advisories plus warnings through targeted
+rustls/webpki/Tokio/anyhow/futures/backtrace updates in both relevant lockfiles.
+Final scans: zero vulnerabilities/warnings. Ordered gate: 290 Rust, Clippy,
+analysis, native build, 552 Flutter (10 skips), whitespace; final Dart-only
+correction revalidated by analysis and 553 Flutter (10 skips). CLI all-target
+check, 18 tooling regressions, actionlint and backup XML checks passed.
+No new installer, installation, commit, push or publication; installed playback
+was preserved. Full player-orchestration extraction, signed manifests, native
+licence/provenance completion, device/clean-user baselines, trusted Clean
+catalogue and RAR4 reproducer/coverage-guided fuzzing remain explicit work.
+See [implementation ledger](docs/STACK_REMEDIATION_2026-10-26.md),
+[toolchain contract](docs/BUILD_TOOLCHAINS.md), logs under
+`dist/audit/stack-remediation/`. Previous packaged artifacts lack these fixes.

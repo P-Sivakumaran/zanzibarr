@@ -1,3 +1,6 @@
+import 'publisher_verification.dart';
+import '../editions/edition.dart';
+import '../editions/edition_paths.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -6,7 +9,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../player/media_preferences.dart';
@@ -116,6 +118,7 @@ class UpdateService {
 
   /// Yeni sürüm varsa ve kullanıcı onu atlamadıysa bilgisini döndürür.
   Future<ReleaseInfo?> checkForUpdate({bool ignoreSkipped = false}) async {
+    if (!Edition.legacyUpdatesAllowed) return null;
     final current = await currentVersion();
     final response = await _client
         .get(Uri.parse(releasesApiUrl))
@@ -160,7 +163,9 @@ class UpdateService {
 
   bool get canAutoInstall =>
       defaultTargetPlatform == TargetPlatform.android ||
-      defaultTargetPlatform == TargetPlatform.windows;
+      (defaultTargetPlatform == TargetPlatform.windows &&
+          (windowsInstaller != null ||
+              trustedWindowsPublisherThumbprints.isNotEmpty));
 
   /// Güncellemeyi indirir ve (Android) kurulum ekranını açar. Masaüstü ve
   /// iOS'ta release sayfasını tarayıcıda açar.
@@ -170,7 +175,14 @@ class UpdateService {
     ReleaseInfo release, {
     ValueChanged<double>? onProgress,
   }) async {
+    if (!Edition.legacyUpdatesAllowed) {
+      throw StateError("Edition updates require a verified edition channel");
+    }
     if (defaultTargetPlatform == TargetPlatform.windows) {
+      if (!canAutoInstall) {
+        await launchUrl(Uri.parse(release.pageUrl));
+        return;
+      }
       if (_installing) throw StateError('An update is already downloading');
       final installer = release.assets[WindowsUpdateInstaller.installerName];
       final checksums = release.assets['SHA256SUMS'];
@@ -204,7 +216,7 @@ class UpdateService {
     if (response.statusCode != 200) {
       throw StateError('İndirme başarısız: HTTP ${response.statusCode}');
     }
-    final dir = await getTemporaryDirectory();
+    final dir = await editionTemporaryDirectory();
     final file = File('${dir.path}/zanzibarr-update.apk');
     final sink = file.openWrite();
     final total = response.contentLength ?? 0;

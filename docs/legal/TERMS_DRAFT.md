@@ -1,0 +1,83 @@
+# Terms of use
+
+**Draft for review — 2026-10-22.draft1**
+
+The legal publisher, private contact details and distribution territories are not yet confirmed. This is proposed wording, not a finalized service agreement or a statement of legal compliance.
+
+> Generated review copy from [JSON source](../../assets/legal/terms.json). Edit that source and run `python tools/export_legal_documents.py` to refresh both documents.
+
+Zanzibarr is a local media application. Use content and services you are entitled to access, protect your credentials, and check each optional provider's terms and charges. Your mandatory legal rights and applicable software licences are preserved.
+
+## 1. The application and its publisher
+
+These proposed terms concern Treewizard's Zanzibarr fork at github.com/P-Sivakumaran/zanzibarr. The legal person responsible for publication and a private legal contact must be identified before these terms are finalized. Upstream authors and third-party providers are not represented as parties to this agreement.
+
+Zanzibarr plays local files and can retrieve Usenet articles through services you configure. It can process archives, use temporary disk space, save local viewing state and connect to optional metadata, AI, casting and assistant services. It is not itself a Usenet access provider, hosted indexer, film distributor or subscription catalogue. Content being discoverable does not establish a right to access or copy it.
+
+## 2. Accounts, subscriptions and costs
+
+The current application has no Zanzibarr membership account, application subscription or payment checkout. Providers and indexers may require their own accounts and paid subscriptions. Metadata, AI and web-search calls may incur separate charges, including calls already issued before cancellation.
+
+Deal directly with the service you choose for billing, cancellation, refunds, account limits and support. Zanzibarr does not promise that a provider's price, free tier, API, catalogue or availability will remain unchanged. Nothing here removes a refund or remedy required by applicable law.
+
+Provider eligibility is separate from price. For example, the reviewed Gemini API terms require adult users, restrict API clients directed at or likely to be accessed by under-18s, specify professional/business rather than consumer use, and require Paid Services for clients made available in the EEA, Switzerland or UK. Confirm that your use fits the applicable terms; a free quota or BYO key does not establish permission.
+
+## 3. Lawful and responsible use
+
+Access, download, play, cast or share material only when you have the necessary permission and the activity is lawful where it occurs. Do not use Zanzibarr to infringe intellectual property, evade lawful access controls or DRM, misuse another person's credentials, exceed provider permissions, or obtain unlawful material.
+
+Do not use integrations to distribute malware, obtain unauthorized access, harass or threaten people, expose private information, or access child sexual abuse or non-consensual intimate material. Do not download or attach suspected illegal material to a support report. Use appropriate official reporting channels for immediate threats or illegal content.
+
+Follow each service's own API, attribution, storage, redistribution, account-sharing and rate-limit conditions. Having an API key or a working technical connection does not grant rights beyond those conditions. These terms do not grant permission to scrape a provider's website.
+
+## 4. Adult features and age restrictions
+
+Optional adult features are intended only for adults aged 18 or over, or a higher age required locally, and only where the particular material and access are lawful. Keep restricted content inaccessible to children and other unauthorized viewers. A separate adult catalogue is not a private or incognito viewing mode; playback history can be shared with the rest of the application.
+
+An age declaration or these terms are not a substitute for any legally required age assurance, content restrictions or reporting arrangements. Availability of a source in the code does not establish that it is approved for distribution in every country or app store. Provider policies can restrict use of their metadata or images alongside adult content.
+
+## 5. Credentials, devices and local integrations
+
+Use your own authorized credentials and keep them confidential. Protect your device, operating-system account, backups and home network. Prefer supported encrypted service connections. Secure storage is not a guarantee against a compromised device or someone with access to your account.
+
+Enable casting, local MCP access or external plugins only for trusted devices and clients. Tokens are credentials; assistants sharing a token can share authority. Do not expose local listeners or third-party administration interfaces publicly without the authentication and security appropriate to that service.
+
+You choose which permissions to enable and what information to send to providers. Software safeguards do not transfer every legal responsibility to you or exclude obligations the publisher has under applicable law.
+
+## 6. Recommendations, metadata and playback estimates
+
+AI replies, title matches, ratings, artwork, episode data, subtitles and external links can be incomplete, wrong, outdated or unsuitable. Provider attribution identifies a source, not endorsement or a guarantee of accuracy. Confirm important facts with the original source.
+
+Automatic release choice estimates suitability from available size, runtime, resolution and your connection budget. It does not verify every segment, prove playback compatibility or guarantee quality. Recovery, resume, casting, updates and temporary-file cleanup can fail. Keep independent copies of data you need to retain.
+
+## 7. Software, media and third-party rights
+
+Source code, bundled components, artwork, films, metadata and trademarks have different owners and may have different licences. Applicable component licences and their notices continue to govern those components; these terms neither replace them nor restrict rights they grant. A public repository alone is not a blanket licence to redistribute all of its contents.
+
+The application's top-level redistribution licence and permissions require confirmation before further distribution. No new licence to upstream code or third-party media is granted by this draft. Do not interpret personal-use wording in an external provider's rules as a licence restriction on unrelated software.
+
+Preserve required credits and notices. Check the licences and source-distribution obligations of the exact native binaries you redistribute. Package licence listings do not certify every bundled native component or grant rights to provider media, logos or other trademarks.
+
+## 8. Privacy and support material
+
+Read the separate Privacy notice for local storage, network requests, optional integrations and your controls. Opening these pages does not consent to every optional data flow. Use the controls for each feature.
+
+Share only support information you are entitled to disclose. Remove credentials, private URLs, personal information and copyrighted media before sending a report. Do not assume a public repository post is confidential. Any separate contribution licence or submission agreement must be stated when contributions are accepted; this draft does not impose a blanket licence over private support material.
+
+## 9. Availability, warranties and mandatory rights
+
+The project is provided on a best-effort basis, without a promised service level, uninterrupted availability or guaranteed support response. Where lawful, applicable software licences may provide the software without warranties. Nothing in these terms excludes, restricts or modifies a consumer guarantee, statutory duty or remedy that cannot lawfully be excluded.
+
+Any final limitation of liability must be reviewed for the publisher, activity and countries involved. This draft does not impose an unlimited user indemnity, waive liability for every consequence, require arbitration, exclude class proceedings, or impose a universal no-refunds rule.
+
+## 10. Copyright, safety and other concerns
+
+The publisher can investigate material it controls in the project's source, documentation or distributed application, and may correct or remove that material where appropriate. It cannot promise to remove articles from Usenet or content controlled by an independent provider. Report provider-hosted material through that provider's reporting process as well.
+
+A private reporting address must be published before these terms are finalized. A report about project-controlled material should identify the material and its location, the right or safety concern, your authority where relevant, and a safe way to reply. Do not send illegal media or unnecessary personal documents. No fixed takedown deadline or US DMCA safe-harbour status is promised by this draft.
+
+## 11. Changes and applicable law
+
+Documents are versioned so changes can be reviewed. Material new processing should be explained before it occurs, with fresh permission where required. Merely opening the application is not recorded as acceptance of this draft, and this version does not introduce a compulsory acceptance screen.
+
+The publisher's legal location, distribution territories and any final governing-law or dispute clause remain to be confirmed. Mandatory protections that apply to you are not displaced by this draft. Reassess these documents if accounts, payments, hosting, analytics, synchronization or other materially different services are introduced.

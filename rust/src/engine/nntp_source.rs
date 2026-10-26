@@ -14,7 +14,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
 use std::io;
 use std::ops::Range;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use tokio::io::{AsyncWrite, AsyncWriteExt};
@@ -56,9 +57,52 @@ pub(crate) async fn read_body_with_timeout(
 }
 
 /// Çözülmüş segment verisi için basit kapasiteli FIFO önbellek.
+// Aggregate cache residency across archive volumes and simultaneous sources.
+// Active readers may retain Arc clones after eviction; this is not a total
+// decoder/process-memory guarantee and never blocks a requested segment fetch.
+struct CacheBudget {
+    limit: usize,
+    used: AtomicUsize,
+}
+struct CacheReservation {
+    budget: Arc<CacheBudget>,
+    bytes: usize,
+}
+impl Drop for CacheReservation {
+    fn drop(&mut self) {
+        self.budget.used.fetch_sub(self.bytes, Ordering::AcqRel);
+    }
+}
+impl CacheBudget {
+    fn reserve(self: &Arc<Self>, bytes: usize) -> Option<CacheReservation> {
+        self.used
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+                (bytes <= self.limit.saturating_sub(used)).then(|| used + bytes)
+            })
+            .ok()?;
+        Some(CacheReservation {
+            budget: Arc::clone(self),
+            bytes,
+        })
+    }
+}
+static CACHE_BUDGET: LazyLock<Arc<CacheBudget>> = LazyLock::new(|| {
+    Arc::new(CacheBudget {
+        limit: 256 * 1024 * 1024,
+        used: AtomicUsize::new(0),
+    })
+});
+struct CachedSegment {
+    data: Arc<Vec<u8>>,
+    _reservation: CacheReservation,
+}
+
 pub(crate) struct SegmentCache {
     capacity: usize,
-    map: HashMap<usize, Arc<Vec<u8>>>,
+    max_bytes: usize,
+    bytes: usize,
+    budget: Arc<CacheBudget>,
+    map: HashMap<usize, CachedSegment>,
     order: VecDeque<usize>,
 }
 
@@ -66,28 +110,42 @@ impl SegmentCache {
     pub(crate) fn new(capacity: usize) -> Self {
         SegmentCache {
             capacity: capacity.max(1),
+            max_bytes: 32 * 1024 * 1024,
+            bytes: 0,
+            budget: Arc::clone(&CACHE_BUDGET),
             map: HashMap::new(),
             order: VecDeque::new(),
         }
     }
 
     pub(crate) fn get(&self, index: usize) -> Option<Arc<Vec<u8>>> {
-        self.map.get(&index).cloned()
+        self.map
+            .get(&index)
+            .map(|cached| Arc::clone(&cached.data))
     }
 
     pub(crate) fn insert(&mut self, index: usize, data: Arc<Vec<u8>>) {
-        if self.map.contains_key(&index) {
+        if self.map.contains_key(&index) || data.len() > self.max_bytes {
             return;
         }
-        while self.order.len() >= self.capacity {
+        while self.order.len() >= self.capacity || self.bytes + data.len() > self.max_bytes {
             if let Some(evicted) = self.order.pop_front() {
-                self.map.remove(&evicted);
+                if let Some(previous) = self.map.remove(&evicted) {
+                    self.bytes -= previous.data.len();
+                }
             } else {
                 break;
             }
         }
+        let Some(reservation) = self.budget.reserve(data.len()) else {
+            return;
+        };
+        self.bytes += data.len();
         self.order.push_back(index);
-        self.map.insert(index, data);
+        self.map.insert(index, CachedSegment {
+            data,
+            _reservation: reservation,
+        });
     }
 }
 
@@ -685,4 +743,40 @@ mod tests {
             })
         ));
     }
+    #[test]
+    fn decoded_cache_is_bounded_by_bytes_as_well_as_segment_count() {
+        let mut cache = SegmentCache::new(100);
+        cache.max_bytes = 5;
+        cache.insert(0, Arc::new(vec![0; 3]));
+        cache.insert(1, Arc::new(vec![1; 3]));
+        assert!(cache.get(0).is_none());
+        assert_eq!(cache.bytes, 3);
+        cache.insert(2, Arc::new(vec![2; 6]));
+        assert!(cache.get(2).is_none());
+        assert_eq!(cache.bytes, 3);
+        cache.insert(3, Arc::new(vec![3; 2]));
+        assert_eq!(cache.bytes, 5);
+    }
+
+    #[test]
+    fn cache_reservations_are_shared_and_released_on_eviction_and_drop() {
+        let budget = Arc::new(CacheBudget { limit: 5, used: AtomicUsize::new(0) });
+        let mut first = SegmentCache::new(1);
+        let mut second = SegmentCache::new(1);
+        first.budget = Arc::clone(&budget);
+        second.budget = Arc::clone(&budget);
+        first.insert(0, Arc::new(vec![1; 3]));
+        second.insert(0, Arc::new(vec![2; 3]));
+        assert!(second.get(0).is_none());
+        assert_eq!(budget.used.load(Ordering::Acquire), 3);
+        first.insert(1, Arc::new(vec![3; 2]));
+        second.insert(0, Arc::new(vec![2; 3]));
+        assert!(second.get(0).is_some());
+        assert_eq!(budget.used.load(Ordering::Acquire), 5);
+        drop(first);
+        assert_eq!(budget.used.load(Ordering::Acquire), 3);
+        drop(second);
+        assert_eq!(budget.used.load(Ordering::Acquire), 0);
+    }
+
 }

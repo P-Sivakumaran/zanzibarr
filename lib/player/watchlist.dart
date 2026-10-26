@@ -1,4 +1,4 @@
-import 'dart:convert';
+import 'library_repository.dart';
 
 import 'media_preferences.dart';
 import 'playback_history.dart';
@@ -61,8 +61,7 @@ class WatchlistEntry {
   List<PlaybackHistoryEntry> history,
 ) {
   final numbered = history.where(
-    (e) =>
-        e.imdbId == tracked.imdbId && e.season != null && e.episode != null,
+    (e) => e.imdbId == tracked.imdbId && e.season != null && e.episode != null,
   );
   if (numbered.isEmpty) return (season: 1, episode: 1);
 
@@ -93,6 +92,13 @@ class WatchlistStore {
     : _storage = storage ?? FlutterSecurePlayerPreferenceStorage();
 
   final PlayerPreferenceStorage _storage;
+  late final LibraryRepository<WatchlistEntry> _repository =
+      SecureJsonLibraryRepository<WatchlistEntry>(
+        storage: _storage,
+        key: storageKey,
+        decode: WatchlistEntry.fromJson,
+        encode: (entry) => entry.toJson(),
+      );
 
   static const storageKey = 'zanzibarr.watchlist.v1';
 
@@ -110,19 +116,7 @@ class WatchlistStore {
 
   Future<List<WatchlistEntry>> load() => _serialized(_load);
 
-  Future<List<WatchlistEntry>> _load() async {
-    final encoded = await _storage.read(storageKey);
-    if (encoded == null || encoded.isEmpty) return const [];
-    try {
-      final decoded = jsonDecode(encoded);
-      if (decoded is! Map) return const [];
-      final list = decoded['entries'];
-      if (list is! List) return const [];
-      return [for (final item in list) ?WatchlistEntry.fromJson(item)];
-    } on FormatException {
-      return const [];
-    }
-  }
+  Future<List<WatchlistEntry>> _load() => _repository.read();
 
   Future<bool> isTracked(String imdbId) async =>
       (await _serialized(_load)).any((e) => e.imdbId == imdbId);
@@ -144,7 +138,7 @@ class WatchlistStore {
   Future<void> untrack(String imdbId) => _serialized(() async {
     final entries = List.of(await _load());
     entries.removeWhere((e) => e.imdbId == imdbId);
-    await _write(entries);
+    await _repository.write(entries, forgetPrevious: true);
   });
 
   Future<void> markChecked(String imdbId) => _serialized(() async {
@@ -157,11 +151,6 @@ class WatchlistStore {
     await _write(entries);
   });
 
-  Future<void> _write(List<WatchlistEntry> entries) => _storage.write(
-    storageKey,
-    jsonEncode(<String, Object>{
-      'version': 1,
-      'entries': [for (final e in entries) e.toJson()],
-    }),
-  );
+  Future<void> _write(List<WatchlistEntry> entries) =>
+      _repository.write(entries);
 }

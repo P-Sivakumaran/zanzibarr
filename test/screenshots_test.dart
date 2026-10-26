@@ -1,3 +1,4 @@
+import 'package:zanzibarr/ui/app_theme.dart';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -26,87 +27,9 @@ import 'package:zanzibarr/src/rust/api/search.dart';
 /// logical).
 final _skipScreenshots = Platform.environment['GENERATE_SCREENSHOTS'] != '1';
 
-const _accent = Color(0xFFFF453A);
 const _fontFamily = 'AppScreenshotFont';
-
-/// ZanzibarrApp'in private tema builder'larının eşdeğeri; tek farkı tofu'yu
-/// önlemek için yüklenen gerçek font ailesi.
-ThemeData _screenshotTheme(Brightness brightness) {
-  final isDark = brightness == Brightness.dark;
-  final scheme = ColorScheme.fromSeed(
-    seedColor: _accent,
-    brightness: brightness,
-    surface: isDark ? const Color(0xFF141416) : const Color(0xFFFFFFFF),
-  );
-  final foreground = isDark ? Colors.white : Colors.black;
-  InputDecorationTheme inputTheme({required Color fill, required Color border}) =>
-      InputDecorationTheme(
-        filled: true,
-        fillColor: fill,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 15,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: border),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: _accent, width: 1.2),
-        ),
-      );
-  return ThemeData(
-    useMaterial3: true,
-    brightness: brightness,
-    fontFamily: _fontFamily,
-    colorScheme: scheme,
-    scaffoldBackgroundColor: isDark
-        ? const Color(0xFF09090B)
-        : const Color(0xFFF5F5F7),
-    canvasColor: isDark ? const Color(0xFF17171A) : Colors.white,
-    dividerColor: foreground.withValues(alpha: 0.08),
-    appBarTheme: AppBarTheme(
-      elevation: 0,
-      centerTitle: false,
-      backgroundColor: Colors.transparent,
-      foregroundColor: foreground,
-      surfaceTintColor: Colors.transparent,
-    ),
-    inputDecorationTheme: inputTheme(
-      fill: foreground.withValues(alpha: isDark ? 0.055 : 0.045),
-      border: foreground.withValues(alpha: isDark ? 0.1 : 0.14),
-    ),
-    filledButtonTheme: FilledButtonThemeData(
-      style: FilledButton.styleFrom(
-        backgroundColor: foreground,
-        foregroundColor: isDark ? Colors.black : Colors.white,
-        minimumSize: const Size(0, 44),
-        padding: const EdgeInsets.symmetric(horizontal: 18),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(11),
-        ),
-      ),
-    ),
-    snackBarTheme: SnackBarThemeData(
-      behavior: SnackBarBehavior.floating,
-      backgroundColor: isDark ? const Color(0xF228282C) : const Color(0xF2323236),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ),
-    tooltipTheme: TooltipThemeData(
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xF22A2A2D) : const Color(0xF2323236),
-        borderRadius: BorderRadius.circular(7),
-      ),
-      textStyle: const TextStyle(color: Colors.white, fontSize: 11),
-      waitDuration: const Duration(milliseconds: 450),
-    ),
-  );
-}
+ThemeData _screenshotTheme(Brightness brightness) =>
+    AppTheme.build(brightness, fontFamily: _fontFamily);
 
 Widget _screenshotApp(Widget home, ThemeMode themeMode) => MaterialApp(
   title: 'Zanzibarr',
@@ -193,11 +116,13 @@ class _FakeStore extends ProviderSettingsStore {
 /// Indexer bölümü de dolu gözüksün diye sahte indexer deposu.
 class _FakeIndexerStore extends IndexerSettingsStore {
   @override
-  Future<List<IndexerProfile>> load() async => const [IndexerProfile(
-    id: '1',
-    baseUrl: 'https://indexer.example',
-    apiKey: 'TESTPASS123',
-  )];
+  Future<List<IndexerProfile>> load() async => const [
+    IndexerProfile(
+      id: '1',
+      baseUrl: 'https://indexer.example',
+      apiKey: 'TESTPASS123',
+    ),
+  ];
 
   @override
   Future<void> save(List<IndexerProfile> settings) async {}
@@ -211,33 +136,45 @@ List<SearchItemDto> _fakeResults() => [
     nzbUrl: 'https://indexer.example/getnzb/1',
     sizeBytes: BigInt.from(19463027098),
     publishedEpochSecs:
-        DateTime.now().subtract(const Duration(days: 412)).millisecondsSinceEpoch ~/
+        DateTime.now()
+            .subtract(const Duration(days: 412))
+            .millisecondsSinceEpoch ~/
         1000,
     badges: const ['2160p', 'BluRay', 'HEVC', 'DV', 'HDR10', 'DD+ 5.1'],
     mediaKind: 'movie',
     year: 1999,
-    group: 'hallowed', sourceIndexer: 'https://indexer.example'),
+    group: 'hallowed',
+    sourceIndexer: 'https://indexer.example',
+  ),
   SearchItemDto(
     title:
         'Coming.to.America.1988.2160p.UHD.BluRay.Remux.HDR.DV.HEVC.DTS-HD.MA.5.1-PmP',
     nzbUrl: 'https://indexer.example/getnzb/2',
     sizeBytes: BigInt.from(52613349376),
     publishedEpochSecs:
-        DateTime.now().subtract(const Duration(days: 87)).millisecondsSinceEpoch ~/
+        DateTime.now()
+            .subtract(const Duration(days: 87))
+            .millisecondsSinceEpoch ~/
         1000,
     badges: const ['2160p', 'Remux', 'HEVC', 'HDR', 'DV', 'DTS-HD MA 5.1'],
     mediaKind: 'movie',
-    year: 1988, sourceIndexer: 'https://indexer.example'),
+    year: 1988,
+    sourceIndexer: 'https://indexer.example',
+  ),
   SearchItemDto(
     title: 'Fight.Club.1999.1080p.BluRay.x264.DTS-ESiR',
     nzbUrl: 'https://indexer.example/getnzb/3',
     sizeBytes: BigInt.from(10737418240),
     publishedEpochSecs:
-        DateTime.now().subtract(const Duration(days: 640)).millisecondsSinceEpoch ~/
+        DateTime.now()
+            .subtract(const Duration(days: 640))
+            .millisecondsSinceEpoch ~/
         1000,
     badges: const ['1080p', 'BluRay', 'x264', 'DTS'],
     mediaKind: 'movie',
-    year: 1999, sourceIndexer: 'https://indexer.example'),
+    year: 1999,
+    sourceIndexer: 'https://indexer.example',
+  ),
 ];
 
 /// Oyuncu chrome'u için örnek parça listesi.
@@ -281,7 +218,9 @@ class _FakeVideoFrame extends StatelessWidget {
     );
     final ratio = containedAspectRatio;
     if (ratio == null) return frame;
-    return Center(child: AspectRatio(aspectRatio: ratio, child: frame));
+    return Center(
+      child: AspectRatio(aspectRatio: ratio, child: frame),
+    );
   }
 }
 
@@ -474,40 +413,45 @@ class _TuningDialogReplica extends StatelessWidget {
             children: [
               _TuningRow(
                 label: l10n.videoPresetLabel,
-                child: segments(
-                  [l10n.presetNatural, l10n.presetCinema, l10n.presetVivid],
+                child: segments([
+                  l10n.presetNatural,
                   l10n.presetCinema,
-                ),
+                  l10n.presetVivid,
+                ], l10n.presetCinema),
               ),
               _TuningRow(
                 label: l10n.gpuScalingLabel,
-                child: segments(
-                  [l10n.presetLowPower, l10n.presetBalanced, l10n.presetQuality],
+                child: segments([
+                  l10n.presetLowPower,
+                  l10n.presetBalanced,
                   l10n.presetQuality,
-                ),
+                ], l10n.presetQuality),
               ),
               _TuningRow(
                 label: l10n.audioPresetLabel,
-                child: segments(
-                  [l10n.presetBalanced, l10n.presetDialogue, l10n.presetNight],
+                child: segments([
                   l10n.presetBalanced,
-                ),
+                  l10n.presetDialogue,
+                  l10n.presetNight,
+                ], l10n.presetBalanced),
               ),
               _TuningRow(
                 label: l10n.seekStepLabel,
-                child: segments(
-                  ['1 ${l10n.secondsUnitShort}', '5 ${l10n.secondsUnitShort}',
-                      '10 ${l10n.secondsUnitShort}', '30 ${l10n.secondsUnitShort}'],
+                child: segments([
+                  '1 ${l10n.secondsUnitShort}',
+                  '5 ${l10n.secondsUnitShort}',
                   '10 ${l10n.secondsUnitShort}',
-                ),
+                  '30 ${l10n.secondsUnitShort}',
+                ], '10 ${l10n.secondsUnitShort}'),
               ),
               _TuningRow(
                 label: l10n.periodicInfoLabel,
-                child: segments(
-                  [l10n.off, '15 ${l10n.secondsUnitShort}',
-                      '30 ${l10n.secondsUnitShort}', '60 ${l10n.secondsUnitShort}'],
+                child: segments([
                   l10n.off,
-                ),
+                  '15 ${l10n.secondsUnitShort}',
+                  '30 ${l10n.secondsUnitShort}',
+                  '60 ${l10n.secondsUnitShort}',
+                ], l10n.off),
               ),
               _TuningRow(
                 label: l10n.audioSyncLabel,
@@ -602,9 +546,7 @@ class _TuningDialogReplica extends StatelessWidget {
           ),
         ),
       ),
-      actions: [
-        TextButton(onPressed: () {}, child: Text(l10n.doneLabel)),
-      ],
+      actions: [TextButton(onPressed: () {}, child: Text(l10n.doneLabel))],
     );
   }
 }
@@ -679,208 +621,252 @@ void main() {
 
   const window = Size(2560, 1600); // 1280×800 logical @2x
 
-  testWidgets('home_dark', (tester) => _desktopShot(() async {
-    _useWindow(tester, window);
-    await tester.pumpWidget(
-      _screenshotApp(const HomeScreen(), ThemeMode.dark),
-    );
-    await _settleAssets(tester);
-    await expectLater(
-      find.byType(MaterialApp),
-      matchesGoldenFile('../docs/screenshots/home_dark.png'),
-    );
-  }), skip: _skipScreenshots);
+  testWidgets(
+    'home_dark',
+    (tester) => _desktopShot(() async {
+      _useWindow(tester, window);
+      await tester.pumpWidget(
+        _screenshotApp(const HomeScreen(), ThemeMode.dark),
+      );
+      await _settleAssets(tester);
+      await expectLater(
+        find.byType(MaterialApp),
+        matchesGoldenFile('../docs/screenshots/home_dark.png'),
+      );
+    }),
+    skip: _skipScreenshots,
+  );
 
-  testWidgets('home_light', (tester) => _desktopShot(() async {
-    _useWindow(tester, window);
-    await tester.pumpWidget(
-      _screenshotApp(const HomeScreen(), ThemeMode.light),
-    );
-    await _settleAssets(tester);
-    await expectLater(
-      find.byType(MaterialApp),
-      matchesGoldenFile('../docs/screenshots/home_light.png'),
-    );
-  }), skip: _skipScreenshots);
+  testWidgets(
+    'home_light',
+    (tester) => _desktopShot(() async {
+      _useWindow(tester, window);
+      await tester.pumpWidget(
+        _screenshotApp(const HomeScreen(), ThemeMode.light),
+      );
+      await _settleAssets(tester);
+      await expectLater(
+        find.byType(MaterialApp),
+        matchesGoldenFile('../docs/screenshots/home_light.png'),
+      );
+    }),
+    skip: _skipScreenshots,
+  );
 
-  testWidgets('settings', (tester) => _desktopShot(() async {
-    _useWindow(tester, const Size(2560, 2000)); // 1280×1000 logical @2x
-    await tester.pumpWidget(
-      _screenshotApp(
-        SettingsScreen(
-          store: _FakeStore(),
-          indexerStore: _FakeIndexerStore(),
-          uiPreferences: UiPreferencesController(UiPreferencesStore()),
-        ),
-        ThemeMode.dark,
-      ),
-    );
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(MaterialApp),
-      matchesGoldenFile('../docs/screenshots/settings.png'),
-    );
-  }), skip: _skipScreenshots);
-
-  testWidgets('search', (tester) => _desktopShot(() async {
-    _useWindow(tester, window);
-    await tester.pumpWidget(
-      _screenshotApp(
-        SearchScreen(
-          store: _FakeIndexerStore(),
-          searchFn: (config, query, limit, offset) async => SearchManyResultDto(page: SearchPageDto(
-            total: BigInt.from(3),
-            items: _fakeResults(),
-          ), failedIndexers: const []),
-          onDownloaded: (_) {},
-        ),
-        ThemeMode.dark,
-      ),
-    );
-    await _settleAssets(tester);
-    await tester.enterText(find.byType(TextField), 'fight club');
-    await tester.pump();
-    await tester.testTextInput.receiveAction(TextInputAction.search);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await expectLater(
-      find.byType(MaterialApp),
-      matchesGoldenFile('../docs/screenshots/search.png'),
-    );
-  }), skip: _skipScreenshots);
-
-  testWidgets('player_controls', (tester) => _desktopShot(() async {
-    _useWindow(tester, window);
-    await tester.pumpWidget(
-      _screenshotApp(_playerComposition(), ThemeMode.dark),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    await expectLater(
-      find.byType(MaterialApp),
-      matchesGoldenFile('../docs/screenshots/player_controls.png'),
-    );
-  }), skip: _skipScreenshots);
-
-  testWidgets('advanced_settings', (tester) => _desktopShot(() async {
-    _useWindow(tester, window);
-    await tester.pumpWidget(
-      _screenshotApp(
-        _TuningDialogOpener(child: _playerComposition()),
-        ThemeMode.dark,
-      ),
-    );
-    await tester.pump();
-    // Diyalog route animasyonu tamamlansın.
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.pump(const Duration(milliseconds: 400));
-    await expectLater(
-      find.byType(MaterialApp),
-      matchesGoldenFile('../docs/screenshots/advanced_settings.png'),
-    );
-  }), skip: _skipScreenshots);
-
-  testWidgets('smart_canvas', (tester) => _desktopShot(() async {
-    _useWindow(tester, window);
-    await tester.pumpWidget(
-      _screenshotApp(
-        _playerComposition(
-          canvasActive: true,
-          showCenterPlay: false,
-          containedAspectRatio: 16 / 9,
-          editorOverlay: SmartCanvasOverlay(
-            crop: const CanvasCrop(
-              left: 0.12,
-              top: 0.15,
-              right: 0.88,
-              bottom: 0.85,
-            ),
-            sourceAspectRatio: 16 / 9,
-            onChanged: (_) {},
-            onCommit: (_) {},
-            onCancel: () {},
+  testWidgets(
+    'settings',
+    (tester) => _desktopShot(() async {
+      _useWindow(tester, const Size(2560, 2000)); // 1280×1000 logical @2x
+      await tester.pumpWidget(
+        _screenshotApp(
+          SettingsScreen(
+            store: _FakeStore(),
+            indexerStore: _FakeIndexerStore(),
+            uiPreferences: UiPreferencesController(UiPreferencesStore()),
           ),
+          ThemeMode.dark,
         ),
-        ThemeMode.dark,
-      ),
-    );
-    await tester.pump();
-    // Overlay'in AnimatedOpacity'si (160 ms) tamamlansın.
-    await tester.pump(const Duration(milliseconds: 300));
-    await expectLater(
-      find.byType(MaterialApp),
-      matchesGoldenFile('../docs/screenshots/smart_canvas.png'),
-    );
-  }), skip: _skipScreenshots);
+      );
+      await tester.pumpAndSettle();
+      await expectLater(
+        find.byType(MaterialApp),
+        matchesGoldenFile('../docs/screenshots/settings.png'),
+      );
+    }),
+    skip: _skipScreenshots,
+  );
+
+  testWidgets(
+    'search',
+    (tester) => _desktopShot(() async {
+      _useWindow(tester, window);
+      await tester.pumpWidget(
+        _screenshotApp(
+          SearchScreen(
+            store: _FakeIndexerStore(),
+            searchFn: (config, query, limit, offset) async =>
+                SearchManyResultDto(
+                  page: SearchPageDto(
+                    total: BigInt.from(3),
+                    items: _fakeResults(),
+                  ),
+                  failedIndexers: const [],
+                ),
+            onDownloaded: (_) {},
+          ),
+          ThemeMode.dark,
+        ),
+      );
+      await _settleAssets(tester);
+      await tester.enterText(find.byType(TextField), 'fight club');
+      await tester.pump();
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await expectLater(
+        find.byType(MaterialApp),
+        matchesGoldenFile('../docs/screenshots/search.png'),
+      );
+    }),
+    skip: _skipScreenshots,
+  );
+
+  testWidgets(
+    'player_controls',
+    (tester) => _desktopShot(() async {
+      _useWindow(tester, window);
+      await tester.pumpWidget(
+        _screenshotApp(_playerComposition(), ThemeMode.dark),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await expectLater(
+        find.byType(MaterialApp),
+        matchesGoldenFile('../docs/screenshots/player_controls.png'),
+      );
+    }),
+    skip: _skipScreenshots,
+  );
+
+  testWidgets(
+    'advanced_settings',
+    (tester) => _desktopShot(() async {
+      _useWindow(tester, window);
+      await tester.pumpWidget(
+        _screenshotApp(
+          _TuningDialogOpener(child: _playerComposition()),
+          ThemeMode.dark,
+        ),
+      );
+      await tester.pump();
+      // Diyalog route animasyonu tamamlansın.
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 400));
+      await expectLater(
+        find.byType(MaterialApp),
+        matchesGoldenFile('../docs/screenshots/advanced_settings.png'),
+      );
+    }),
+    skip: _skipScreenshots,
+  );
+
+  testWidgets(
+    'smart_canvas',
+    (tester) => _desktopShot(() async {
+      _useWindow(tester, window);
+      await tester.pumpWidget(
+        _screenshotApp(
+          _playerComposition(
+            canvasActive: true,
+            showCenterPlay: false,
+            containedAspectRatio: 16 / 9,
+            editorOverlay: SmartCanvasOverlay(
+              crop: const CanvasCrop(
+                left: 0.12,
+                top: 0.15,
+                right: 0.88,
+                bottom: 0.85,
+              ),
+              sourceAspectRatio: 16 / 9,
+              onChanged: (_) {},
+              onCommit: (_) {},
+              onCancel: () {},
+            ),
+          ),
+          ThemeMode.dark,
+        ),
+      );
+      await tester.pump();
+      // Overlay'in AnimatedOpacity'si (160 ms) tamamlansın.
+      await tester.pump(const Duration(milliseconds: 300));
+      await expectLater(
+        find.byType(MaterialApp),
+        matchesGoldenFile('../docs/screenshots/smart_canvas.png'),
+      );
+    }),
+    skip: _skipScreenshots,
+  );
 
   /// docs/screenshots/demo.gif için kare dizisi: ana ekran → indexer araması
   /// → sonuçlar → indirme. Kareler `build/demo_frames/` altına düşer ve
   /// ffmpeg ile paletli GIF'e birleştirilir (bkz. commit mesajı/notlar).
-  testWidgets('demo_frames', (tester) => _desktopShot(() async {
-    _useWindow(tester, const Size(2200, 1720)); // 1100×860 logical @2x
-    var frameIndex = 0;
-    Future<void> frame() async {
-      frameIndex++;
-      final name = 'f${frameIndex.toString().padLeft(2, '0')}';
-      await expectLater(
-        find.byType(MaterialApp),
-        matchesGoldenFile('../build/demo_frames/$name.png'),
+  testWidgets(
+    'demo_frames',
+    (tester) => _desktopShot(() async {
+      _useWindow(tester, const Size(2200, 1720)); // 1100×860 logical @2x
+      var frameIndex = 0;
+      Future<void> frame() async {
+        frameIndex++;
+        final name = 'f${frameIndex.toString().padLeft(2, '0')}';
+        await expectLater(
+          find.byType(MaterialApp),
+          matchesGoldenFile('../build/demo_frames/$name.png'),
+        );
+      }
+
+      // 1-3: ana ekran (indexer kartı ile).
+      await tester.pumpWidget(
+        _screenshotApp(const HomeScreen(), ThemeMode.dark),
       );
-    }
+      await _settleAssets(tester);
+      for (var n = 0; n < 3; n++) {
+        await frame();
+        await tester.pump(const Duration(milliseconds: 250));
+      }
 
-    // 1-3: ana ekran (indexer kartı ile).
-    await tester.pumpWidget(_screenshotApp(const HomeScreen(), ThemeMode.dark));
-    await _settleAssets(tester);
-    for (var n = 0; n < 3; n++) {
-      await frame();
-      await tester.pump(const Duration(milliseconds: 250));
-    }
-
-    // 4-7: arama ekranında sorgu yazımı.
-    await tester.pumpWidget(
-      _screenshotApp(
-        SearchScreen(
-          store: _FakeIndexerStore(),
-          searchFn: (config, query, limit, offset) async {
-            await Future<void>.delayed(const Duration(milliseconds: 350));
-            return SearchManyResultDto(page: SearchPageDto(total: BigInt.from(3), items: _fakeResults()), failedIndexers: const []);
-          },
-          downloadFn: (config, url, name) async {
-            await Future<void>.delayed(const Duration(seconds: 2));
-            return '/tmp/demo.nzb';
-          },
-          onDownloaded: (_) {},
+      // 4-7: arama ekranında sorgu yazımı.
+      await tester.pumpWidget(
+        _screenshotApp(
+          SearchScreen(
+            store: _FakeIndexerStore(),
+            searchFn: (config, query, limit, offset) async {
+              await Future<void>.delayed(const Duration(milliseconds: 350));
+              return SearchManyResultDto(
+                page: SearchPageDto(
+                  total: BigInt.from(3),
+                  items: _fakeResults(),
+                ),
+                failedIndexers: const [],
+              );
+            },
+            downloadFn: (config, url, name) async {
+              await Future<void>.delayed(const Duration(seconds: 2));
+              return '/tmp/demo.nzb';
+            },
+            onDownloaded: (_) {},
+          ),
+          ThemeMode.dark,
         ),
-        ThemeMode.dark,
-      ),
-    );
-    await _settleAssets(tester);
-    for (final query in ['f', 'figh', 'fight cl', 'fight club']) {
-      await tester.enterText(find.byType(TextField), query);
+      );
+      await _settleAssets(tester);
+      for (final query in ['f', 'figh', 'fight cl', 'fight club']) {
+        await tester.enterText(find.byType(TextField), query);
+        await tester.pump();
+        await frame();
+      }
+
+      // 8: arama spinner'ı.
+      await tester.testTextInput.receiveAction(TextInputAction.search);
       await tester.pump();
       await frame();
-    }
 
-    // 8: arama spinner'ı.
-    await tester.testTextInput.receiveAction(TextInputAction.search);
-    await tester.pump();
-    await frame();
+      // 9-10: sonuçlar.
+      await tester.pump(const Duration(milliseconds: 450));
+      await tester.pump();
+      await frame();
+      await tester.pump(const Duration(milliseconds: 250));
+      await frame();
 
-    // 9-10: sonuçlar.
-    await tester.pump(const Duration(milliseconds: 450));
-    await tester.pump();
-    await frame();
-    await tester.pump(const Duration(milliseconds: 250));
-    await frame();
-
-    // 11-12: ilk sonuca dokunma → indirme spinner'ı.
-    await tester.tap(find.text(_fakeResults().first.title));
-    await tester.pump();
-    await frame();
-    await tester.pump(const Duration(milliseconds: 250));
-    await frame();
-    // Gecikmeli downloadFn'in saati bitsin ki teardown'da timer kalmasın.
-    await tester.pump(const Duration(seconds: 2));
-    await tester.pumpAndSettle();
-  }), skip: _skipScreenshots);
+      // 11-12: ilk sonuca dokunma → indirme spinner'ı.
+      await tester.tap(find.text(_fakeResults().first.title));
+      await tester.pump();
+      await frame();
+      await tester.pump(const Duration(milliseconds: 250));
+      await frame();
+      // Gecikmeli downloadFn'in saati bitsin ki teardown'da timer kalmasın.
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+    }),
+    skip: _skipScreenshots,
+  );
 }

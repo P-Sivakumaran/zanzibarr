@@ -1,4 +1,8 @@
-import 'adult/adult_screen.dart';
+import 'editions/native_initialization.dart';
+import 'editions/edition.dart';
+import 'src/rust/api/simple.dart' show engineInfo;
+import 'editions/edition_paths.dart';
+import 'editions/catalog_routes.dart';
 import 'metadata/resume_feature.dart';
 import 'settings/settings_home.dart';
 import 'settings/language_settings.dart';
@@ -12,7 +16,6 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:path_provider/path_provider.dart';
 
 import 'l10n/app_localizations.dart';
 import 'metadata/metadata_service.dart';
@@ -40,12 +43,16 @@ import 'settings/settings_screen.dart';
 import 'settings/ui_preferences.dart';
 import 'src/rust/frb_generated.dart';
 import 'ui/app_background.dart';
+import 'ui/app_theme.dart';
 
 /// Continue Watching kartındaki geçici dosya yeniden indirilemediğinde
 /// hangi mesajın gösterileceğini seçmek için (bkz. `_redownloadForEntry`).
 enum _RedownloadError { noSource, indexerGone, downloadFailed }
 
 void main() {
+  if (Edition.current != AppEdition.legacy) {
+    throw StateError("Use the matching edition entrypoint");
+  }
   WidgetsFlutterBinding.ensureInitialized();
   unawaited(IntegrationRuntime.instance.load().catchError((Object _) {}));
   // Geliştirici teşhis kancası: ZANZIBARR_DEBUG_NZB verilirse uygulama
@@ -59,6 +66,11 @@ void main() {
   );
 }
 
+final _nativeInitialization = NativeInitialization();
+Future<void> _initializeRustOnce() => RustLib.instance.initialized
+    ? Future<void>.value()
+    : _nativeInitialization.ensure(RustLib.init);
+
 Future<void> _initializeNativeEngine(
   UiPreferencesController uiPreferences,
 ) async {
@@ -68,7 +80,8 @@ Future<void> _initializeNativeEngine(
   final preferencesLoaded = uiPreferences.load().catchError((Object error) {
     debugPrint('uiPreferences yüklenemedi, varsayılanlarla devam: $error');
   });
-  await Future.wait([RustLib.init(), preferencesLoaded]);
+  await Future.wait([_initializeRustOnce(), preferencesLoaded]);
+  Edition.verifyNative(engineInfo());
 }
 
 /// İlk native çağrı hata verse veya takılsa bile boş pencere yerine anlaşılır
@@ -136,15 +149,13 @@ class ZanzibarrApp extends StatelessWidget {
   final Widget? home;
   final UiPreferencesController? uiPreferences;
 
-  static const _accent = Color(0xFFFF453A);
-
   @override
   Widget build(BuildContext context) {
     final controller = uiPreferences;
     return ListenableBuilder(
       listenable: controller ?? UiPreferencesController(UiPreferencesStore()),
       builder: (context, _) => MaterialApp(
-        title: 'Zanzibarr',
+        title: Edition.displayName,
         builder: (context, child) {
           final media = MediaQuery.of(context);
           if (media.navigationMode != NavigationMode.directional) return child!;
@@ -167,185 +178,12 @@ class ZanzibarrApp extends StatelessWidget {
         ],
         locale: controller?.locale,
         themeMode: controller?.themeMode ?? ThemeMode.dark,
-        theme: _buildLightTheme(),
-        darkTheme: _buildDarkTheme(),
+        theme: AppTheme.build(Brightness.light),
+        darkTheme: AppTheme.build(Brightness.dark),
         home: home ?? HomeScreen(uiPreferences: controller),
       ),
     );
   }
-
-  ThemeData _buildDarkTheme() {
-    // Error role is overridden to amber: the brand seed is itself red, so the
-    // default Material error palette lands in the same hue family as primary
-    // and focus states, making errors indistinguishable from normal brand UI.
-    final scheme =
-        ColorScheme.fromSeed(
-          seedColor: _accent,
-          brightness: Brightness.dark,
-          surface: const Color(0xFF101313),
-        ).copyWith(
-          error: const Color(0xFFFFB74D),
-          onError: const Color(0xFF442C00),
-          errorContainer: const Color(0xFF4A3100),
-          onErrorContainer: const Color(0xFFFFDDA6),
-        );
-    return ThemeData(
-      useMaterial3: true,
-      brightness: Brightness.dark,
-      colorScheme: scheme,
-      scaffoldBackgroundColor: const Color(0xFF101313),
-      canvasColor: const Color(0xFF17171A),
-      dividerColor: Colors.white.withValues(alpha: 0.08),
-      appBarTheme: const AppBarTheme(
-        elevation: 0,
-        centerTitle: false,
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        surfaceTintColor: Colors.transparent,
-      ),
-      inputDecorationTheme: _inputTheme(
-        fill: Colors.white.withValues(alpha: 0.055),
-        border: Colors.white.withValues(alpha: 0.1),
-      ),
-      filledButtonTheme: _filledButtonTheme(
-        background: Colors.white,
-        foreground: Colors.black,
-      ),
-      snackBarTheme: _snackBarTheme(const Color(0xF228282C)),
-      tooltipTheme: _tooltipTheme(const Color(0xF22A2A2D), Colors.white),
-      focusColor: _accent.withValues(alpha: 0.24),
-      outlinedButtonTheme: _outlinedButtonTheme(),
-      textButtonTheme: _textButtonTheme(),
-      iconButtonTheme: _iconButtonTheme(),
-      segmentedButtonTheme: _segmentedButtonTheme(),
-    );
-  }
-
-  ThemeData _buildLightTheme() {
-    // See _buildDarkTheme: error role overridden to amber to stay distinct
-    // from the red brand accent used for primary/focus states.
-    final scheme =
-        ColorScheme.fromSeed(
-          seedColor: _accent,
-          brightness: Brightness.light,
-          surface: const Color(0xFFFFFFFF),
-        ).copyWith(
-          error: const Color(0xFFB26A00),
-          onError: Colors.white,
-          errorContainer: const Color(0xFFFFE0B2),
-          onErrorContainer: const Color(0xFF5C3A00),
-        );
-    return ThemeData(
-      useMaterial3: true,
-      brightness: Brightness.light,
-      colorScheme: scheme,
-      scaffoldBackgroundColor: const Color(0xFFFAFAF8),
-      canvasColor: Colors.white,
-      dividerColor: Colors.black.withValues(alpha: 0.08),
-      appBarTheme: const AppBarTheme(
-        elevation: 0,
-        centerTitle: false,
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.black,
-        surfaceTintColor: Colors.transparent,
-      ),
-      inputDecorationTheme: _inputTheme(
-        fill: Colors.black.withValues(alpha: 0.045),
-        border: Colors.black.withValues(alpha: 0.14),
-      ),
-      filledButtonTheme: _filledButtonTheme(
-        background: Colors.black,
-        foreground: Colors.white,
-      ),
-      snackBarTheme: _snackBarTheme(const Color(0xF2323236)),
-      tooltipTheme: _tooltipTheme(const Color(0xF2323236), Colors.white),
-      focusColor: _accent.withValues(alpha: 0.18),
-      outlinedButtonTheme: _outlinedButtonTheme(),
-      textButtonTheme: _textButtonTheme(),
-      iconButtonTheme: _iconButtonTheme(),
-      segmentedButtonTheme: _segmentedButtonTheme(),
-    );
-  }
-
-  InputDecorationTheme _inputTheme({
-    required Color fill,
-    required Color border,
-  }) => InputDecorationTheme(
-    filled: true,
-    fillColor: fill,
-    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
-    border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: BorderSide(color: border),
-    ),
-    enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: BorderSide(color: border),
-    ),
-    focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(color: _accent, width: 1.2),
-    ),
-  );
-
-  /// TV (D-pad) odak göstergesi: odaklanan kontrol accent çerçeve ve hafif
-  /// dolguyla belirginleşir. `null` dönen durumlar alt katman stiline düşer;
-  /// fare/dokunma davranışı değişmez.
-  static ButtonStyle _tvFocusStyle(ButtonStyle base) => base.copyWith(
-    overlayColor: WidgetStateProperty.resolveWith(
-      (states) => states.contains(WidgetState.focused)
-          ? _accent.withValues(alpha: 0.22)
-          : null,
-    ),
-    side: WidgetStateProperty.resolveWith(
-      (states) => states.contains(WidgetState.focused)
-          ? const BorderSide(color: _accent, width: 1.8)
-          : null,
-    ),
-  );
-
-  FilledButtonThemeData _filledButtonTheme({
-    required Color background,
-    required Color foreground,
-  }) => FilledButtonThemeData(
-    style: _tvFocusStyle(
-      FilledButton.styleFrom(
-        backgroundColor: background,
-        foregroundColor: foreground,
-        minimumSize: const Size(0, 44),
-        padding: const EdgeInsets.symmetric(horizontal: 18),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
-      ),
-    ),
-  );
-
-  OutlinedButtonThemeData _outlinedButtonTheme() =>
-      OutlinedButtonThemeData(style: _tvFocusStyle(const ButtonStyle()));
-
-  TextButtonThemeData _textButtonTheme() =>
-      TextButtonThemeData(style: _tvFocusStyle(const ButtonStyle()));
-
-  IconButtonThemeData _iconButtonTheme() =>
-      IconButtonThemeData(style: _tvFocusStyle(const ButtonStyle()));
-
-  SegmentedButtonThemeData _segmentedButtonTheme() =>
-      SegmentedButtonThemeData(style: _tvFocusStyle(const ButtonStyle()));
-
-  SnackBarThemeData _snackBarTheme(Color background) => SnackBarThemeData(
-    behavior: SnackBarBehavior.floating,
-    backgroundColor: background,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-  );
-
-  TooltipThemeData _tooltipTheme(Color background, Color foreground) =>
-      TooltipThemeData(
-        decoration: BoxDecoration(
-          color: background,
-          borderRadius: BorderRadius.circular(7),
-        ),
-        textStyle: TextStyle(color: foreground, fontSize: 11),
-        waitDuration: const Duration(milliseconds: 450),
-      );
 }
 
 class _EngineStartupView extends StatelessWidget {
@@ -689,6 +527,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   bool _checkingForUpdate = false;
   Future<void> _checkForUpdate({bool manual = false}) async {
+    if (!Edition.legacyUpdatesAllowed) {
+      if (manual && mounted) {
+        await _showUpdateStatus(
+          'Updates for this development edition are '
+          'disabled until a verified edition-specific channel is available.',
+        );
+      }
+      return;
+    }
     if (_checkingForUpdate) return;
     _checkingForUpdate = true;
     try {
@@ -927,7 +774,7 @@ class _HomeScreenState extends State<HomeScreen> {
     String nzbUrl,
     String suggestedName,
   ) async {
-    final cacheDir = await getTemporaryDirectory();
+    final cacheDir = await editionTemporaryDirectory();
     return newznabDownloadNzb(
       config: config,
       nzbUrl: nzbUrl,
@@ -1135,7 +982,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           spacing: 12,
                           runSpacing: 12,
                           children: [
-                            OutlinedButton.icon(
+                            TextButton.icon(
                               onPressed: () async {
                                 await Navigator.of(context).push(
                                   MaterialPageRoute(
@@ -1153,26 +1000,31 @@ class _HomeScreenState extends State<HomeScreen> {
                               icon: const Icon(Icons.movie_outlined),
                               label: const Text('Browse films & TV'),
                             ),
-                            OutlinedButton.icon(
-                              onPressed: _openLibrary,
-                              icon: const Icon(Icons.video_library_outlined),
-                              label: const Text('My library'),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: () => _openDiscovery(playlists: true),
-                              icon: const Icon(Icons.playlist_play),
-                              label: const Text('Playlists'),
-                            ),
-                            OutlinedButton.icon(
+                            if (MediaQuery.sizeOf(context).width < 1000 ||
+                                MediaQuery.textScalerOf(context).scale(16) >=
+                                    24) ...[
+                              TextButton.icon(
+                                onPressed: _openLibrary,
+                                icon: const Icon(Icons.video_library_outlined),
+                                label: const Text('My library'),
+                              ),
+                              TextButton.icon(
+                                onPressed: () =>
+                                    _openDiscovery(playlists: true),
+                                icon: const Icon(Icons.playlist_play),
+                                label: const Text('Playlists'),
+                              ),
+                            ],
+                            TextButton.icon(
                               onPressed: () => Navigator.of(context).push(
                                 MaterialPageRoute(
-                                  builder: (_) => const AdultLibraryScreen(),
+                                  builder: (_) => createCatalogLibrary(),
                                 ),
                               ),
                               icon: const Icon(Icons.video_library_outlined),
                               label: const Text('Adult library'),
                             ),
-                            OutlinedButton.icon(
+                            TextButton.icon(
                               onPressed: () => _openDiscovery(),
                               icon: const Icon(Icons.auto_awesome),
                               label: const Text('Ask AI for ideas'),
@@ -1245,6 +1097,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         if (_resumableHistory.isNotEmpty) ...[
                           const SizedBox(height: 28),
                           _ContinueWatchingSection(
+                            titles: _savedTitles,
                             entries: _resumableHistory,
                             onOpen: (entry) =>
                                 _resumeHistoryEntry(context, entry),
@@ -1256,6 +1109,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         if (_favoriteHistory.isNotEmpty) ...[
                           const SizedBox(height: 28),
                           _FavoritesSection(
+                            titles: _savedTitles,
                             entries: _favoriteHistory,
                             onOpen: (entry) =>
                                 _resumeHistoryEntry(context, entry),
@@ -1267,6 +1121,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         if (_recentlyWatchedHistory.isNotEmpty) ...[
                           const SizedBox(height: 28),
                           _RecentlyWatchedSection(
+                            titles: _savedTitles,
                             entries: _recentlyWatchedHistory,
                             onOpen: (entry) =>
                                 _resumeHistoryEntry(context, entry),
@@ -1342,115 +1197,143 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Align(
                 alignment: Alignment.topCenter,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
+                  padding: EdgeInsets.symmetric(
+                    horizontal:
+                        ((MediaQuery.sizeOf(context).width -
+                                    AppTheme.contentWidth) /
+                                2)
+                            .clamp(16.0, double.infinity),
                     vertical: 10,
                   ),
-                  child: SizedBox(
-                    height: 52,
-                    child: Row(
-                      children: [
-                        const SizedBox(
-                          width: 40,
-                          height: 40,
-                          child: FittedBox(child: _AppLogoMark()),
-                        ),
-                        const SizedBox(width: 10),
-                        const Expanded(
-                          child: Align(
-                            alignment: AlignmentDirectional.centerStart,
-                            child: SizedBox(
-                              width: 230,
-                              height: 48,
-                              child: FittedBox(
-                                alignment: AlignmentDirectional.centerStart,
-                                fit: BoxFit.contain,
-                                child: _AnimatedWordmark(),
-                              ),
-                            ),
-                          ),
-                        ),
-                        if (MediaQuery.sizeOf(context).width < 600)
-                          PopupMenuButton<String>(
-                            tooltip: 'Menu',
-                            icon: const Icon(Icons.menu),
-                            onSelected: (value) {
-                              switch (value) {
-                                case 'library':
-                                  _openLibrary();
-                                  break;
-                                case 'language':
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) => LanguageSettingsScreen(
-                                        uiPreferences: widget.uiPreferences,
-                                      ),
-                                    ),
-                                  );
-                                  break;
-                                case 'settings':
-                                  _openSettings(context);
-                                  break;
-                                case 'discover':
-                                  _openDiscovery();
-                                  break;
-                              }
-                            },
-                            itemBuilder: (_) => const [
-                              PopupMenuItem(
-                                value: 'library',
-                                child: Text('My library'),
-                              ),
-                              PopupMenuItem(
-                                value: 'language',
-                                child: Text('App language'),
-                              ),
-                              PopupMenuItem(
-                                value: 'settings',
-                                child: Text('Settings'),
-                              ),
-                              PopupMenuItem(
-                                value: 'discover',
-                                child: Text('Discover films & TV'),
-                              ),
-                            ],
-                          )
-                        else ...[
-                          _GlassIconButton(
-                            icon: Icons.video_library_outlined,
-                            tooltip: 'My library',
-                            onPressed: _openLibrary,
-                          ),
-                          _GlassIconButton(
-                            icon: Icons.language,
-                            tooltip: 'App language',
-                            onPressed: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => LanguageSettingsScreen(
-                                  uiPreferences: widget.uiPreferences,
-                                ),
-                              ),
-                            ),
-                          ),
-                          _GlassIconButton(
-                            icon: Icons.settings_rounded,
-                            tooltip: AppLocalizations.of(context).settingsTitle,
-                            onPressed: () => _openSettings(context),
+                  child: Material(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox(
+                      height: 52,
+                      child: Row(
+                        children: [
+                          const SizedBox(
+                            width: 40,
+                            height: 40,
+                            child: FittedBox(child: _AppLogoMark()),
                           ),
                           const SizedBox(width: 10),
-                          _GlassIconButton(
-                            icon: Icons.auto_awesome,
-                            tooltip: 'Discover films & TV',
-                            onPressed: () => Navigator.of(context).push(
-                              _fadeRoute(
-                                FilmChatScreen(
-                                  onFindReleases: _browseDiscoverySelection,
+                          const Expanded(
+                            child: Align(
+                              alignment: AlignmentDirectional.centerStart,
+                              child: SizedBox(
+                                width: 230,
+                                height: 48,
+                                child: FittedBox(
+                                  alignment: AlignmentDirectional.centerStart,
+                                  fit: BoxFit.contain,
+                                  child: _AnimatedWordmark(),
                                 ),
                               ),
                             ),
                           ),
+                          if (MediaQuery.sizeOf(context).width >= 1000 &&
+                              MediaQuery.textScalerOf(context).scale(16) <
+                                  24) ...[
+                            TextButton.icon(
+                              onPressed: _openLibrary,
+                              icon: const Icon(Icons.video_library_outlined),
+                              label: const Text('My library'),
+                            ),
+                            TextButton.icon(
+                              onPressed: () => _openDiscovery(playlists: true),
+                              icon: const Icon(Icons.playlist_play),
+                              label: const Text('Playlists'),
+                            ),
+                            const SizedBox(width: 16),
+                          ],
+                          if (MediaQuery.sizeOf(context).width < 600)
+                            PopupMenuButton<String>(
+                              tooltip: 'Menu',
+                              icon: const Icon(Icons.menu),
+                              onSelected: (value) {
+                                switch (value) {
+                                  case 'library':
+                                    _openLibrary();
+                                    break;
+                                  case 'language':
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => LanguageSettingsScreen(
+                                          uiPreferences: widget.uiPreferences,
+                                        ),
+                                      ),
+                                    );
+                                    break;
+                                  case 'settings':
+                                    _openSettings(context);
+                                    break;
+                                  case 'discover':
+                                    _openDiscovery();
+                                    break;
+                                }
+                              },
+                              itemBuilder: (_) => const [
+                                PopupMenuItem(
+                                  value: 'library',
+                                  child: Text('My library'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'language',
+                                  child: Text('App language'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'settings',
+                                  child: Text('Settings'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'discover',
+                                  child: Text('Discover films & TV'),
+                                ),
+                              ],
+                            )
+                          else ...[
+                            if (MediaQuery.sizeOf(context).width < 1000 ||
+                                MediaQuery.textScalerOf(context).scale(16) >=
+                                    24)
+                              _GlassIconButton(
+                                icon: Icons.video_library_outlined,
+                                tooltip: 'My library',
+                                onPressed: _openLibrary,
+                              ),
+                            _GlassIconButton(
+                              icon: Icons.language,
+                              tooltip: 'App language',
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => LanguageSettingsScreen(
+                                    uiPreferences: widget.uiPreferences,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            _GlassIconButton(
+                              icon: Icons.settings_rounded,
+                              tooltip: AppLocalizations.of(
+                                context,
+                              ).settingsTitle,
+                              onPressed: () => _openSettings(context),
+                            ),
+                            const SizedBox(width: 10),
+                            _GlassIconButton(
+                              icon: Icons.auto_awesome,
+                              tooltip: 'Discover films & TV',
+                              onPressed: () => Navigator.of(context).push(
+                                _fadeRoute(
+                                  FilmChatScreen(
+                                    onFindReleases: _browseDiscoverySelection,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -1880,6 +1763,7 @@ class _GlassIconButton extends StatelessWidget {
 class _ContinueWatchingSection extends StatelessWidget {
   const _ContinueWatchingSection({
     required this.entries,
+    required this.titles,
     required this.onOpen,
     required this.onRemove,
     required this.onToggleFavorite,
@@ -1887,6 +1771,7 @@ class _ContinueWatchingSection extends StatelessWidget {
   });
 
   final List<PlaybackHistoryEntry> entries;
+  final List<MediaTitle> titles;
   final ValueChanged<PlaybackHistoryEntry> onOpen;
   final ValueChanged<PlaybackHistoryEntry> onRemove;
   final ValueChanged<PlaybackHistoryEntry> onToggleFavorite;
@@ -1917,6 +1802,7 @@ class _ContinueWatchingSection extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 8),
             child: _HistoryCard(
               entry: entry,
+              title: titles.where((t) => t.imdbId == entry.imdbId).firstOrNull,
               onOpen: () => onOpen(entry),
               onRemove: () => onRemove(entry),
               onToggleFavorite: () => onToggleFavorite(entry),
@@ -1934,6 +1820,7 @@ class _ContinueWatchingSection extends StatelessWidget {
 class _FavoritesSection extends StatelessWidget {
   const _FavoritesSection({
     required this.entries,
+    required this.titles,
     required this.onOpen,
     required this.onRemove,
     required this.onToggleFavorite,
@@ -1941,6 +1828,7 @@ class _FavoritesSection extends StatelessWidget {
   });
 
   final List<PlaybackHistoryEntry> entries;
+  final List<MediaTitle> titles;
   final ValueChanged<PlaybackHistoryEntry> onOpen;
   final ValueChanged<PlaybackHistoryEntry> onRemove;
   final ValueChanged<PlaybackHistoryEntry> onToggleFavorite;
@@ -1971,6 +1859,7 @@ class _FavoritesSection extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 8),
             child: _HistoryCard(
               entry: entry,
+              title: titles.where((t) => t.imdbId == entry.imdbId).firstOrNull,
               onOpen: () => onOpen(entry),
               onRemove: () => onRemove(entry),
               onToggleFavorite: () => onToggleFavorite(entry),
@@ -1989,6 +1878,7 @@ class _FavoritesSection extends StatelessWidget {
 class _RecentlyWatchedSection extends StatelessWidget {
   const _RecentlyWatchedSection({
     required this.entries,
+    required this.titles,
     required this.onOpen,
     required this.onRemove,
     required this.onToggleFavorite,
@@ -1996,6 +1886,7 @@ class _RecentlyWatchedSection extends StatelessWidget {
   });
 
   final List<PlaybackHistoryEntry> entries;
+  final List<MediaTitle> titles;
   final ValueChanged<PlaybackHistoryEntry> onOpen;
   final ValueChanged<PlaybackHistoryEntry> onRemove;
   final ValueChanged<PlaybackHistoryEntry> onToggleFavorite;
@@ -2026,6 +1917,7 @@ class _RecentlyWatchedSection extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 8),
             child: _HistoryCard(
               entry: entry,
+              title: titles.where((t) => t.imdbId == entry.imdbId).firstOrNull,
               onOpen: () => onOpen(entry),
               onRemove: () => onRemove(entry),
               onToggleFavorite: () => onToggleFavorite(entry),
@@ -2251,6 +2143,7 @@ class _WatchlistSection extends StatelessWidget {
 class _HistoryCard extends StatefulWidget {
   const _HistoryCard({
     required this.entry,
+    this.title,
     required this.onOpen,
     required this.onRemove,
     required this.onToggleFavorite,
@@ -2258,6 +2151,7 @@ class _HistoryCard extends StatefulWidget {
   });
 
   final PlaybackHistoryEntry entry;
+  final MediaTitle? title;
   final VoidCallback onOpen;
   final VoidCallback onRemove;
   final VoidCallback onToggleFavorite;
@@ -2326,12 +2220,18 @@ class _HistoryCardState extends State<_HistoryCard> {
                       children: [
                         Expanded(
                           child: Text(
-                            entry.title,
+                            widget.title == null
+                                ? entry.title
+                                : [
+                                    widget.title!.title,
+                                    if (entry.season != null)
+                                      'S${entry.season} E${entry.episode ?? "?"}',
+                                  ].join(' / '),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               color: foreground.withValues(alpha: 0.9),
-                              fontSize: 12.5,
+                              fontSize: 14,
                               fontWeight: FontWeight.w600,
                             ),
                           ),

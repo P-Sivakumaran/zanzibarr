@@ -14,13 +14,19 @@
 //! - `Accept-Ranges: bytes` her yanıtta ilan edilir.
 
 use super::telemetry::{self, Event};
+use std::future::Future;
 use std::io;
 use std::ops::Range;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
+use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
+use tokio::time::{timeout, Sleep};
 
 /// Bir byte aralığını çözüp yazan kaynak. Somut hali NZB+NNTP'dir
 /// ([`super::nntp_source::NntpByteSource`]); testlerde bellek içi tampon.
@@ -79,13 +85,52 @@ where
     S: RangeSource,
     F: std::future::Future<Output = ()> + Send,
 {
+    serve_with_limits(
+        listener,
+        source,
+        required_prefix,
+        shutdown,
+        ServerLimits::default(),
+    )
+    .await
+}
+
+#[derive(Clone, Copy)]
+struct ServerLimits {
+    connections: usize,
+    header_timeout: Duration,
+    write_timeout: Duration,
+}
+impl Default for ServerLimits {
+    fn default() -> Self {
+        Self {
+            connections: 32,
+            header_timeout: Duration::from_secs(10),
+            write_timeout: Duration::from_secs(60),
+        }
+    }
+}
+
+async fn serve_with_limits<S, F>(
+    listener: TcpListener,
+    source: Arc<S>,
+    required_prefix: Option<Arc<str>>,
+    shutdown: F,
+    limits: ServerLimits,
+) -> io::Result<()>
+where
+    S: RangeSource,
+    F: Future<Output = ()> + Send,
+{
     let trace = telemetry::current();
+    let permits = Arc::new(Semaphore::new(limits.connections));
     let mut connections = JoinSet::new();
     let mut shutdown = Box::pin(shutdown);
 
     let outcome = loop {
         tokio::select! {
             _ = &mut shutdown => break Ok(()),
+            _ = connections.join_next(), if !connections.is_empty() => {}
             accepted = listener.accept() => {
                 let (stream, _) = match accepted {
                     Ok(connection) => connection,
@@ -95,17 +140,20 @@ where
                 // Önceki isteklerden biten görevlerin sonuçlarını tutmayalım.
                 while connections.try_join_next().is_some() {}
 
+                // Reject overload before creating a task or reading unauthenticated input.
+                let Ok(permit) = Arc::clone(&permits).try_acquire_owned() else { continue; };
                 let source = Arc::clone(&source);
                 let required_prefix = required_prefix.clone();
                 let trace = trace.clone();
                 connections.spawn(async move {
+                    let _permit = permit;
                     // Bağlantı hatalarını (player erken kapatması vb.) yut.
                     if let Some(trace) = trace {
                         trace.clone().scope(async {
-                            let _ = handle_connection(stream, source, required_prefix).await;
+                            let _ = handle_connection_with_limits(stream, source, required_prefix, limits).await;
                         }).await;
                     } else {
-                        let _ = handle_connection(stream, source, required_prefix).await;
+                        let _ = handle_connection_with_limits(stream, source, required_prefix, limits).await;
                     }
                 });
             }
@@ -117,6 +165,61 @@ where
     outcome
 }
 
+// Bound socket backpressure, not the total movie or upstream archive preparation.
+// A timer exists only while a write/flush is Pending; source-fetch time is excluded.
+struct StallBoundWriter<W> {
+    inner: W,
+    duration: Duration,
+    pending: Option<Pin<Box<Sleep>>>,
+}
+impl<W> StallBoundWriter<W> {
+    fn new(inner: W, duration: Duration) -> Self {
+        Self {
+            inner,
+            duration,
+            pending: None,
+        }
+    }
+    fn bound<T>(
+        &mut self,
+        cx: &mut Context<'_>,
+        result: Poll<io::Result<T>>,
+    ) -> Poll<io::Result<T>> {
+        if result.is_ready() {
+            self.pending = None;
+            return result;
+        }
+        let timer = self
+            .pending
+            .get_or_insert_with(|| Box::pin(tokio::time::sleep(self.duration)));
+        if timer.as_mut().poll(cx).is_ready() {
+            return Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "HTTP write stalled",
+            )));
+        }
+        Poll::Pending
+    }
+}
+impl<W: AsyncWrite + Unpin> AsyncWrite for StallBoundWriter<W> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let result = Pin::new(&mut self.inner).poll_write(cx, buf);
+        self.bound(cx, result)
+    }
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let result = Pin::new(&mut self.inner).poll_flush(cx);
+        self.bound(cx, result)
+    }
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let result = Pin::new(&mut self.inner).poll_shutdown(cx);
+        self.bound(cx, result)
+    }
+}
+
 const MAX_HEAD: usize = 16 * 1024;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -126,15 +229,20 @@ struct RequestHead {
     range: Option<String>,
 }
 
-async fn handle_connection<S: RangeSource>(
+async fn handle_connection_with_limits<S: RangeSource>(
     mut stream: TcpStream,
     source: Arc<S>,
     required_prefix: Option<Arc<str>>,
+    limits: ServerLimits,
 ) -> io::Result<()> {
-    let head_bytes = match read_head(&mut stream).await? {
+    let head_bytes = match timeout(limits.header_timeout, read_head(&mut stream))
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "HTTP header timeout"))??
+    {
         Some(bytes) => bytes,
         None => return Ok(()), // boş/erken kapanan bağlantı
     };
+    let mut stream = StallBoundWriter::new(stream, limits.write_timeout);
     let head = match parse_request_head(&head_bytes) {
         Some(head) => head,
         None => {
@@ -229,7 +337,11 @@ async fn handle_connection<S: RangeSource>(
     }
 }
 
-async fn write_simple(stream: &mut TcpStream, code: u16, reason: &str) -> io::Result<()> {
+async fn write_simple<W: AsyncWrite + Unpin>(
+    stream: &mut W,
+    code: u16,
+    reason: &str,
+) -> io::Result<()> {
     let header = format!(
         "HTTP/1.1 {code} {reason}\r\n\
          Content-Length: 0\r\n\
@@ -841,5 +953,92 @@ mod tests {
         assert!(head.starts_with("HTTP/1.1 206 Partial Content"), "{head}");
         assert!(head.contains("Content-Range: bytes 100-199/10000"));
         assert_eq!(body, data[100..200]);
+    }
+    #[tokio::test]
+    async fn idle_unauthenticated_headers_expire() {
+        let listener = bind_local(0).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mut client = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let (stream, _) = listener.accept().await.unwrap();
+        let source = Arc::new(InMemorySource {
+            data: vec![1],
+            content_type: "video/mp4".into(),
+        });
+        let limits = ServerLimits {
+            header_timeout: Duration::from_millis(30),
+            ..ServerLimits::default()
+        };
+        let error = handle_connection_with_limits(stream, source, Some("/secret/".into()), limits)
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        let mut byte = [0];
+        assert_eq!(
+            timeout(Duration::from_secs(2), client.read(&mut byte))
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn overload_is_rejected_before_another_request_task() {
+        let entered = Arc::new(Notify::new());
+        let source = Arc::new(BlockingSource {
+            entered: entered.clone(),
+        });
+        let listener = bind_local(0).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (stop, stopped) = oneshot::channel();
+        let server = tokio::spawn(serve_with_limits(
+            listener,
+            source,
+            None,
+            async {
+                let _ = stopped.await;
+            },
+            ServerLimits {
+                connections: 1,
+                ..ServerLimits::default()
+            },
+        ));
+        let mut first = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        first
+            .write_all(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n")
+            .await
+            .unwrap();
+        timeout(Duration::from_secs(2), entered.notified())
+            .await
+            .unwrap();
+        let mut second = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let mut byte = [0];
+        assert_eq!(
+            timeout(Duration::from_secs(2), second.read(&mut byte))
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
+        stop.send(()).unwrap();
+        timeout(Duration::from_secs(2), server)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn stalled_writes_expire_but_source_waits_do_not() {
+        let (writer, _reader) = tokio::io::duplex(1);
+        let mut writer = StallBoundWriter::new(writer, Duration::from_millis(30));
+        // No pending write: slow upstream decoding must not consume this deadline.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        writer.write_all(&[1]).await.unwrap();
+        let error = timeout(Duration::from_secs(2), writer.write_all(&[2]))
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
     }
 }

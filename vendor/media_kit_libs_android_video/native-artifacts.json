@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "release": "v1.1.7-dv.5",
+  "baseUrl": "https://github.com/envermeister/libmpv-android-video-build/releases/download/v1.1.7-dv.5",
+  "sourceRepository": "https://github.com/envermeister/libmpv-android-video-build",
+  "pinEvidence": "GitHub release asset digests retrieved 2026-10-26; fixed review baseline, not an independent publisher signature",
+  "artifacts": {
+    "dv-arm64-v8a.jar": {
+      "size": 11447696,
+      "sha256": "e9ab9bcdaeae7162495061e90e04e23f098d0a9138b08de6acdafef00040bef5"
+    },
+    "dv-armeabi-v7a.jar": {
+      "size": 10471577,
+      "sha256": "3ba42d7688f1c3aacb1b06cea622f52ecd66ecb59506ea4fd73b1a1b1c5861ae"
+    },
+    "dv-x86.jar": {
+      "size": 12347572,
+      "sha256": "b8c23ec73abfa658a0bb83a1989fd7cfd0e42a67cc96afaa372b5c3c1f1e549c"
+    },
+    "dv-x86_64.jar": {
+      "size": 12408993,
+      "sha256": "20ad3c8ba9a9a7cb5a9740cfd3b050f9c9cc5d1e274b5ca259c75b3db71b0c6b"
+    }
+  }
+}

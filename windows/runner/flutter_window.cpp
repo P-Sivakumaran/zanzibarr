@@ -30,6 +30,7 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
+  edition_auth_ = std::make_unique<EditionAuthentication>(GetHandle());
   window_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(), "com.zanzibarr/window",
@@ -38,6 +39,15 @@ bool FlutterWindow::OnCreate() {
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<
                  flutter::MethodResult<flutter::EncodableValue>> result) {
+        if (call.method_name() == "authenticateEdition") {
+          edition_auth_->Authenticate(std::move(result));
+          return;
+        }
+        if (call.method_name() == "cancelEditionAuthentication") {
+          edition_auth_->Cancel();
+          result->Success();
+          return;
+        }
         bool changed = false;
         if (call.method_name() == "enterPictureInPicture") {
           changed = EnterPictureInPicture();
@@ -63,6 +73,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  edition_auth_.reset();
   window_channel_.reset();
   is_picture_in_picture_ = false;
   picture_in_picture_restore_placement_ = {};
@@ -173,6 +184,10 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (message == EditionAuthentication::kCompleted) {
+    if (edition_auth_) edition_auth_->Complete(wparam);
+    return 0;
+  }
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =

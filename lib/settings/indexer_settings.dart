@@ -1,3 +1,4 @@
+import '../editions/edition_storage.dart';
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -94,7 +95,7 @@ const knownIndexers = [
 /// içinde kalır, ayrı ayrı anahtarlanmaz.
 class IndexerSettingsStore {
   IndexerSettingsStore({FlutterSecureStorage? storage})
-    : _storage = storage ?? const FlutterSecureStorage();
+    : _storage = storage ?? const EditionSecureStorage();
 
   final FlutterSecureStorage _storage;
 
@@ -116,7 +117,9 @@ class IndexerSettingsStore {
             .toList();
       } catch (_) {
         // Never replace unreadable stored credentials with an empty list.
-        throw const FormatException('Stored indexer profiles could not be read');
+        throw const FormatException(
+          'Stored indexer profiles could not be read',
+        );
       }
     }
 

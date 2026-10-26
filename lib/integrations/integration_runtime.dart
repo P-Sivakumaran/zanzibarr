@@ -1,3 +1,4 @@
+import '../editions/edition.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 
@@ -87,6 +88,7 @@ class IntegrationRuntime extends ChangeNotifier {
   }
 
   Future<void> _start() async {
+    if (Edition.current != AppEdition.legacy) return;
     final config = settings;
     if (config == null || !config.enabled || running) return;
     final server = LocalMcpServer(
@@ -166,6 +168,9 @@ class IntegrationRuntime extends ChangeNotifier {
   }
 
   void _authorize(String name, McpCallContext? context) {
+    if (Edition.current != AppEdition.legacy) {
+      throw const IntegrationException("Tools are unavailable in this edition");
+    }
     context?.check();
     final config = settings;
     if (config?.enabled != true) {

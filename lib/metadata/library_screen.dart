@@ -62,9 +62,11 @@ class LibraryScreen extends StatefulWidget {
     this.store,
     this.watchlistStore,
     this.artworkLoader,
+    this.artworkPreferences,
     this.onPlaylists,
   });
   final VoidCallback? onPlaylists;
+  final ArtworkPreferences? artworkPreferences;
   final Future<void> Function(MediaTitle) onOpen;
   final ArtworkLoader? artworkLoader;
   final TitleLibraryStore? store;
@@ -165,7 +167,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         'Saved films and tracked shows. Open a title to explore details and find releases.',
                       ),
                       const SizedBox(height: 16),
-                      const ArtworkSettings(),
+                      ArtworkSettings(preferences: widget.artworkPreferences),
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,

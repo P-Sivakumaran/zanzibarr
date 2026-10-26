@@ -1,0 +1,80 @@
+name: Windows edition development candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      edition:
+        description: 'Independent development build; not a publishable release'
+        type: choice
+        required: true
+        default: clean
+        options: [clean, restricted]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    uses: ./.github/workflows/verify.yml
+    with:
+      ref: ${{ github.sha }}
+
+  candidate:
+    needs: verify
+    runs-on: windows-latest
+    env:
+      EDITION: ${{ inputs.edition }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.6'
+          channel: stable
+          cache: true
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: '1.99.0'
+      - uses: nuget/setup-nuget@12c57947e9458a5b976961b08ea0706a17dd71ae # v3
+        with:
+          nuget-version: '6.14.0'
+      - name: Validate and prepare independent source inputs
+        shell: pwsh
+        run: |
+          if ($env:EDITION -notin @('clean', 'restricted')) { throw 'Unknown edition' }
+          python tools/test_prepare_edition.py
+          if ($LASTEXITCODE -ne 0) { throw 'Edition preparation tests failed' }
+          python tools/prepare_edition.py --edition $env:EDITION --output dist/editions/candidate
+          if ($LASTEXITCODE -ne 0) { throw 'Edition preparation failed' }
+      - name: Verify native admission in the actual edition
+        shell: pwsh
+        run: |
+          cargo test --locked --manifest-path dist/editions/candidate/rust/Cargo.toml edition::tests -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { throw 'Native edition policy tests failed' }
+      - name: Build selected entrypoint
+        working-directory: dist/editions/candidate
+        shell: pwsh
+        run: |
+          flutter pub get --enforce-lockfile
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency resolution failed' }
+          flutter build windows --release --no-pub --target "lib/main_$env:EDITION.dart"
+          if ($LASTEXITCODE -ne 0) { throw 'Edition build failed' }
+      - name: Package independent identity without installing
+        shell: pwsh
+        run: |
+          Copy-Item dist/editions/candidate/edition-manifest.json dist/editions/candidate/build/windows/x64/runner/Release/
+          $compiler = ./tools/windows/install-inno.ps1
+          ./dist/editions/candidate/tools/windows/package.ps1 -Iscc $compiler
+      - name: Audit source, native, Dart and packaged bundle
+        shell: pwsh
+        run: |
+          python tools/audit_edition_bundle.py --source dist/editions/candidate --bundle dist/editions/candidate/build/windows/x64/runner/Release --report dist/editions/candidate/dist/windows/edition-audit.json
+          if ($LASTEXITCODE -ne 0) { throw 'Edition artifact audit failed' }
+          Copy-Item dist/editions/candidate/edition-manifest.json dist/editions/candidate/dist/windows/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: zanzibarr-${{ inputs.edition }}-windows-development
+          path: dist/editions/candidate/dist/windows/
+          retention-days: 7
+          if-no-files-found: error

@@ -1,9 +1,9 @@
+import '../editions/edition_paths.dart';
 import '../player/series_preferences.dart';
 import 'episode_release_ranker.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../integrations/integration_runtime.dart';
 import '../integrations/metadata_plugin.dart';
@@ -177,7 +177,7 @@ class _SearchScreenState extends State<SearchScreen> {
     // Android'de Rust tarafının std::env::temp_dir() kullanımı çalışmaz
     // (TMPDIR yok, /tmp yazılamaz); NZB uygulamanın önbellek dizinine iner.
     // Masaüstünde de aynı dizin kullanılır (izin gerektirmez).
-    final cacheDir = await getTemporaryDirectory();
+    final cacheDir = await editionTemporaryDirectory();
     return newznabDownloadNzb(
       config: config,
       nzbUrl: nzbUrl,

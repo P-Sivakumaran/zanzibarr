@@ -66,6 +66,7 @@ pub fn begin_download(
     nzb_path: String,
     destination: String,
 ) -> Result<u64, String> {
+    let _access = crate::edition::lock_media_access()?;
     let root = std::fs::canonicalize(&destination)
         .map_err(|_| "Choose an existing download folder".to_string())?;
     if !root.is_dir() {
@@ -173,6 +174,7 @@ async fn run_download(
         .duration_since(UNIX_EPOCH)
         .map_err(|_| "Clock unavailable")?
         .as_millis();
+    if *cancel.borrow() { return Err("Download cancelled".into()); }
     let directory = root.join(format!("zanzibarr-{stamp}-{id}"));
     tokio::fs::create_dir(&directory)
         .await
@@ -285,6 +287,13 @@ fn validate_files(files: &[nzb::NzbFile]) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+// Revoke live work as part of the native edition lock, even if Dart is disposed.
+pub(crate) fn cancel_edition_operations() {
+    if let Ok(active) = ACTIVE.lock() {
+        if let Some(active) = active.as_ref() { let _ = active.cancel.send(true); }
+    }
 }
 
 #[cfg(test)]

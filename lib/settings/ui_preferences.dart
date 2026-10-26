@@ -1,3 +1,4 @@
+import '../editions/edition_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -28,7 +29,7 @@ const supportedAppLocales = <(Locale, String)>[
 /// ile aynı saklama desenini izler.
 class UiPreferencesStore {
   UiPreferencesStore({FlutterSecureStorage? storage})
-    : _storage = storage ?? const FlutterSecureStorage();
+    : _storage = storage ?? const EditionSecureStorage();
 
   final FlutterSecureStorage _storage;
 

@@ -27,7 +27,7 @@ jobs:
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.ref || github.sha }}
 
@@ -47,20 +47,23 @@ jobs:
           echo "ANDROID_KEYSTORE_PATH=$keystore_path" >> "$GITHUB_ENV"
 
       # Yerel geliştirme sürümüyle aynı Flutter (pubspec.lock üretimiyle uyum).
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: "3.44.6"
           channel: stable
           cache: true
 
       # cargokit, Rust motorunu Android NDK ile çapraz derler.
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: '1.99.0'
           targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android
 
       # Runner imajında kurulu NDK'yı cargokit'e göster.
       - name: NDK yolunu ayarla
-        run: echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+        run: |
+          sdkmanager "ndk;28.2.13676358"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
 
       - name: flutter pub get
         run: flutter pub get
@@ -72,6 +75,12 @@ jobs:
       - name: flutter build apk (release, evrensel)
         run: flutter build apk --release
 
+      - name: Audit every packaged native library
+        run: |
+          for apk in build/app/outputs/flutter-apk/app*-release.apk; do
+            python3 tools/audit_android_native.py --apk "$apk" --report "dist/audit/$(basename "$apk").native.json"
+          done
+
       # TV box'lar için anlaşılır adlarla tek zip.
       - name: Paketle (zip)
         run: |
@@ -82,7 +91,17 @@ jobs:
           mv app-release.apk zanzibarr-android-universal.apk
           zip "$GITHUB_WORKSPACE/zanzibarr-android.zip" zanzibarr-android-*.apk
 
-      - uses: actions/upload-artifact@v4
+      - name: Record build dependency and artifact inventory
+        run: python tools/record_build_provenance.py --artifacts build/app/outputs/flutter-apk --output dist/audit/build-inventory-android.json --platform android
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: audit-android-native-${{ github.run_id }}
+          path: dist/audit/*.json
+          retention-days: 30
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: zanzibarr-android
           path: zanzibarr-android.zip

@@ -289,6 +289,7 @@ impl RepairFetcher for NntpRepairFetcher {
 /// Onarım oturumunu başlatır ve kimliği hemen döndürür. Sonuç
 /// [`await_repair`] ile alınır; ilerleme [`repair_progress`] ile yoklanır.
 pub fn begin_repair(config: ProviderConfigDto, nzb_path: String, entry_key: Option<String>) -> u64 {
+    let Ok(_access) = crate::edition::lock_media_access() else { return 0; };
     let session_id = NEXT_REPAIR_ID.fetch_add(1, Ordering::SeqCst);
     let (cancel, cancellation) = watch::channel(false);
     let (ready, ready_result) = oneshot::channel();
@@ -471,4 +472,10 @@ async fn run_repair_inner(
         clean: report.overlay_dir.is_none(),
         overlay_active: report.overlay_dir.is_some(),
     })
+}
+// Revoke live work as part of the native edition lock, even if Dart is disposed.
+pub(crate) fn cancel_edition_operations() {
+    if let Ok(active) = ACTIVE_REPAIR.lock() {
+        if let Some(active) = active.as_ref() { let _ = active.cancel.send(true); }
+    }
 }

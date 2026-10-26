@@ -26,6 +26,13 @@ Separate IMDb, Rotten Tomatoes and Metacritic subscriptions are not required for
 
 ### Live internet research
 
+Pricing does not establish permission to use a service. The reviewed
+[Gemini API terms](https://ai.google.dev/gemini-api/terms) require adult users,
+restrict under-18-directed/likely-accessed clients and specify professional or
+business rather than consumer use. Clients made available in the EEA,
+Switzerland or UK require Paid Services. Confirm product/use eligibility before
+relying on free quotas; BYO credentials do not waive these conditions.
+
 This is opt-in for Claude/Gemini. The app makes a research request followed by a film-card formatting request, so budget for both calls and their context.
 
 - **Claude:** [web search costs $10/1,000 searches](https://platform.claude.com/docs/en/about-claude/pricing), plus model tokens. With the app's maximum three searches per research request, search fees can reach $0.03 per researched reply, before token charges.

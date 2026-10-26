@@ -1,7 +1,7 @@
+import '../editions/edition_paths.dart';
 import 'dart:io';
 
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:path_provider/path_provider.dart';
 
 /// Altyazı font kataloğu. TTF'ler `assets/fonts/` altında paketlenir (OFL);
 /// libmpv/fontconfig'e verilmeden önce uygulama destek dizinine çıkarılır
@@ -81,7 +81,7 @@ class AssetSubtitleFontResolver implements SubtitleFontResolver {
   }
 
   Future<Directory> _fontsDirectory() async {
-    final support = await getApplicationSupportDirectory();
+    final support = await editionSupportDirectory();
     final dir = Directory('${support.path}/subtitle_fonts');
     if (!dir.existsSync()) {
       await dir.create(recursive: true);

@@ -310,22 +310,20 @@ void main() {
     expect(entries.single.positionSeconds, 456);
   });
 
-  test(
-    'migratePath liste doluyken de başka bir kaydı düşürmez',
-    () async {
-      final storage = _MemoryPreferenceStorage();
-      final store = PlaybackHistoryStore(storage: storage);
+  test('migratePath liste doluyken de başka bir kaydı düşürmez', () async {
+    final storage = _MemoryPreferenceStorage();
+    final store = PlaybackHistoryStore(storage: storage);
 
-      await store.save(entry('/cache/vanished.nzb', position: 111));
-      for (var i = 1; i < 25; i++) {
-        await store.save(entry('/media/other-$i.nzb', updatedAt: i));
-      }
-      expect(await store.load(), hasLength(25));
+    await store.save(entry('/cache/vanished.nzb', position: 111));
+    for (var i = 1; i < 25; i++) {
+      await store.save(entry('/media/other-$i.nzb', updatedAt: i));
+    }
+    expect(await store.load(), hasLength(25));
 
-      await store.migratePath(
-        oldPath: '/cache/vanished.nzb',
-        newPath: '/cache/recovered.nzb',
-      );
+    await store.migratePath(
+      oldPath: '/cache/vanished.nzb',
+      newPath: '/cache/recovered.nzb',
+    );
 
     final entries = await store.load();
     expect(
@@ -421,24 +419,22 @@ void main() {
     },
   );
 
-  test(
-    'favori işaretli devam eden kayıt da yedek turda silinmez',
-    () async {
-      // Codex review (commit 2edee1a) bulgusu: tamamlanmış aday yoksa
-      // (hepsi devam ediyor) yedek tur doğrudan en eskiyi silip favoriyi
-      // de düşürüyordu.
-      final storage = _MemoryPreferenceStorage();
-      final store = PlaybackHistoryStore(storage: storage);
+  test('favori işaretli devam eden kayıt da yedek turda silinmez', () async {
+    // Codex review (commit 2edee1a) bulgusu: tamamlanmış aday yoksa
+    // (hepsi devam ediyor) yedek tur doğrudan en eskiyi silip favoriyi
+    // de düşürüyordu.
+    final storage = _MemoryPreferenceStorage();
+    final store = PlaybackHistoryStore(storage: storage);
 
-      await store.save(
-        entry('/media/favorite.nzb', updatedAt: 0, favorite: true),
-      );
-      for (var i = 1; i <= 24; i++) {
-        await store.save(entry('/media/unfinished-$i.nzb', updatedAt: i));
-      }
-      expect(await store.load(), hasLength(25));
+    await store.save(
+      entry('/media/favorite.nzb', updatedAt: 0, favorite: true),
+    );
+    for (var i = 1; i <= 24; i++) {
+      await store.save(entry('/media/unfinished-$i.nzb', updatedAt: i));
+    }
+    expect(await store.load(), hasLength(25));
 
-      await store.save(entry('/media/new-unfinished.nzb', updatedAt: 100));
+    await store.save(entry('/media/new-unfinished.nzb', updatedAt: 100));
 
     final entries = await store.load();
     expect(entries, hasLength(25));
@@ -524,7 +520,26 @@ void main() {
       ..values[PlaybackHistoryStore.storageKey] = '{bozuk';
     final store = PlaybackHistoryStore(storage: storage);
 
-    expect(await store.load(), isEmpty);
+    await expectLater(store.load(), throwsA(isA<Exception>()));
+    expect(storage.values[PlaybackHistoryStore.storageKey], '{bozuk');
+  });
+
+  test('removed titles cannot return from recovery snapshots', () async {
+    final storage = _MemoryPreferenceStorage();
+    final store = PlaybackHistoryStore(storage: storage);
+    storage.values[PlaybackHistoryStore.storageKey] =
+        '{"version":1,"entries":[]}';
+    storage.values['${PlaybackHistoryStore.storageKey}.last-good'] =
+        '{"version":1,"entries":[]}';
+    await store.remove('/deleted.nzb');
+    expect(
+      storage.values.containsKey(
+        '${PlaybackHistoryStore.storageKey}.last-good',
+      ),
+      false,
+    );
+    storage.values[PlaybackHistoryStore.storageKey] = 'broken';
+    await expectLater(store.load(), throwsA(isA<Exception>()));
   });
 
   test('remove yalnız hedef kaydı siler', () async {

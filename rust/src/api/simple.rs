@@ -5,7 +5,13 @@ pub fn greet(name: String) -> String {
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn engine_info() -> String {
-    format!("{} v{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+    format!(
+        "{} v{};edition={};policy={}",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        crate::edition::NAME,
+        crate::edition::POLICY
+    )
 }
 
 #[flutter_rust_bridge::frb(init)]

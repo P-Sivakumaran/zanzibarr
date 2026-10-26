@@ -76,6 +76,7 @@ impl From<ProviderConfigDto> for ProviderConfig {
 /// creating a pool, or retaining credentials. Errors contain stable categories
 /// only: provider response text can echo account details.
 pub fn check_provider(config: ProviderConfigDto) -> Result<(), String> {
+    crate::edition::require_media_access()?;
     RUNTIME.block_on(async move {
         tokio::time::timeout(std::time::Duration::from_secs(15), async move {
             let mut connection = crate::engine::nntp::connect_tls(&config.host, config.port)
@@ -166,6 +167,13 @@ pub struct PlayableEntryDto {
     pub encoded_bytes: u64,
     /// Parça sayısı: doğrudan videoda 1, setlerde cilt sayısı.
     pub part_count: u32,
+}
+
+// Revoke live work as part of the native edition lock, even if Dart is disposed.
+pub(crate) fn cancel_edition_operations() {
+    if let Ok(active) = ACTIVE_STREAM.lock() {
+        if let Some(active) = active.as_ref() { let _ = active.cancel.send(true); }
+    }
 }
 
 #[cfg(test)]
@@ -1267,6 +1275,7 @@ fn select_stream(parsed: &nzb::Nzb) -> Result<StreamSelection, String> {
 /// listeyle seçici diyalog gösterir; tek adaylı NZB'lerde diyalogsuz doğrudan
 /// başlanır.
 pub async fn list_playable_entries(nzb_path: String) -> Result<Vec<PlayableEntryDto>, String> {
+    crate::edition::require_media_access()?;
     RUNTIME
         .spawn_blocking(move || read_nzb(&nzb_path).map(|parsed| playable_entries(&parsed)))
         .await
@@ -1282,6 +1291,7 @@ pub async fn list_playable_entries(nzb_path: String) -> Result<Vec<PlayableEntry
 /// ([`list_playable_entries`] çıktısı); `None` ise en büyük aday otomatik
 /// seçilir (bugünkü davranış).
 pub fn begin_stream(config: ProviderConfigDto, nzb_path: String, entry_key: Option<String>) -> u64 {
+    let Ok(_access) = crate::edition::lock_media_access() else { return 0; };
     let session_id = next_session_id();
     let (cancel, cancellation) = watch::channel(false);
     let (ready, ready_result) = oneshot::channel();
@@ -1349,6 +1359,7 @@ pub fn await_stream(session_id: u64) -> Result<StreamInfo, String> {
 /// Tek çağrılı Rust/CLI kolaylık yolu. Flutter, hazırlık sırasında iptal
 /// edebilmek için doğrudan [`begin_stream`] + [`await_stream`] kullanır.
 pub fn start_stream(config: ProviderConfigDto, nzb_path: String) -> Result<StreamInfo, String> {
+    crate::edition::require_media_access()?;
     let session_id = begin_stream(config, nzb_path, None);
     await_stream(session_id)
 }

@@ -1,3 +1,4 @@
+import '../editions/edition_storage.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'metadata_links.dart';
@@ -10,7 +11,7 @@ import 'package:http/http.dart' as http;
 /// never logged. Automatic enrichment uses configured metadata access.
 class MetadataSettingsStore {
   MetadataSettingsStore({FlutterSecureStorage? storage})
-    : _storage = storage ?? const FlutterSecureStorage();
+    : _storage = storage ?? const EditionSecureStorage();
   final FlutterSecureStorage _storage;
   static const _key = 'metadata.omdb.apiKey';
 
