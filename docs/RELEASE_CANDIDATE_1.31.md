@@ -27,9 +27,35 @@ The preceding UI working tree passed 290 Rust tests, Clippy, Flutter analysis,
 native host build and 574 Flutter tests with 10 opt-in skips. This is background
 evidence; the exact release source is independently verified before packaging.
 
-Final source review, gate results, artifact paths and checksums will be recorded
-here after they complete. Windows artifacts are prepared as an unsigned draft;
-no installation or public stable promotion is part of candidate preparation.
+The exact source at `18af3354336828540a7305e3d38d15ee1135a495` was checked out
+into a separate clean build directory. Its fresh ordered gate passed:
+
+- 290 Rust tests and Clippy with warnings denied.
+- Flutter analysis, native host build, then 558 Flutter tests with 9 opt-in skips.
+- 10 edition-preparation tests, 4 Android native-auditor tests, 4 release-asset
+  tests, actionlint, release-input validation and whitespace checks.
+
+The smaller Flutter count than the working preview reflects the excluded
+hosted-catalogue tests. The existing debug Cargo cache was reused; the host DLL
+was rebuilt against the release source and copied into the isolated checkout
+for its FRB tests. The separate checkout retained a clean Git index after
+normalizing generated plugin-file line endings, without any content changes.
+
+The follow-up verification-record commit changes documentation only. Platform
+builds resolve that final commit, and artifact `SOURCE.json` records its exact
+SHA. Windows output is under `dist/windows/v1.31/`:
+
+- `zanzibarr-windows-x64-setup.exe`
+- `zanzibarr-windows-x64.zip`
+- `SOURCE.json` and `SHA256SUMS`
+
+Build, ZIP/bundle verification and installer-preflight results are recorded with
+the GitHub draft and the local `dist/audit/v1.31/` logs. The checksum manifest
+binds the packages to the source record; it does not authenticate a publisher.
+No usable current-user signing certificate was present. The installed-copy
+preflight requires a fresh user/VM for installer lifecycle validation, preserving
+the existing installed application. No installation or public stable promotion
+is part of this candidate preparation.
 
 ## Standards
 
